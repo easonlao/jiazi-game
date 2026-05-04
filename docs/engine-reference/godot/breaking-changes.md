@@ -1,6 +1,6 @@
 # Godot — Breaking Changes
 
-Last verified: 2026-02-12
+Last verified: 2026-05-04
 
 Changes between Godot versions, focused on post-LLM-cutoff changes (4.4+).
 
@@ -21,6 +21,11 @@ Changes between Godot versions, focused on post-LLM-cutoff changes (4.4+).
 | Localization | CSV plural form support | No longer requires Gettext for plurals. Context columns added. |
 | C# | Automatic string extraction | Translation strings auto-extracted from C# code. |
 | Plugins | New EditorDock class | Specialized container for plugin docks with layout control. |
+| Physics | Jolt default for 3D | Existing projects NOT auto-migrated; behavior differs from GodotPhysics3D. |
+| Rendering | Screen Space Reflections (SSR) overhaul | Completely rewritten; existing SSR setups may produce different results. |
+| Rendering | Glow blend mode changed | Default blend mode changed from `soft light` to `screen` in all renderers. |
+| Core | Node unique IDs added | Nodes now have unique IDs for reliable tracking even when scenes are reorganized. |
+| Platform | Android Gradle builds now supported natively | Old APK injection workflow deprecated. |
 
 ## 4.4 → 4.5 (Late 2025 — POST-CUTOFF, HIGH RISK)
 

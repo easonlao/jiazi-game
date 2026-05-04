@@ -1,11 +1,18 @@
 # Godot — Current Best Practices
 
-Last verified: 2026-02-12 | Engine: Godot 4.6
+Last verified: 2026-05-04 | Engine: Godot 4.6
 
 Practices that are **new or changed** since the model's training data (~4.3).
 This supplements (not replaces) the agent's built-in knowledge.
 
 ## GDScript (4.5+)
+
+- **Static typing always**: Type hints improve performance (20–40% faster in tight loops) and catch bugs early.
+  ```gdscript
+  var health: int = 100
+  func take_damage(amount: int) -> void:
+      health -= amount
+  ```
 
 - **Variadic arguments**: Functions can accept arbitrary parameter counts
   ```gdscript
@@ -25,6 +32,17 @@ This supplements (not replaces) the agent's built-in knowledge.
   ```
 
 - **Script backtracing**: Detailed call stacks available even in Release builds
+
+- **`@onready` caching**: Cache node references to avoid repeated `$` lookups
+  ```gdscript
+  @onready var health_bar: ProgressBar = $UI/HealthBar
+  @onready var animation_player: AnimationPlayer = $AnimationPlayer
+  ```
+
+- **Preload resources**: Use `preload` instead of `load` for compile-time loading
+  ```gdscript
+  const EnemyScene := preload("res://enemy.tscn")
+  ```
 
 ## Physics (4.6)
 
@@ -105,3 +123,22 @@ This supplements (not replaces) the agent's built-in knowledge.
 - **SDL3 gamepad driver**: Better cross-platform gamepad support
 - **Android**: Edge-to-edge display, camera feed access, 16KB page support (Android 15+)
 - **Linux**: Wayland subwindow support for multi-window capability
+
+## Architecture Patterns
+
+- **Signal-driven architecture**: "Signal up, call down" — children emit signals, parents listen and call down
+  ```gdscript
+  # Child component
+  signal health_depleted
+  func take_damage(amount: int) -> void:
+      health -= amount
+      if health <= 0:
+          health_depleted.emit()
+
+  # Parent
+  func _ready() -> void:
+      $HealthComponent.health_depleted.connect(_on_player_died)
+  ```
+
+- **State machines for complex behaviors**: Instead of long `if`/`match` chains
+- **Keep it simple**: Don't over-engineer; leverage built-in tools (AnimationPlayer, Tween, Theme system) before custom code

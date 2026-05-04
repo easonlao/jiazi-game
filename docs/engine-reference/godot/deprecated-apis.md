@@ -1,6 +1,6 @@
 # Godot — Deprecated APIs
 
-Last verified: 2026-02-12
+Last verified: 2026-05-04
 
 If an agent suggests any API in the "Deprecated" column, it MUST be replaced
 with the "Use Instead" column.
@@ -15,6 +15,8 @@ with the "Use Instead" column.
 | `YSort` | `Node2D.y_sort_enabled` | 4.0 | Property on Node2D, not a separate node |
 | `Navigation2D` / `Navigation3D` | `NavigationServer2D` / `NavigationServer3D` | 4.0 | Server-based API |
 | `EditorSceneFormatImporterFBX` | `EditorSceneFormatImporterFBX2GLTF` | 4.3 | Renamed |
+| `NavigationMeshGenerator` | New NavigationServer API | 4.6 | Helper class deprecated; may be removed in future |
+| `VisualShaderNodeComment` | `VisualShaderNodeFrame` | 4.6 | Comment node replaced by frame node |
 
 ## Methods & Properties
 
@@ -30,6 +32,8 @@ with the "Use Instead" column.
 | `Skeleton3D` signal `bone_pose_updated` | `skeleton_updated` | 4.3 | Renamed |
 | `AnimationPlayer.method_call_mode` | `AnimationMixer.callback_mode_method` | 4.3 | Moved to base class |
 | `AnimationPlayer.playback_active` | `AnimationMixer.active` | 4.3 | Moved to base class |
+| `FileAccess.get_as_text(skip_cr)` | `FileAccess.get_as_text()` | 4.6 | `skip_cr` parameter removed |
+| `SpringBoneSimulator3D` internal enums | `SkeletonModifier3D` enums | 4.6 | Parameter/return type changes |
 
 ## Patterns (Not Just APIs)
 
@@ -41,3 +45,4 @@ with the "Use Instead" column.
 | `Texture2D` in shader parameters | `Texture` base type | Changed in 4.4 |
 | Manual post-process viewport chains | `Compositor` + `CompositorEffect` | Structured post-processing (4.3+) |
 | GodotPhysics3D for new projects | Jolt Physics 3D | Default since 4.6; better stability |
+| Android v1 plugins (gdap) | Android v2 plugins (Gradle) | 4.2+ | Old packaging mechanism deprecated |

@@ -1,0 +1,38 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Version: 4.6
+
+[application]
+
+config/name="Jiazi Chronicle"
+config/description="A strategic card game based on the 60 Jiazi cycle and Five Elements."
+run/main_scene="res://src/ui/game_scene.tscn"
+config/features=PackedStringArray("4.6")
+config/icon="res://icon.svg"
+
+[autoload]
+
+CardDataBank="*res://src/core/data/card_data_bank.gd"
+SeasonCycle="*res://src/core/season/season_cycle.gd"
+QiManager="*res://src/core/qi/qi_manager.gd"
+ScoreManager="*res://src/core/scoring/score_manager.gd"
+LeverageCalculator="*res://src/core/leverage/leverage_calculator.gd"
+HandManager="*res://src/core/hand/hand_manager.gd"
+CardPoolManager="*res://src/core/card_pool/card_pool_manager.gd"
+TurnManager="*res://src/core/turn/turn_manager.gd"
+
+[display]
+
+window/size/viewport_width=428
+window/size/viewport_height=760
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
+environment/defaults/default_clear_color=Color(0.1, 0.1, 0.15, 1)

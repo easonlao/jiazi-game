@@ -1,0 +1,73 @@
+[gd_scene load_steps=2 format=3 uid="uid://card_slot_001"]
+
+[ext_resource type="Script" path="res://src/ui/cards/card_slot.gd" id="1_script"]
+
+[node name="CardSlot" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel/MarginContainer"]
+layout_mode = 2
+
+[node name="NameLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "甲子"
+horizontal_alignment = 1
+
+[node name="ElementLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "木 (阳)"
+horizontal_alignment = 1
+
+[node name="ScoreLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "+0.0"
+horizontal_alignment = 1
+
+[node name="CostLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "消耗: ?"
+horizontal_alignment = 1
+
+[node name="ProfitLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+
+[node name="LeverageIcon" type="Label" parent="Panel"]
+layout_mode = 1
+anchors_preset = 0
+offset_top = 5.0
+offset_right = 20.0
+offset_bottom = 25.0
+text = "⚡"
+visible = false

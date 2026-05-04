@@ -1,0 +1,54 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/ui/card_slot.gd" id="1_script"]
+
+[node name="CardSlot" type="Panel"]
+anchors_preset = 0
+custom_minimum_size = Vector2(100, 140)
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="NameLabel" type="Label" parent="."]
+anchors_preset = 0
+offset_left = 5
+offset_top = 5
+offset_right = 95
+offset_bottom = 30
+text = "甲子"
+horizontal_alignment = 1
+
+[node name="ElementLabel" type="Label" parent="."]
+anchors_preset = 0
+offset_left = 5
+offset_top = 35
+offset_right = 95
+offset_bottom = 55
+text = "木"
+horizontal_alignment = 1
+
+[node name="ScoreLabel" type="Label" parent="."]
+anchors_preset = 0
+offset_left = 5
+offset_top = 60
+offset_right = 95
+offset_bottom = 80
+text = "+0.0"
+horizontal_alignment = 1
+
+[node name="ProfitLabel" type="Label" parent="."]
+anchors_preset = 0
+offset_left = 5
+offset_top = 85
+offset_right = 95
+offset_bottom = 105
+text = "收益:0"
+horizontal_alignment = 1
+
+[node name="LeverageLabel" type="Label" parent="."]
+anchors_preset = 0
+offset_left = 5
+offset_top = 110
+offset_right = 95
+offset_bottom = 130
+text = ""
+horizontal_alignment = 1
