@@ -1,54 +1,68 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3 uid="uid://card_slot_001"]
 
 [ext_resource type="Script" path="res://src/ui/card_slot.gd" id="1_script"]
 
-[node name="CardSlot" type="Panel"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(1, 0.99, 0.97, 1)
+border_width_bottom = 2
+border_color = Color(0.84, 0.80, 0.78, 1)
+
+[node name="CardSlot" type="Control"]
+custom_minimum_size = Vector2(120, 160)
+layout_mode = 3
 anchors_preset = 0
-custom_minimum_size = Vector2(100, 140)
-mouse_filter = 2
 script = ExtResource("1_script")
 
-[node name="NameLabel" type="Label" parent="."]
-anchors_preset = 0
-offset_left = 5
-offset_top = 5
-offset_right = 95
-offset_bottom = 30
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+mouse_filter = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel/MarginContainer"]
+layout_mode = 2
+
+[node name="NameLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
 text = "甲子"
 horizontal_alignment = 1
 
-[node name="ElementLabel" type="Label" parent="."]
-anchors_preset = 0
-offset_left = 5
-offset_top = 35
-offset_right = 95
-offset_bottom = 55
+[node name="ElementLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
 text = "木"
 horizontal_alignment = 1
 
-[node name="ScoreLabel" type="Label" parent="."]
-anchors_preset = 0
-offset_left = 5
-offset_top = 60
-offset_right = 95
-offset_bottom = 80
+[node name="ScoreLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
 text = "+0.0"
 horizontal_alignment = 1
 
-[node name="ProfitLabel" type="Label" parent="."]
-anchors_preset = 0
-offset_left = 5
-offset_top = 85
-offset_right = 95
-offset_bottom = 105
-text = "收益:0"
+[node name="CostLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "消耗: ?"
 horizontal_alignment = 1
 
-[node name="LeverageLabel" type="Label" parent="."]
-anchors_preset = 0
-offset_left = 5
-offset_top = 110
-offset_right = 95
-offset_bottom = 130
+[node name="ProfitLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
 text = ""
 horizontal_alignment = 1
+
+[node name="LeverageIcon" type="Label" parent="Panel"]
+layout_mode = 1
+anchors_preset = 0
+offset_top = 5.0
+offset_right = 20.0
+offset_bottom = 25.0
+text = "⚡"
+visible = false

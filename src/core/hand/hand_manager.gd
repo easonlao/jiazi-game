@@ -7,7 +7,6 @@
 ##
 ## ADR-0007: 作为场景节点 (非 Autoload), 状态与会话绑定
 
-class_name HandManager
 extends Node
 
 ## 手牌上限 (GDD 规范)

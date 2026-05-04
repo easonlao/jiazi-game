@@ -1,4 +1,3 @@
-class_name SeasonCycle
 extends Node
 
 ## 季节循环管理器 - 全局单例

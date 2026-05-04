@@ -1,4 +1,3 @@
-class_name QiManager
 extends Node
 
 ## 气资源管理器 - 全局单例

@@ -1,8 +1,5 @@
 extends Node
 
-var _cards: Dictionary = {}  # String id -> JiaziCard
-var _all_cards: Array[JiaziCard] = []
-
 func _ready() -> void:
     load_cards()
 

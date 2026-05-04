@@ -1,4 +1,3 @@
-class_name LeverageCalculator
 extends Node
 
 ## 杠杆计算器 - 全局单例 无状态工具类

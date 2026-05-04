@@ -1,51 +1,212 @@
-[gd_scene load_steps=2 format=3 uid="uid://cl9aj0qhrk6u2"]
+[gd_scene load_steps=4 format=3 uid="uid://game_scene_001"]
 
 [ext_resource type="Script" path="res://src/ui/ui_manager.gd" id="1_ui_manager"]
+[ext_resource type="PackedScene" uid="uid://card_slot_001" path="res://src/ui/card_slot.tscn" id="2_card_slot"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.96, 0.94, 0.91, 1)  # #F5F0E8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.98, 0.96, 0.93, 1)
+border_width_bottom = 1
+border_color = Color(0.84, 0.80, 0.78, 1)
 
 [node name="GameScene" type="Node2D"]
 
-[node name="Camera2D" type="Camera2D" parent="."]
-position = Vector2(214, 380)
-zoom = Vector2(1, 1)
-
-[node name="UIManager" type="CanvasLayer" parent="."]
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
 script = ExtResource("1_ui_manager")
 
-[node name="Background" type="ColorRect" parent="UIManager"]
+[node name="Background" type="ColorRect" parent="CanvasLayer"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
 color = Color(0.96, 0.94, 0.91, 1)
 
-[node name="PublicCardContainer" type="HBoxContainer" parent="UIManager"]
-anchors_preset = 8
-anchor_top = 0.4
-anchor_bottom = 0.4
-offset_left = 10
-offset_top = -60
-offset_right = -10
-offset_bottom = 60
+[node name="TopPanel" type="Panel" parent="CanvasLayer"]
+anchors_preset = 13
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 80.0
+
+[node name="TopMargin" type="MarginContainer" parent="TopPanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="HBoxContainer" type="HBoxContainer" parent="TopPanel/TopMargin"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="SeasonLabel" type="Label" parent="TopPanel/TopMargin/HBoxContainer"]
+layout_mode = 2
 size_flags_horizontal = 3
+text = "春 (第1回合)"
+horizontal_alignment = 1
+
+[node name="ScoreLabel" type="Label" parent="TopPanel/TopMargin/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "总分: 0"
+horizontal_alignment = 1
+
+[node name="QiPanel" type="Panel" parent="CanvasLayer"]
+anchors_preset = 13
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 80.0
+offset_right = 0.0
+offset_bottom = 140.0
+
+[node name="MarginContainer" type="MarginContainer" parent="QiPanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="QiPanel/MarginContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="QiBar" type="ProgressBar" parent="QiPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+max = 80
+value = 50
+
+[node name="QiLabel" type="Label" parent="QiPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "气: 50/80"
+horizontal_alignment = 1
+
+[node name="HoldCostLabel" type="Label" parent="QiPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+
+[node name="PublicCardsPanel" type="Panel" parent="CanvasLayer"]
+anchors_preset = 13
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 140.0
+offset_right = 0.0
+offset_bottom = 380.0
+
+[node name="MarginContainer" type="MarginContainer" parent="PublicCardsPanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="PublicCardContainer" type="HBoxContainer" parent="PublicCardsPanel/MarginContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
 alignment = 1
 
-[node name="HandContainer" type="HBoxContainer" parent="UIManager"]
-anchors_preset = 8
-anchor_top = 0.8
-anchor_bottom = 0.8
-offset_left = 10
-offset_top = -80
-offset_right = -10
-offset_bottom = 80
-size_flags_horizontal = 3
+[node name="HandPanel" type="Panel" parent="CanvasLayer"]
+anchors_preset = 13
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 380.0
+offset_right = 0.0
+offset_bottom = 600.0
+
+[node name="MarginContainer" type="MarginContainer" parent="HandPanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="HandContainer" type="HBoxContainer" parent="HandPanel/MarginContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
 alignment = 1
 
-[node name="ButtonPanel" type="HBoxContainer" parent="UIManager"]
-anchors_preset = 8
-anchor_top = 0.92
-anchor_bottom = 0.92
-offset_left = 20
-offset_top = -30
-offset_right = -20
-offset_bottom = 30
-size_flags_horizontal = 3
-alignment = 1
+[node name="ButtonPanel" type="Panel" parent="CanvasLayer"]
+anchors_preset = 13
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 600.0
+offset_right = 0.0
+offset_bottom = 760.0
+
+[node name="MarginContainer" type="MarginContainer" parent="ButtonPanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="GridContainer" type="GridContainer" parent="ButtonPanel/MarginContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+columns = 2
+
+[node name="BuyButton" type="Button" parent="ButtonPanel/MarginContainer/GridContainer"]
+layout_mode = 2
+text = "买入"
+disabled = true
+
+[node name="LeverageButton" type="Button" parent="ButtonPanel/MarginContainer/GridContainer"]
+layout_mode = 2
+text = "杠杆 1.0x"
+disabled = true
+
+[node name="SellButton" type="Button" parent="ButtonPanel/MarginContainer/GridContainer"]
+layout_mode = 2
+text = "卖出"
+disabled = true
+
+[node name="WaitButton" type="Button" parent="ButtonPanel/MarginContainer/GridContainer"]
+layout_mode = 2
+text = "等待"
+
+[node name="BottomInfo" type="Label" parent="CanvasLayer"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -100.0
+offset_top = -30.0
+offset_right = 100.0
+offset_bottom = -10.0
+text = "牌堆剩余: 60张 | 杠杆: 1.0x"
+horizontal_alignment = 1
