@@ -17,7 +17,7 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Project Structure
 
-@.claude/docs/directory-structure.md
+@docs/directory-structure.md
 
 ## Engine Version Reference
 
@@ -25,11 +25,11 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Technical Preferences
 
-@.claude/docs/technical-preferences.md
+@docs/technical-preferences.md
 
 ## Coordination Rules
 
-@.claude/docs/coordination-rules.md
+@docs/coordination-rules.md
 
 ## Collaboration Protocol
 
@@ -48,8 +48,8 @@ See `docs/COLLABORATIVE-DESIGN-PRINCIPLE.md` for full protocol and examples.
 
 ## Coding Standards
 
-@.claude/docs/coding-standards.md
+@docs/coding-standards.md
 
 ## Context Management
 
-@.claude/docs/context-management.md
+@docs/context-management.md
