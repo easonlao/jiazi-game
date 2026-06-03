@@ -1,48 +1,48 @@
-# ADR-0006: 牌池机制 (Card Pool Management)
+# ADR-0005: 牌池机制
 
-## Status
-Proposed
+## 状态
+已接受
 
-## Date
+## 日期
 2026-05-04
 
-## Engine Compatibility
+## 引擎兼容性
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Engine** | Phaser 3 |
-| **Domain** | Core |
-| **Knowledge Risk** | LOW (standard array operations) |
-| **References Consulted** | None |
-| **Post-Cutoff APIs Used** | None |
-| **Verification Required** | Random insertion must be uniform; unit test 1000 iterations |
+| **引擎** | Phaser 3.90.0 |
+| **领域** | 核心 |
+| **知识风险** | 低（标准数组操作） |
+| **参考文档** | 无 |
+| **后续版本 API** | 无 |
+| **验证需求** | 随机插入必须均匀；单元测试 1000 次迭代 |
 
-## ADR Dependencies
+## ADR 依赖关系
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Depends On** | ADR-0004 (Card data structure) |
-| **Enables** | TurnFlow (drawing cards), HandManagement (buying cards) |
-| **Blocks** | None |
-| **Ordering Note** | None |
+| **依赖** | ADR-0003（卡牌数据结构） |
+| **启用** | TurnManager（抽牌）、HandManager（买牌） |
+| **阻塞** | 无 |
+| **顺序说明** | 无 |
 
-## Context
+## 背景
 
-### Problem Statement
-甲子纪 requires a card pool that manages the deck of 60 Jiazi cards. Each turn, 2 cards are drawn from the deck and displayed to the player. The player buys 1 card (removing it permanently) or returns unselected cards to random positions in the deck.
+### 问题陈述
+甲子纪需要一个管理 60 张甲子牌牌堆的牌池系统。每回合从牌堆中抽取 2 张牌展示给玩家。玩家购买 1 张牌（永久移除）或将未选的牌返回牌堆的随机位置。
 
-### Constraints
-- 60 cards total, each appears exactly once per game
-- Drawn cards are removed from deck
-- Unselected cards return to random deck positions (not predictable)
-- Deck depletion handling (when fewer than 2 cards remain)
+### 约束条件
+- 总共 60 张牌，每局每张牌恰好出现一次
+- 抽取的牌从牌堆中移除
+- 未选的牌返回牌堆的随机位置（不可预测）
+- 牌堆耗尽处理（剩余少于 2 张牌时）
 
-### Requirements
-- Shuffle deck at game start (Fisher-Yates)
-- Draw cards from deck (pop from front)
-- Return cards to random positions
-- Track deck size for UI
-- No card duplication
+### 需求
+- 游戏开始时洗牌（Fisher-Yates）
+- 从牌堆抽牌（从前面弹出）
+- 将牌返回随机位置
+- 跟踪牌堆大小用于 UI
+- 不允许牌重复
 
 ## Decision
 

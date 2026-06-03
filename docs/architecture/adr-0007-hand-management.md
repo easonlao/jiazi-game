@@ -1,49 +1,49 @@
-# ADR-0007: 手牌管理 (Hand Management)
+# ADR-0007: 手牌管理
 
-## Status
-Proposed
+## 状态
+已接受
 
-## Date
+## 日期
 2026-05-04
 
-## Engine Compatibility
+## 引擎兼容性
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Engine** | Phaser 3.90.0 |
-| **Domain** | Core |
-| **Knowledge Risk** | LOW (standard data structures) |
-| **References Consulted** | None |
-| **Post-Cutoff APIs Used** | None |
-| **Verification Required** | Hand slot count must never exceed 3; unit test all edge cases |
+| **引擎** | Phaser 3.90.0 |
+| **领域** | 核心 |
+| **知识风险** | 低（标准数据结构） |
+| **参考文档** | 无 |
+| **后续版本 API** | 无 |
+| **验证需求** | 手牌槽位数量不能超过 3；单元测试所有边缘情况 |
 
-## ADR Dependencies
+## ADR 依赖关系
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Depends On** | ADR-0002 (Singleton vs Node), ADR-0004 (Card data), ADR-0005 (Qi resource), ADR-0006 (Card pool) |
-| **Enables** | TurnFlow (player actions), Scoring (sell scoring) |
-| **Blocks** | None |
-| **Ordering Note** | None |
+| **依赖** | ADR-0003（卡牌数据）、ADR-0004（气资源）、ADR-0005（牌池） |
+| **启用** | TurnManager（玩家操作）、ScoreManager（卖出计分） |
+| **阻塞** | 无 |
+| **顺序说明** | 无 |
 
-## Context
+## 背景
 
-### Problem Statement
-šö▓ňşÉš║¬ requires a hand management system that holds the player's cards (max 3 slots). Cards can be bought (from public pool) or sold (to gain score). Each slot stores the card, its purchase score, leverage multiplier, and cumulative hold earnings. The hand directly affects scoring calculations each turn.
+### 问题陈述
+甲子纪需要一个手牌管理系统，用于保存玩家的卡牌（最多 3 个槽位）。卡牌可以从公共牌池购买或出售以获得分数。每个槽位存储卡牌、买入评分、杠杆倍数和累计持仓收益。手牌直接影响每回合的计分计算。
 
-### Constraints
-- Max hand size: 3 cards
-- Cannot buy if hand full
-- Cannot sell if hand empty
-- Sell costs 3 qi, recovers 8 qi immediately
-- Hold score and qi cost are calculated each turn based on current season and leverage
+### 约束条件
+- 最大手牌数：3 张
+- 手牌满时不能买入
+- 手牌为空时不能卖出
+- 卖出消耗 3 气，立即回复 8 气
+- 持仓评分和气成本根据当前季节和杠杆每回合计算
 
-### Requirements
-- Enforce hand size limits
-- Store card + metadata (buyScore, leverage, buyRound, holdEarnings)
-- Provide buy/sell operations
-- Expose hand data for UI and scoring systems
-- Support forced sells (margin call)
+### 需求
+- 强制执行手牌数量限制
+- 存储卡牌 + 元数据（buyScore、leverage、buyRound、holdEarnings）
+- 提供买入/卖出操作
+- 暴露手牌数据用于 UI 和计分系统
+- 支持强制卖出（强制平仓）
 
 ## Decision
 

@@ -1,53 +1,53 @@
-# ADR-0003: EventEmitter 驱动的模块间通信
+# ADR-0002: EventEmitter 驱动的模块间通信
 
-## Status
-Proposed
+## 状态
+已接受
 
-## Date
+## 日期
 2026-05-04
 
-## Engine Compatibility
+## 引擎兼容性
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Engine** | Phaser 3 |
-| **Domain** | Core / Architecture |
-| **Knowledge Risk** | LOW (events are standard TypeScript patterns) |
-| **References Consulted** | Phaser 3 EventEmitter documentation, TypeScript EventEmitter patterns |
-| **Post-Cutoff APIs Used** | None |
-| **Verification Required** | Event connections must be established before they are emitted (test in constructor) |
+| **引擎** | Phaser 3.90.0 |
+| **领域** | 核心 / 架构 |
+| **知识风险** | 低（事件是标准 TypeScript 模式） |
+| **参考文档** | Phaser 3 EventEmitter 文档，TypeScript EventEmitter 模式 |
+| **后续版本 API** | 无 |
+| **验证需求** | 事件连接必须在事件触发前建立（在构造函数中测试） |
 
-## ADR Dependencies
+## ADR 依赖关系
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Depends On** | ADR-0001 (TurnFlow architecture) |
-| **Enables** | All module implementation |
-| **Blocks** | None |
-| **Ordering Note** | None |
+| **依赖** | ADR-0001（回合流程架构） |
+| **启用** | 所有模块实现 |
+| **阻塞** | 无 |
+| **顺序说明** | 无 |
 
-## Context
+## 背景
 
-### Problem Statement
-甲子纪 has multiple modules (TurnManager, HandManager, CardPoolManager, UIManager, QiManager, etc.) that need to communicate without tight coupling. Direct method calls create hard dependencies that make testing difficult and reduce flexibility. We need a consistent communication pattern that decouples producers from consumers.
+### 问题陈述
+甲子纪有多个模块（TurnManager、HandManager、CardPoolManager、GameScene、QiManager 等）需要在不紧密耦合的情况下通信。直接的方法调用会创建硬依赖，使测试变得困难并降低灵活性。我们需要一个一致的通信模式来解耦生产者和消费者。
 
-### Constraints
-- Modules must be testable in isolation
-- New features (e.g., sound effects, achievements) should be able to listen to game events without modifying existing code
-- Performance must remain within budget (EventEmitter is lightweight)
-- Must support Web export (events work identically across platforms)
+### 约束条件
+- 模块必须能够独立测试
+- 新功能（如音效、成就）应该能够监听游戏事件，而无需修改现有代码
+- 性能必须保持在预算内（EventEmitter 是轻量级的）
+- 必须支持 Web 导出（事件在所有平台上工作方式相同）
 
-### Requirements
-- Low coupling between modules
-- Easy to add new observers without changing observed modules
-- Clear, documented event signatures
-- Events must be typed (TypeScript)
+### 需求
+- 模块间低耦合
+- 易于添加新的观察者，无需修改被观察的模块
+- 清晰、文档化的事件签名
+- 事件必须有类型（TypeScript）
 
-## Decision
+## 决策
 
-### EventEmitter-Driven Architecture
+### EventEmitter 驱动架构
 
-**All cross-module communication will use TypeScript EventEmitter.** Modules emit events when their state changes or when events occur. Other modules subscribe to these events to react.
+**所有跨模块通信将使用 TypeScript EventEmitter。** 模块在状态变化或事件发生时发出事件。其他模块订阅这些事件以做出反应。
 
 **原则:**
 - 数据流向: 生产者 → 事件 → 消费者

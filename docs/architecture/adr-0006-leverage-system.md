@@ -1,47 +1,47 @@
-# ADR-0006: 杠杆系统 (Leverage System)
+# ADR-0006: 杠杆系统
 
-## Status
-Proposed
+## 状态
+已接受
 
-## Date
+## 日期
 2026-05-04
 
-## Engine Compatibility
+## 引擎兼容性
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Engine** | Phaser 3.90.0 |
-| **Domain** | Core |
-| **Knowledge Risk** | LOW (mathematical calculations, no engine APIs) |
-| **References Consulted** | None |
-| **Post-Cutoff APIs Used** | None |
-| **Verification Required** | Multiplier table must match GDD; test margin call logic with multiple leveraged cards |
+| **引擎** | Phaser 3.90.0 |
+| **领域** | 核心 |
+| **知识风险** | 低（数学计算，无引擎 API） |
+| **参考文档** | 无 |
+| **后续版本 API** | 无 |
+| **验证需求** | 倍数表必须匹配 GDD；测试多张杠杆牌的强制平仓逻辑 |
 
-## ADR Dependencies
+## ADR 依赖关系
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Depends On** | ADR-0002 (Singleton vs Node), ADR-0005 (Qi resource), ADR-0007 (Hand management - implicitly) |
-| **Enables** | TurnFlow (hold cost calculation, margin call) |
-| **Blocks** | None |
-| **Ordering Note** | Should be created after Hand Management ADR for full context |
+| **依赖** | ADR-0004（气资源）、ADR-0007（手牌管理） |
+| **启用** | TurnManager（持仓成本计算、强制平仓） |
+| **阻塞** | 无 |
+| **顺序说明** | 应在手牌管理 ADR 之后创建，以获得完整上下文 |
 
-## Context
+## 背景
 
-### Problem Statement
-甲子纪 features a leverage system that multiplies both gains and losses for cards bought with leverage. The multiplier increases as the season progresses (1.0x → 3.0x), creating a risk/reward trade-off. When Qi reaches zero while holding leveraged cards, a margin call forces a random leveraged card to be sold.
+### 问题陈述
+甲子纪具有杠杆系统，用于放大使用杠杆购买的卡牌的收益和损失。倍数随着季节的进展而增加（1.0x → 3.0x），创造风险/回报的权衡。当持有杠杆牌时气归零，强制平仓会强制随机出售一张杠杆牌。
 
-### Constraints
-- Multiplier table: season round 1-3 → 1.0x, 4-6 → 1.5x, 7-9 → 2.0x, 10-11 → 2.5x, 12 → 3.0x
-- Extra Qi cost for leverage: LQC = 10 (fixed, not multiplied)
-- Hold Qi cost = max(0.5, 1.5 + 0.4 × score) × leverage
-- Margin call: random forced sell when Qi = 0
+### 约束条件
+- 倍数表：季节回合 1-3 → 1.0x，4-6 → 1.5x，7-9 → 2.0x，10-11 → 2.5x，12 → 3.0x
+- 杠杆额外气成本：LQC = 10（固定，不乘以倍数）
+- 持仓气成本 = max(0.5, 1.5 + 0.4 × 评分) × 杠杆
+- 强制平仓：气 = 0 时随机强制卖出
 
-### Requirements
-- Calculate current leverage multiplier based on season round
-- Provide hold Qi cost calculation
-- Support margin call detection (actual forced sell orchestrated by TurnFlow)
-- No persistent state (stateless calculator)
+### 需求
+- 根据季节回合计算当前杠杆倍数
+- 提供持仓气成本计算
+- 支持强制平仓检测（实际的强制卖出由 TurnManager 编排）
+- 无持久状态（无状态计算器）
 
 ## Decision
 

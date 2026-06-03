@@ -1,53 +1,51 @@
-# ADR-0005: 资源管理 (Qi) 与恢复规则
+# ADR-0004: 气资源管理与恢复规则
 
-## Status
-Proposed
+## 状态
+已接受
 
-## Date
+## 日期
 2026-05-04
 
-## Engine Compatibility
+## 引擎兼容性
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Engine** | Phaser 3 |
-| **Domain** | Core / Gameplay |
-| **Knowledge Risk** | LOW (pure logic, no engine-specific rendering/physics) |
-| **References Consulted** | None (standard TypeScript) |
-| **Post-Cutoff APIs Used** | None |
-| **Verification Required** | Ensure JSON loading handles missing fields gracefully |
+| **引擎** | Phaser 3.90.0 |
+| **领域** | 核心 / 游戏玩法 |
+| **知识风险** | 低（纯逻辑，无引擎特定渲染/物理） |
+| **参考文档** | 无（标准 TypeScript） |
+| **后续版本 API** | 无 |
+| **验证需求** | 确保 JSON 加载优雅地处理缺失字段 |
 
-## ADR Dependencies
+## ADR 依赖关系
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Depends On** | None |
-| **Enables** | TurnFlow (spending/recovery), HandManagement (buy/sell costs), Leverage (margin call) |
-| **Blocks** | None |
-| **Ordering Note** | None |
+| **依赖** | 无 |
+| **启用** | TurnManager（花费/恢复）、HandManager（买入/卖出成本）、LeverageCalculator（强制平仓） |
+| **阻塞** | 无 |
+| **顺序说明** | 无 |
 
-## Context
+## 背景
 
-### Problem Statement
-甲子纪 requires a resource management system for "Qi", the player's primary action currency.
-It is spent to buy cards and sell them, and recovered naturally each turn or when waiting.
-If Qi reaches zero while holding leveraged cards, a margin call (forced sell) must occur.
+### 问题陈述
+甲子纪需要一个"气"资源管理系统，作为玩家的主要行动货币。气用于购买和出售卡牌，每回合自然恢复或等待时恢复。如果持有杠杆牌时气归零，必须触发强制平仓。
 
-### Constraints
-- Max Qi: 80
-- Starting Qi: 50
-- Natural recovery: 7 per turn
-- Wait extra recovery: 10 per turn (total 17 if waited previous turn)
-- Buy base cost: 12 * (1 + 0.05 * score)
-- Leverage extra cost: 10 (LQC)
-- Sell cost: 3
-- Sell recovery: 8 (immediate)
-- Holding cost: max(0.5, 1.5 + 0.4 * score) * leverage
+### 约束条件
+- 最大气：80
+- 初始气：50
+- 自然恢复：每回合 7
+- 等待额外恢复：每回合 10（如果上回合等待，总共 17）
+- 买入基础成本：12 * (1 + 0.05 * 评分)
+- 杠杆额外成本：10 (LQC)
+- 卖出成本：3
+- 卖出恢复：8（立即）
+- 持仓成本：max(0.5, 1.5 + 0.4 * 评分) * 杠杆
 
-### Requirements
-- Manage Qi state (current, max)
-- Enforce spend/recovery rules
-- Trigger margin call mechanism
+### 需求
+- 管理气状态（当前、最大）
+- 强制执行花费/恢复规则
+- 触发强制平仓机制
 - Notify UI of changes via events
 
 ## Decision

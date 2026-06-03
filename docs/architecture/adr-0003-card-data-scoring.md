@@ -1,47 +1,47 @@
-# ADR-0004: 卡片数据结构和评分公式实现
+# ADR-0003: 卡牌数据结构和评分公式实现
 
-## Status
-Proposed
+## 状态
+已接受
 
-## Date
+## 日期
 2026-05-04
 
-## Engine Compatibility
+## 引擎兼容性
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Engine** | Phaser 3 |
-| **Domain** | Core / Data |
-| **Knowledge Risk** | LOW (data structures, no post-cutoff APIs) |
-| **References Consulted** | TypeScript interfaces, JSON loading patterns |
-| **Post-Cutoff APIs Used** | None |
-| **Verification Required** | Ensure JSON loading handles missing fields gracefully |
+| **引擎** | Phaser 3.90.0 |
+| **领域** | 核心 / 数据 |
+| **知识风险** | 低（数据结构，无后续版本 API） |
+| **参考文档** | TypeScript 接口，JSON 加载模式 |
+| **后续版本 API** | 无 |
+| **验证需求** | 确保 JSON 加载优雅地处理缺失字段 |
 
-## ADR Dependencies
+## ADR 依赖关系
 
-| Field | Value |
+| 字段 | 值 |
 |-------|-------|
-| **Depends On** | None |
-| **Enables** | All scoring, card pool, hand management implementation |
-| **Blocks** | None |
-| **Ordering Note** | ADR-0004 should be Accepted before implementing any card-related logic |
+| **依赖** | 无 |
+| **启用** | 所有计分、牌池、手牌管理实现 |
+| **阻塞** | 无 |
+| **顺序说明** | ADR-0003 应在实现任何卡牌相关逻辑之前被接受 |
 
-## Context
+## 背景
 
-### Problem Statement
-甲子纪 requires data definitions for all 60 Jiazi cards, including their names, elements, and scoring rules per season. The scoring formula combines tian gan (heavenly stem) base scores with cang gan (hidden stem) contributions. We need a data structure that is easy to author, load, and query at runtime.
+### 问题陈述
+甲子纪需要所有 60 张甲子牌的数据定义，包括它们的名称、元素和每季节的评分规则。评分公式将天干基础分与藏干贡献相结合。我们需要一个易于编写、加载和在运行时查询的数据结构。
 
-### Constraints
-- Card data must be editable without recompiling the game (designers may tweak values)
-- Performance: card data lookups must be O(1) (no linear searches)
-- Memory: 60 cards × ~200 bytes = ~12KB — trivial
-- Must support seasonal scoring queries efficiently
+### 约束条件
+- 卡牌数据必须可以在不重新编译游戏的情况下编辑（设计师可能会调整值）
+- 性能：卡牌数据查找必须是 O(1)（无线性搜索）
+- 内存：60 张牌 × ~200 字节 = ~12KB — 很小
+- 必须高效支持季节性评分查询
 
-### Requirements
-- Define all 60 Jiazi cards (id, name, tian_gan, di_zhi, elements)
-- Provide lookup by ID
-- Calculate card score for a given season (tian gan base + cang gan weighted sum)
-- Support future extensions (combination bonuses, yin-yang modifiers)
+### 需求
+- 定义所有 60 张甲子牌（id、name、tian_gan、di_zhi、elements）
+- 提供按 ID 查找
+- 计算给定季节的卡牌评分（天干基础 + 藏干加权和）
+- 支持未来扩展（组合加成、阴阳修正）
 
 ## Decision
 
