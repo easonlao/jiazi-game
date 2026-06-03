@@ -12,81 +12,23 @@ Desktop.ini
 # === Claude Code Local ===
 .claude/settings.local.json
 CLAUDE.local.md
-production/session-logs/
 
-# === Internal Planning (not for public) ===
-
-expansions/
-
-# === Runtime Artifacts (auto-generated, start empty on fresh clone) ===
-# Created on first use by /consistency-check and /architecture-review
-docs/consistency-failures.md
+# === PilotDeck ===
+.pilotdeck/plans/
 
 # === Build Output ===
-build/
-builds/
-bin/
-obj/
-out/
 dist/
-*.exe
-*.dll
-*.so
-*.dylib
-*.app
+build/
 
-# === Engine: Godot ===
-.godot/
-*.translation
-export_presets.cfg
-# Uncomment if using Godot:
-# *.import
+# === Dependencies ===
+node_modules/
+.npm/
 
-# === Engine: Unity ===
-[Ll]ibrary/
-[Tt]emp/
-[Oo]bj/
-[Bb]uild/
-[Bb]uilds/
-[Ll]ogs/
-[Uu]ser[Ss]ettings/
-*.csproj
-*.unityproj
-*.sln
-*.suo
-*.tmp
-*.user
-*.userprefs
-*.pidb
-*.booproj
-*.svd
-*.pdb
-*.mdb
-*.opendb
-*.VC.db
-crashlytics-buildid.txt
-sysinfo.txt
-# Uncomment if using Unity:
-# [Aa]ssets/[Aa]sset[Ss]tore[Tt]ools/
+# === Vite ===
+.vite/
 
-# === Engine: Unreal ===
-Binaries/
-DerivedDataCache/
-Intermediate/
-Saved/
-*.VC.opendb
-*.opensdf
-*.sdf
-*.cachefile
-*.VC.db
-# Uncomment if using Unreal:
-# *.uasset
-# *.umap
-
-# === Compiled Shaders ===
-*.spv
-*.cso
-*.dxbc
+# === TypeScript ===
+*.tsbuildinfo
 
 # === Temporary and Cache ===
 *.tmp
@@ -95,8 +37,6 @@ Saved/
 *.log
 __pycache__/
 *.pyc
-node_modules/
-.npm/
 
 # === Archives ===
 *.zip
