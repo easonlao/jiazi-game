@@ -5,14 +5,15 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Technology Stack
 
-- **Engine**: Godot 4.6
-- **Language**: GDScript
+- **Engine**: Phaser 3.90.0
+- **Language**: TypeScript
 - **Version Control**: Git with trunk-based development
-- **Build System**: SCons (engine), Godot Export Templates
-- **Asset Pipeline**: Godot Import System + custom resource pipeline
+- **Build System**: Vite
+- **Asset Pipeline**: Phaser Loader + Vite asset import
 
-> **Note**: Engine-specialist agents exist for Godot, Unity, and Unreal with
-> dedicated sub-specialists. Use the set matching your engine.
+> **Note**: Engine-specialist agents exist for Phaser, Godot, Unity, and Unreal.
+> This project uses Phaser 3 — web-first 2D game framework.
+> Godot agents have been removed as this project switched from Godot to Phaser.
 
 ## Project Structure
 
@@ -20,7 +21,7 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Engine Version Reference
 
-@docs/engine-reference/godot/VERSION.md
+@docs/engine-reference/phaser/VERSION.md
 
 ## Technical Preferences
 

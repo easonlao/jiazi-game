@@ -19,19 +19,21 @@ paths:
 
 **Correct** (zero-alloc hot path):
 
-```gdscript
-# Pre-allocated array reused each frame
-var _nearby_cache: Array[Node3D] = []
+```typescript
+// Pre-allocated array reused each frame
+private nearbyCache: Phaser.GameObjects.GameObject[] = [];
 
-func _physics_process(delta: float) -> void:
-    _nearby_cache.clear()  # Reuse, don't reallocate
-    _spatial_grid.query_radius(position, radius, _nearby_cache)
+update(time: number, delta: number): void {
+    this.nearbyCache.length = 0;  // Reuse, don't reallocate
+    this.spatialGrid.queryRadius(this.position, this.radius, this.nearbyCache);
+}
 ```
 
 **Incorrect** (allocating in hot path):
 
-```gdscript
-func _physics_process(delta: float) -> void:
-    var nearby: Array[Node3D] = []  # VIOLATION: allocates every frame
-    nearby = get_tree().get_nodes_in_group("enemies")  # VIOLATION: tree query every frame
+```typescript
+update(time: number, delta: number): void {
+    const nearby: Phaser.GameObjects.GameObject[] = [];  // VIOLATION: allocates every frame
+    const nearby = this.scene.getGroup('enemies').getChildren();  // VIOLATION: group query every frame
+}
 ```

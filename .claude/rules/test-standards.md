@@ -18,25 +18,32 @@ paths:
 
 **Correct** (proper naming + Arrange/Act/Assert):
 
-```gdscript
-func test_health_system_take_damage_reduces_health() -> void:
-    # Arrange
-    var health := HealthComponent.new()
-    health.max_health = 100
-    health.current_health = 100
+```typescript
+import { describe, it, expect } from 'vitest';
+import { HealthComponent } from './HealthComponent';
 
-    # Act
-    health.take_damage(25)
+describe('HealthSystem', () => {
+  it('takeDamage_reducesHealth', () => {
+    // Arrange
+    const health = new HealthComponent();
+    health.maxHealth = 100;
+    health.currentHealth = 100;
 
-    # Assert
-    assert_eq(health.current_health, 75)
+    // Act
+    health.takeDamage(25);
+
+    // Assert
+    expect(health.currentHealth).toBe(75);
+  });
+});
 ```
 
 **Incorrect**:
 
-```gdscript
-func test1() -> void:  # VIOLATION: no descriptive name
-    var h := HealthComponent.new()
-    h.take_damage(25)  # VIOLATION: no arrange step, no clear assert
-    assert_true(h.current_health < 100)  # VIOLATION: imprecise assertion
+```typescript
+it('test1', () => {  // VIOLATION: no descriptive name
+    const h = new HealthComponent();
+    h.takeDamage(25);  // VIOLATION: no arrange step, no clear assert
+    expect(h.currentHealth).toBeLessThan(100);  // VIOLATION: imprecise assertion
+});
 ```

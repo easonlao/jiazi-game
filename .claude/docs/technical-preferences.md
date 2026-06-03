@@ -5,31 +5,27 @@
 
 ## Engine & Language
 
-- **Engine**: Godot 4.6
-- **Language**: GDScript
-- **Rendering**: Godot RenderingServer (2D, CanvasItem, Viewport)
-- **Physics**: Godot Physics 2D (default for 2D games)
+- **Engine**: Phaser 3.90.0
+- **Language**: TypeScript
+- **Rendering**: WebGL (Phaser.AUTO, falls back to Canvas)
+- **Physics**: Phaser Arcade Physics (2D)
 
 ## Input & Platform
 
-<!-- Written by /setup-engine. Read by /ux-design, /ux-review, /test-setup, /team-ui, and /dev-story -->
-<!-- to scope interaction specs, test helpers, and implementation to the correct input methods. -->
-
-- **Target Platforms**: Web (HTML5), PC (Windows, Linux, macOS)
+- **Target Platforms**: Web (HTML5, mobile H5 priority), PC
 - **Input Methods**: Mouse/Keyboard, Touch (Mixed)
-- **Primary Input**: Mouse/Keyboard
+- **Primary Input**: Mouse/Keyboard (touch fallback for mobile)
 - **Gamepad Support**: None (future option)
-- **Touch Support**: Full (touch-friendly UI, adapt to hover-less)
-- **Platform Notes**: WebGL export, ensure UI scales for mobile touch. No hover-reliant interactions.
+- **Touch Support**: Full (touch-friendly UI, no hover-reliant interactions)
+- **Platform Notes**: Mobile-first responsive scaling. All UI elements must be touch-target sized (min 44x44px).
 
 ## Naming Conventions
 
 - **Classes**: PascalCase (e.g., `PlayerController`)
-- **Variables**: snake_case (e.g., `move_speed`)
-- **Functions**: snake_case (e.g., `take_damage()`)
-- **Signals/Events**: snake_case past tense (e.g., `health_changed`)
-- **Files**: snake_case matching class (e.g., `player_controller.gd`)
-- **Scenes**: PascalCase matching root node (e.g., `PlayerController.tscn`)
+- **Variables/functions**: camelCase (e.g., `moveSpeed`, `takeDamage`)
+- **Events**: camelCase past tense (e.g., `healthChanged`)
+- **Files**: PascalCase for classes (e.g., `PlayerController.ts`), camelCase for utilities
+- **Scenes**: PascalCase (e.g., `MainMenu.ts`)
 - **Constants**: UPPER_SNAKE_CASE (e.g., `MAX_HEALTH`)
 
 ## Performance Budgets
@@ -37,52 +33,39 @@
 - **Target Framerate**: 60 FPS
 - **Frame Budget**: 16.6 ms
 - **Draw Calls**: 200-300 (typical 2D game)
-- **Memory Ceiling**: 1 GB (web build) / 2 GB (desktop)
+- **Memory Ceiling**: 512 MB (mobile browser) / 1 GB (desktop)
 
 ## Testing
 
-- **Framework**: [TO BE CONFIGURED]
+- **Framework**: [TO BE CONFIGURED — suggest Vitest]
 - **Minimum Coverage**: [TO BE CONFIGURED]
-- **Required Tests**: Balance formulas, gameplay systems, networking (if applicable)
+- **Required Tests**: Balance formulas, gameplay systems
 
 ## Forbidden Patterns
 
-<!-- Add patterns that should never appear in this project's codebase -->
 - [None configured yet — add as architectural decisions are made]
 
 ## Allowed Libraries / Addons
 
-<!-- Add approved third-party dependencies here -->
 - [None configured yet — add as dependencies are approved]
 
 ## Architecture Decisions Log
 
-<!-- Quick reference linking to full ADRs in docs/architecture/ -->
 - [No ADRs yet — use /architecture-decision to create one]
 
 ## Engine Specialists
 
-<!-- Written by /setup-engine when engine is configured. -->
-<!-- Read by /code-review, /architecture-decision, /architecture-review, and team skills -->
-<!-- to know which specialist to spawn for engine-specific validation. -->
-
-- **Primary**: [TO BE CONFIGURED — run /setup-engine]
-- **Language/Code Specialist**: [TO BE CONFIGURED]
-- **Shader Specialist**: [TO BE CONFIGURED]
-- **UI Specialist**: [TO BE CONFIGURED]
-- **Additional Specialists**: [TO BE CONFIGURED]
-- **Routing Notes**: [TO BE CONFIGURED]
+- **Primary**: phaser-specialist (if available), otherwise use general-purpose with Phaser context
+- **Language/Code Specialist**: general-purpose (TypeScript knowledge)
+- **Shader Specialist**: N/A (Phaser uses no custom shaders beyond built-in)
+- **UI Specialist**: general-purpose (Phaser scene + DOM UI mix)
+- **Additional Specialists**: N/A
+- **Routing Notes**: For Phaser-specific questions, prefer WebSearch or Context7.
 
 ### File Extension Routing
 
-<!-- Skills use this table to select the right specialist per file type. -->
-<!-- If a row says [TO BE CONFIGURED], fall back to Primary for that file type. -->
-
 | File Extension / Type | Specialist to Spawn |
 |-----------------------|---------------------|
-| Game code (primary language) | [TO BE CONFIGURED] |
-| Shader / material files | [TO BE CONFIGURED] |
-| UI / screen files | [TO BE CONFIGURED] |
-| Scene / prefab / level files | [TO BE CONFIGURED] |
-| Native extension / plugin files | [TO BE CONFIGURED] |
-| General architecture review | Primary |
+| Game code (.ts files) | general-purpose |
+| Scene / prefab (.ts scene files) | general-purpose |
+| General architecture review | general-purpose |

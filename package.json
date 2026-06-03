@@ -1,0 +1,16 @@
+{
+  "name": "jiazi-game",
+  "version": "0.1.0",
+  "description": "甲子纪 - 六十甲子回合制策略卡牌游戏",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "python3 -m http.server 3000"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
