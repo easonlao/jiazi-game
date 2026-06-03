@@ -10,7 +10,7 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Godot 4.6 |
+| **Engine** | Phaser 3.90.0 |
 | **Domain** | Core |
 | **Knowledge Risk** | LOW (mathematical calculations, no engine APIs) |
 | **References Consulted** | None |

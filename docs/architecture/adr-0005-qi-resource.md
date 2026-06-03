@@ -10,10 +10,10 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Godot 4.6 |
+| **Engine** | Phaser 3 |
 | **Domain** | Core / Gameplay |
 | **Knowledge Risk** | LOW (pure logic, no engine-specific rendering/physics) |
-| **References Consulted** | None (standard GDScript) |
+| **References Consulted** | None (standard TypeScript) |
 | **Post-Cutoff APIs Used** | None |
 | **Verification Required** | Ensure JSON loading handles missing fields gracefully |
 
@@ -21,7 +21,7 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Depends On** | ADR-0002 (Singleton vs Node design) |
+| **Depends On** | None |
 | **Enables** | TurnFlow (spending/recovery), HandManagement (buy/sell costs), Leverage (margin call) |
 | **Blocks** | None |
 | **Ordering Note** | None |
@@ -48,90 +48,111 @@ If Qi reaches zero while holding leveraged cards, a margin call (forced sell) mu
 - Manage Qi state (current, max)
 - Enforce spend/recovery rules
 - Trigger margin call mechanism
-- Notify UI of changes via signals
+- Notify UI of changes via events
 
 ## Decision
 
-### QiManager as Autoload
+### QiManager as Singleton
 
-`QiManager` will be a global singleton (Autoload) to provide easy access
+`QiManager` will be a global singleton to provide easy access
 from all game systems (TurnFlow, HandManagement, UI).
 
 ### Public Interface
 
-```gdscript
-# QiManager.gd
-extends Node
+```typescript
+// QiManager.ts
+import { EventEmitter } from 'events';
 
-signal qi_changed(new_qi: int, old_qi: int)
-signal qi_depleted()
-signal margin_call_triggered(card_name: String, slot: int)
+export interface QiManagerEvents {
+  qiChanged: (newQi: number, oldQi: number) => void;
+  qiDepleted: () => void;
+  marginCallTriggered: (cardName: string, slot: number) => void;
+}
 
-const MAX_QI: int = 80
-const START_QI: int = 50
-const BASE_RECOVERY: int = 7
-const WAIT_BONUS: int = 10
-const SELL_COST: int = 3
-const SELL_RECOVERY: int = 8
-const LEVERAGE_EXTRA_COST: int = 10
+export class QiManager extends EventEmitter {
+  static readonly MAX_QI: number = 80;
+  static readonly START_QI: number = 50;
+  static readonly BASE_RECOVERY: number = 7;
+  static readonly WAIT_BONUS: number = 10;
+  static readonly SELL_COST: number = 3;
+  static readonly SELL_RECOVERY: number = 8;
+  static readonly LEVERAGE_EXTRA_COST: number = 10;
 
-var current_qi: int = START_QI
+  private currentQi: number = QiManager.START_QI;
 
-func get_qi() -> int:
-    return current_qi
+  getQi(): number {
+    return this.currentQi;
+  }
 
-func get_max_qi() -> int:
-    return MAX_QI
+  getMaxQi(): number {
+    return QiManager.MAX_QI;
+  }
 
-func spend(amount: int) -> bool:
-    if current_qi >= amount:
-        var old_qi = current_qi
-        current_qi -= amount
-        qi_changed.emit(current_qi, old_qi)
-        if current_qi == 0:
-            qi_depleted.emit()
-        return true
-    return false
+  spend(amount: number): boolean {
+    if (this.currentQi >= amount) {
+      const oldQi = this.currentQi;
+      this.currentQi -= amount;
+      this.emit('qiChanged', this.currentQi, oldQi);
+      if (this.currentQi === 0) {
+        this.emit('qiDepleted');
+      }
+      return true;
+    }
+    return false;
+  }
 
-func recover(amount: int) -> void:
-    var old_qi = current_qi
-    current_qi = min(MAX_QI, current_qi + amount)
-    if current_qi != old_qi:
-        qi_changed.emit(current_qi, old_qi)
+  recover(amount: number): void {
+    const oldQi = this.currentQi;
+    this.currentQi = Math.min(QiManager.MAX_QI, this.currentQi + amount);
+    if (this.currentQi !== oldQi) {
+      this.emit('qiChanged', this.currentQi, oldQi);
+    }
+  }
 
-func can_afford(amount: int) -> bool:
-    return current_qi >= amount
+  canAfford(amount: number): boolean {
+    return this.currentQi >= amount;
+  }
 
-func get_buy_cost(card_score: float, use_leverage: bool) -> int:
-    var cost = 12 * (1 + 0.05 * card_score)
-    if use_leverage:
-        cost += LEVERAGE_EXTRA_COST
-    return int(round(cost))
+  getBuyCost(cardScore: number, useLeverage: boolean): number {
+    let cost = 12 * (1 + 0.05 * cardScore);
+    if (useLeverage) {
+      cost += QiManager.LEVERAGE_EXTRA_COST;
+    }
+    return Math.round(cost);
+  }
 
-func get_hold_cost(card_score: float, leverage: float) -> float:
-    var base = max(0.5, 1.5 + 0.4 * card_score)
-    return base * leverage
+  getHoldCost(cardScore: number, leverage: number): number {
+    const base = Math.max(0.5, 1.5 + 0.4 * cardScore);
+    return base * leverage;
+  }
+}
 ```
 
 ### Margin Call Logic
 
 While QiManager tracks Qi, it does NOT directly modify hand state.
-It emits `qi_depleted` and `margin_call_triggered` signals.
+It emits `qiDepleted` and `marginCallTriggered` events.
 TurnFlow listens and coordinates the forced sell.
 
-```gdscript
-# TurnFlow.gd (after deducting hold costs)
-func _check_margin_call() -> void:
-    while qi_manager.get_qi() == 0 and hand_manager.has_leverage_cards():
-        var slot = hand_manager.get_random_leverage_slot()
-        var card = hand_manager.get_card(slot)
-        qi_manager.margin_call_triggered.emit(card.name, slot)
-        # Calculate sell score
-        var sell_score = score_manager.calculate_sell_score(card.card, card.buy_score, season_cycle.get_current_season(), card.leverage)
-        score_manager.add_score(sell_score)
-        hand_manager.sell(slot)
-        # Note: Sell cost (3) is NOT deducted for forced sells
-        # Note: Sell recovery (8) is NOT applied for forced sells
+```typescript
+// TurnFlow.ts (after deducting hold costs)
+private checkMarginCall(): void {
+  while (this.qiManager.getQi() === 0 && this.handManager.hasLeverageCards()) {
+    const slot = this.handManager.getRandomLeverageSlot();
+    const handSlot = this.handManager.getCardAt(slot);
+    this.qiManager.emit('marginCallTriggered', handSlot.card.name, slot);
+    // Calculate sell score
+    const sellScore = this.scoring.calculateSellScore(
+      handSlot.card,
+      handSlot.buyScore,
+      this.season.getCurrentSeason()
+    );
+    this.scoring.addScore(sellScore);
+    this.handManager.sell(slot);
+    // Note: Sell cost (3) is NOT deducted for forced sells
+    // Note: Sell recovery (8) is NOT applied for forced sells
+  }
+}
 ```
 
 ## Alternatives Considered
@@ -148,7 +169,7 @@ func _check_margin_call() -> void:
 ### Positive
 - Centralized resource management.
 - Clear, testable interface.
-- Signals decouple Qi state from UI and other systems.
+- Events decouple Qi state from UI and other systems.
 
 ### Negative
 - Margin call logic is split between QiManager and TurnFlow.
@@ -156,19 +177,19 @@ func _check_margin_call() -> void:
 
 ### Risks
 - **Integer rounding**: GDD formulas use decimals; continuous rounding could drift.
-  Mitigation: Store Qi as `float` internally, expose `int` via getter.
+  Mitigation: Store Qi as `number` internally, expose via getter.
 
 ## GDD Requirements Addressed
 
 | GDD System | Requirement | How This ADR Addresses It |
 |------------|-------------|--------------------------|
 | system-qi-resource.md | Max 80, start 50 | `MAX_QI`, `START_QI` constants |
-| system-qi-resource.md | Recovery 7 per turn | `BASE_RECOVERY` in `recover_turn` |
+| system-qi-resource.md | Recovery 7 per turn | `BASE_RECOVERY` in `recoverTurn` |
 | system-qi-resource.md | Wait recovers 10 | `WAIT_BONUS` |
-| system-qi-resource.md | Buy cost formula | `get_buy_cost` |
+| system-qi-resource.md | Buy cost formula | `getBuyCost` |
 | system-qi-resource.md | Sell cost 3, recovery 8 | `SELL_COST`, `SELL_RECOVERY` |
-| system-qi-resource.md | Hold cost formula | `get_hold_cost` |
-| system-leverage.md | Margin call at Qi=0 | `qi_depleted` signal + TurnFlow logic |
+| system-qi-resource.md | Hold cost formula | `getHoldCost` |
+| system-leverage.md | Margin call at Qi=0 | `qiDepleted` event + TurnFlow logic |
 
 ## Performance Implications
 - **CPU**: Negligible (basic arithmetic).
@@ -184,5 +205,4 @@ Not applicable (first implementation).
 - [ ] Integration test: Qi reaches 0 without leverage -> game over.
 
 ## Related Decisions
-- ADR-0002: Singleton vs Node design (QiManager as Autoload)
 - ADR-0004: Card data and scoring (provides score values for cost calculations)

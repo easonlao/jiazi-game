@@ -10,7 +10,7 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Godot 4.6 |
+| **Engine** | Phaser 3 |
 | **Domain** | Core |
 | **Knowledge Risk** | LOW (standard array operations) |
 | **References Consulted** | None |
@@ -21,7 +21,7 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Depends On** | ADR-0002 (Singleton vs Node design), ADR-0004 (Card data structure) |
+| **Depends On** | ADR-0004 (Card data structure) |
 | **Enables** | TurnFlow (drawing cards), HandManagement (buying cards) |
 | **Blocks** | None |
 | **Ordering Note** | None |
@@ -46,89 +46,105 @@ Proposed
 
 ## Decision
 
-### CardPoolManager as Scene Node
+### CardPoolManager as Scene Component
 
-`CardPoolManager` will be a child of the game scene (not an Autoload) because its state (remaining deck, public cards) is tied to the current session and must reset between games.
+`CardPoolManager` will be a child of the game scene (not a singleton) because its state (remaining deck, public cards) is tied to the current session and must reset between games.
 
 ### Public Interface
 
-```gdscript
-# CardPoolManager.gd
-extends Node
+```typescript
+// CardPoolManager.ts
+import { JiaziCard } from '../data/CardDataBank';
+import { EventEmitter } from 'events';
 
-signal cards_drawn(public_cards: Array)
-signal deck_emptied()
+export interface CardPoolManagerEvents {
+  cardsDrawn: (publicCards: JiaziCard[]) => void;
+  deckEmptied: () => void;
+}
 
-var deck: Array[JiaziCard] = []     # remaining cards (order matters)
-var public_cards: Array[JiaziCard] = []   # currently displayed (0-2 cards)
+export class CardPoolManager extends EventEmitter {
+  private deck: JiaziCard[] = [];           // remaining cards (order matters)
+  private publicCards: JiaziCard[] = [];    // currently displayed (0-2 cards)
 
-# Called once at game start
-func initialize(all_cards: Array[JiaziCard]) -> void:
-    deck = all_cards.duplicate()
-    shuffle_deck()
-    public_cards.clear()
+  // Called once at game start
+  initialize(allCards: JiaziCard[]): void {
+    this.deck = [...allCards];
+    this.shuffleDeck();
+    this.publicCards = [];
+  }
 
-func shuffle_deck() -> void:
-    # Fisher-Yates shuffle
-    for i in range(deck.size() - 1, 0, -1):
-        var j = randi() % (i + 1)
-        var temp = deck[i]
-        deck[i] = deck[j]
-        deck[j] = temp
+  private shuffleDeck(): void {
+    // Fisher-Yates shuffle
+    for (let i = this.deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
+    }
+  }
 
-# Draw up to 2 cards; returns array of drawn cards
-func draw_cards() -> Array[JiaziCard]:
-    var drawn: Array[JiaziCard] = []
-    var count = min(2, deck.size())
-    for i in range(count):
-        drawn.append(deck.pop_front())
-    public_cards = drawn
-    cards_drawn.emit(public_cards)
-    if deck.is_empty():
-        deck_emptied.emit()
-    return drawn
+  // Draw up to 2 cards; returns array of drawn cards
+  drawCards(): JiaziCard[] {
+    const drawn: JiaziCard[] = [];
+    const count = Math.min(2, this.deck.length);
+    for (let i = 0; i < count; i++) {
+      drawn.push(this.deck.shift()!);
+    }
+    this.publicCards = drawn;
+    this.emit('cardsDrawn', this.publicCards);
+    if (this.deck.length === 0) {
+      this.emit('deckEmptied');
+    }
+    return drawn;
+  }
 
-# Player buys card at index (0 or 1)
-func buy_card(index: int) -> JiaziCard:
-    if index < 0 or index >= public_cards.size():
-        return null
-    var card = public_cards[index]
-    public_cards.clear()  # both cards are gone after buy
-    return card
+  // Player buys card at index (0 or 1)
+  buyCard(index: number): JiaziCard | null {
+    if (index < 0 || index >= this.publicCards.length) {
+      return null;
+    }
+    const card = this.publicCards[index];
+    this.publicCards = [];  // both cards are gone after buy
+    return card;
+  }
 
-# Return unselected cards to random deck positions
-func return_public_cards() -> void:
-    for card in public_cards:
-        var pos = randi() % (deck.size() + 1)  # 0 to deck.size() inclusive
-        deck.insert(pos, card)
-    public_cards.clear()
+  // Return unselected cards to random deck positions
+  returnPublicCards(): void {
+    for (const card of this.publicCards) {
+      const pos = Math.floor(Math.random() * (this.deck.length + 1));  // 0 to deck.length inclusive
+      this.deck.splice(pos, 0, card);
+    }
+    this.publicCards = [];
+  }
 
-func get_public_cards() -> Array[JiaziCard]:
-    return public_cards.duplicate()
+  getPublicCards(): JiaziCard[] {
+    return [...this.publicCards];
+  }
 
-func get_deck_size() -> int:
-    return deck.size()
+  getDeckSize(): number {
+    return this.deck.length;
+  }
+}
 ```
 
 ### Usage in TurnFlow
 
-```gdscript
-# TurnFlow.gd (excerpt)
-func _draw_cards() -> void:
-    var drawn = card_pool_manager.draw_cards()
-    emit_signal("cards_drawn", drawn)
+```typescript
+// TurnFlow.ts (excerpt)
+private drawCards(): void {
+  const drawn = this.cardPool.drawCards();
+  this.emit('cardsDrawn', drawn);
+}
 ```
 
 ## Alternatives Considered
 
-### Alternative 1: Autoload CardPoolManager
+### Alternative 1: Singleton CardPoolManager
 
-- **Description**: Make CardPoolManager an Autoload singleton.
+- **Description**: Make CardPoolManager a global singleton.
 - **Pros**: Easy access from anywhere.
 - **Cons**: State persists between game sessions; requires manual reset.
-- **Rejection Reason**: Violates session-state principle (ADR-0002).
+- **Rejection Reason**: Violates session-state principle.
 
-### Alternative 2: Use Godot's Array + RNG directly in TurnFlow
+### Alternative 2: Use Phaser's RandomDataGenerator directly in TurnFlow
 
 - **Description**: No separate manager; TurnFlow manages deck directly.
 - **Pros**: Simpler, fewer files.
@@ -143,24 +159,24 @@ func _draw_cards() -> void:
 - Deck state reset naturally when game scene is recreated.
 
 ### Negative
-- Slightly more boilerplate (one extra node).
+- Slightly more boilerplate (one extra component).
 
 ### Risks
-- **Randomness quality**: `randi()` is deterministic but not cryptographically secure — fine for game RNG.
-- **Performance**: Array insert at random position is O(N); deck size is 60, negligible.
+- **Randomness quality**: `Math.random()` is suitable for game RNG.
+- **Performance**: Array splice at random position is O(N); deck size is 60, negligible.
 
 ## GDD Requirements Addressed
 
 | GDD System | Requirement | How This ADR Addresses It |
 |------------|-------------|--------------------------|
-| system-card-pool.md | 60 cards shuffled at start | `initialize()` + `shuffle_deck()` |
-| system-card-pool.md | Draw 2 cards per turn | `draw_cards()` returns 2 |
-| system-card-pool.md | Unselected cards return to random position | `return_public_cards()` with random insert |
-| system-card-pool.md | Deck depletion handling | `deck_emptied` signal, `draw_cards()` handles 0-1 cards |
-| system-card-pool.md | Bought cards removed permanently | `buy_card()` removes from public, not returned to deck |
+| system-card-pool.md | 60 cards shuffled at start | `initialize()` + `shuffleDeck()` |
+| system-card-pool.md | Draw 2 cards per turn | `drawCards()` returns 2 |
+| system-card-pool.md | Unselected cards return to random position | `returnPublicCards()` with random insert |
+| system-card-pool.md | Deck depletion handling | `deckEmptied` event, `drawCards()` handles 0-1 cards |
+| system-card-pool.md | Bought cards removed permanently | `buyCard()` removes from public, not returned to deck |
 
 ## Performance Implications
-- **CPU**: Fisher-Yates O(n) = 60 swaps at start; each insert O(n) = up to 60 operations; negligible.
+- **CPU**: Fisher-Yates O(n) = 60 swaps at start; each splice O(n) = up to 60 operations; negligible.
 - **Memory**: Deck array stores 60 references (~480 bytes).
 
 ## Migration Plan
@@ -174,5 +190,4 @@ Not applicable (first implementation).
 - [ ] Unit test: Random insertion position is within valid range.
 
 ## Related Decisions
-- ADR-0002: Singleton vs Node design (CardPoolManager as scene node)
 - ADR-0004: Card data structure (JiaziCard)

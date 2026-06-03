@@ -1,4 +1,4 @@
-# ADR-0007: Ńé½Ńâ╝Ńâëš«íšÉć (Hand Management)
+# ADR-0007: 手牌管理 (Hand Management)
 
 ## Status
 Proposed
@@ -10,7 +10,7 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Godot 4.6 |
+| **Engine** | Phaser 3.90.0 |
 | **Domain** | Core |
 | **Knowledge Risk** | LOW (standard data structures) |
 | **References Consulted** | None |

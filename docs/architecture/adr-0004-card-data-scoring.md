@@ -10,10 +10,10 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Engine** | Godot 4.6 |
+| **Engine** | Phaser 3 |
 | **Domain** | Core / Data |
 | **Knowledge Risk** | LOW (data structures, no post-cutoff APIs) |
-| **References Consulted** | `docs/engine-reference/godot/current-best-practices.md` (static typing, preload) |
+| **References Consulted** | TypeScript interfaces, JSON loading patterns |
 | **Post-Cutoff APIs Used** | None |
 | **Verification Required** | Ensure JSON loading handles missing fields gracefully |
 
@@ -21,7 +21,7 @@ Proposed
 
 | Field | Value |
 |-------|-------|
-| **Depends On** | ADR-0002 (Singleton vs Node design) |
+| **Depends On** | None |
 | **Enables** | All scoring, card pool, hand management implementation |
 | **Blocks** | None |
 | **Ordering Note** | ADR-0004 should be Accepted before implementing any card-related logic |
@@ -47,7 +47,7 @@ Proposed
 
 ### Data Storage Format
 
-**JSON resource file** (`res://data/cards/jiazi_cards.json`):
+**JSON resource file** (`src/data/cards/jiazi_cards.json`):
 
 ```json
 {
@@ -56,134 +56,151 @@ Proposed
     {
       "id": 1,
       "name": "甲子",
-      "tian_gan": "甲",
-      "di_zhi": "子",
-      "tian_gan_element": "wood",
-      "di_zhi_element": "water",
-      "main_element": "wood",
-      "yin_yang": "yang"
-    },
-    ...
+      "tianGan": "甲",
+      "diZhi": "子",
+      "tianGanElement": "wood",
+      "diZhiElement": "water",
+      "mainElement": "wood",
+      "yinYang": "yang"
+    }
   ]
 }
 ```
 
-### Data Class Definition (GDScript)
+### Data Class Definition (TypeScript)
 
-```gdscript
-# CardDataBank.gd (Autoload)
-extends Node
-
-class JiaziCard:
-    var id: int
-    var name: String
-    var tian_gan: String
-    var di_zhi: String
-    var tian_gan_element: String
-    var di_zhi_element: String
-    var main_element: String
-    var yin_yang: String  # "yang" or "yin"
-
-# Cang gan mapping (di_zhi → array of [gan, weight])
-const CANG_GAN_DICT: Dictionary = {
-    "子": [["癸", 1.0]],
-    "丑": [["己", 0.6], ["癸", 0.2], ["辛", 0.2]],
-    "寅": [["甲", 0.6], ["丙", 0.3], ["戊", 0.1]],
-    "卯": [["乙", 1.0]],
-    "辰": [["戊", 0.6], ["乙", 0.3], ["癸", 0.1]],
-    "巳": [["丙", 0.6], ["庚", 0.3], ["戊", 0.1]],
-    "午": [["丁", 0.7], ["己", 0.3]],
-    "未": [["己", 0.6], ["丁", 0.2], ["乙", 0.2]],
-    "申": [["庚", 0.6], ["壬", 0.3], ["戊", 0.1]],
-    "酉": [["辛", 1.0]],
-    "戌": [["戊", 0.6], ["辛", 0.3], ["丁", 0.1]],
-    "亥": [["壬", 0.7], ["甲", 0.3]]
+```typescript
+// CardDataBank.ts
+export interface JiaziCard {
+  id: number;
+  name: string;
+  tianGan: string;
+  diZhi: string;
+  tianGanElement: string;
+  diZhiElement: string;
+  mainElement: string;
+  yinYang: string;  // "yang" or "yin"
 }
 
-# Element to season score mapping (season values: -3, -1, +2, +4)
-const ELEMENT_SEASON_SCORE: Dictionary = {
-    "wood": {"spring": 4, "summer": 2, "autumn": -3, "winter": -1},
-    "fire": {"spring": 2, "summer": 4, "autumn": -1, "winter": -3},
-    "earth": {"spring": 1, "summer": 1, "autumn": 1, "winter": 1},
-    "metal": {"spring": -3, "summer": -1, "autumn": 4, "winter": 2},
-    "water": {"spring": -1, "summer": -3, "autumn": 2, "winter": 4}
+export interface CangGanEntry {
+  gan: string;
+  weight: number;
 }
 
-const CANG_GAN_WEIGHT: float = 0.5
+// Cang gan mapping (di_zhi → array of [gan, weight])
+export const CANG_GAN_DICT: Record<string, CangGanEntry[]> = {
+  "子": [{ gan: "癸", weight: 1.0 }],
+  "丑": [{ gan: "己", weight: 0.6 }, { gan: "癸", weight: 0.2 }, { gan: "辛", weight: 0.2 }],
+  "寅": [{ gan: "甲", weight: 0.6 }, { gan: "丙", weight: 0.3 }, { gan: "戊", weight: 0.1 }],
+  "卯": [{ gan: "乙", weight: 1.0 }],
+  "辰": [{ gan: "戊", weight: 0.6 }, { gan: "乙", weight: 0.3 }, { gan: "癸", weight: 0.1 }],
+  "巳": [{ gan: "丙", weight: 0.6 }, { gan: "庚", weight: 0.3 }, { gan: "戊", weight: 0.1 }],
+  "午": [{ gan: "丁", weight: 0.7 }, { gan: "己", weight: 0.3 }],
+  "未": [{ gan: "己", weight: 0.6 }, { gan: "丁", weight: 0.2 }, { gan: "乙", weight: 0.2 }],
+  "申": [{ gan: "庚", weight: 0.6 }, { gan: "壬", weight: 0.3 }, { gan: "戊", weight: 0.1 }],
+  "酉": [{ gan: "辛", weight: 1.0 }],
+  "戌": [{ gan: "戊", weight: 0.6 }, { gan: "辛", weight: 0.3 }, { gan: "丁", weight: 0.1 }],
+  "亥": [{ gan: "壬", weight: 0.7 }, { gan: "甲", weight: 0.3 }]
+};
 
-var _cards: Array[JiaziCard] = []
-var _cards_by_id: Dictionary = {}
+// Element to season score mapping (season values: -3, -1, +2, +4)
+export const ELEMENT_SEASON_SCORE: Record<string, Record<string, number>> = {
+  wood: { spring: 4, summer: 2, autumn: -3, winter: -1 },
+  fire: { spring: 2, summer: 4, autumn: -1, winter: -3 },
+  earth: { spring: 1, summer: 1, autumn: 1, winter: 1 },
+  metal: { spring: -3, summer: -1, autumn: 4, winter: 2 },
+  water: { spring: -1, summer: -3, autumn: 2, winter: 4 }
+};
 
-func _ready() -> void:
-    load_cards_from_json()
+export class CardDataBank {
+  private cards: JiaziCard[] = [];
+  private cardsById: Map<number, JiaziCard> = new Map();
 
-func load_cards_from_json() -> void:
-    var file = FileAccess.open("res://data/cards/jiazi_cards.json", FileAccess.READ)
-    var json = JSON.parse_string(file.get_as_text())
-    for card_data in json["cards"]:
-        var card = JiaziCard.new()
-        card.id = card_data["id"]
-        card.name = card_data["name"]
-        card.tian_gan = card_data["tian_gan"]
-        card.di_zhi = card_data["di_zhi"]
-        card.tian_gan_element = card_data["tian_gan_element"]
-        card.di_zhi_element = card_data["di_zhi_element"]
-        card.main_element = card_data["main_element"]
-        card.yin_yang = card_data.get("yin_yang", "")
-        _cards.append(card)
-        _cards_by_id[card.id] = card
+  constructor() {
+    this.loadCardsFromJson();
+  }
 
-func get_card(id: int) -> JiaziCard:
-    return _cards_by_id.get(id)
+  private loadCardsFromJson(): void {
+    // Load from JSON (Phaser scene.load.json or fetch)
+    const jsonData = require('../data/cards/jiazi_cards.json');
+    for (const cardData of jsonData.cards) {
+      const card: JiaziCard = {
+        id: cardData.id,
+        name: cardData.name,
+        tianGan: cardData.tianGan,
+        diZhi: cardData.diZhi,
+        tianGanElement: cardData.tianGanElement,
+        diZhiElement: cardData.diZhiElement,
+        mainElement: cardData.mainElement,
+        yinYang: cardData.yinYang || ''
+      };
+      this.cards.push(card);
+      this.cardsById.set(card.id, card);
+    }
+  }
 
-func get_all_cards() -> Array[JiaziCard]:
-    return _cards.duplicate()
+  getCard(id: number): JiaziCard | undefined {
+    return this.cardsById.get(id);
+  }
+
+  getAllCards(): JiaziCard[] {
+    return [...this.cards];
+  }
+}
 ```
 
 ### Scoring Calculation
 
-```gdscript
-# ScoreManager.gd (Autoload)
-extends Node
+```typescript
+// ScoreManager.ts
+import { JiaziCard, CANG_GAN_DICT, ELEMENT_SEASON_SCORE } from '../data/CardDataBank';
+import { EventEmitter } from 'events';
 
-signal score_changed(new_score: float, delta: float)
+export interface ScoreManagerEvents {
+  scoreChanged: (newScore: number, delta: number) => void;
+}
 
-var total_score: float = 0.0
-const HOLD_BONUS: float = 1.2
-const SELL_BASE: float = 8.0
-const SPREAD_MULTIPLIER: float = 4.0
+export class ScoreManager extends EventEmitter {
+  private totalScore: number = 0;
+  private static readonly HOLD_BONUS: number = 1.2;
+  private static readonly SELL_BASE: number = 8.0;
+  private static readonly SPREAD_MULTIPLIER: number = 4.0;
+  private static readonly CANG_GAN_WEIGHT: number = 0.5;
 
-func calculate_card_score(card: JiaziCard, season: String) -> float:
-    var tian_gan_score = CardDataBank.ELEMENT_SEASON_SCORE[card.tian_gan_element][season]
+  calculateCardScore(card: JiaziCard, season: string): number {
+    const tianGanScore = ELEMENT_SEASON_SCORE[card.tianGanElement][season];
     
-    var cang_gan_score_sum: float = 0.0
-    var cang_list = CardDataBank.CANG_GAN_DICT.get(card.di_zhi, [])
-    for entry in cang_list:
-        var gan = entry[0]
-        var weight = entry[1]
-        # Map gan to element (simplified: use tian_gan of the gan)
-        var gan_element = _get_element_from_gan(gan)
-        var gan_season_score = CardDataBank.ELEMENT_SEASON_SCORE[gan_element][season]
-        cang_gan_score_sum += weight * gan_season_score
+    let cangGanScoreSum: number = 0;
+    const cangList = CANG_GAN_DICT[card.diZhi] || [];
+    for (const entry of cangList) {
+      const ganElement = this.getElementFromGan(entry.gan);
+      const ganSeasonScore = ELEMENT_SEASON_SCORE[ganElement][season];
+      cangGanScoreSum += entry.weight * ganSeasonScore;
+    }
     
-    return tian_gan_score + CardDataBank.CANG_GAN_WEIGHT * cang_gan_score_sum
+    return tianGanScore + ScoreManager.CANG_GAN_WEIGHT * cangGanScoreSum;
+  }
 
-func calculate_hold_score(hand: Array, season: String) -> float:
-    var total: float = 0.0
-    for slot in hand:
-        if slot == null or slot.card == null:
-            continue
-        var card_score = calculate_card_score(slot.card, season)
-        total += HOLD_BONUS * card_score * slot.leverage
-    return total
+  calculateHoldScore(hand: HandSlot[], season: string): number {
+    let total: number = 0;
+    for (const slot of hand) {
+      if (!slot || !slot.card) continue;
+      const cardScore = this.calculateCardScore(slot.card, season);
+      total += ScoreManager.HOLD_BONUS * cardScore * slot.leverage;
+    }
+    return total;
+  }
 
-func calculate_sell_score(card: JiaziCard, buy_score: float, season: String, leverage: float) -> float:
-    var sell_score = calculate_card_score(card, season)
-    return (SELL_BASE + (sell_score - buy_score) * SPREAD_MULTIPLIER) * leverage
+  calculateSellScore(card: JiaziCard, buyScore: number, season: string): number {
+    const sellScore = this.calculateCardScore(card, season);
+    return (ScoreManager.SELL_BASE + (sellScore - buyScore) * ScoreManager.SPREAD_MULTIPLIER);
+  }
 
-func add_score(value: float) -> void:
-    total_score += value
-    score_changed.emit(total_score, value)
+  addScore(value: number): void {
+    this.totalScore += value;
+    this.emit('scoreChanged', this.totalScore, value);
+  }
+}
 ```
 
 ### Extension Points
@@ -197,17 +214,17 @@ func add_score(value: float) -> void:
 
 ### Alternative 1: 硬编码卡牌数据
 
-- **Description**: 直接在 GDScript 中定义 60 个常量。
+- **Description**: 直接在 TypeScript 中定义 60 个常量。
 - **Pros**: 简单，无需文件 I/O。
 - **Cons**: 修改需要重编译；不便于设计迭代。
 - **Rejection Reason**: 违反数据驱动原则，不利于调参。
 
-### Alternative 2: 使用 Godot Resource (.tres)
+### Alternative 2: 使用 Phaser 的 Scene Plugin
 
-- **Description**: 每张卡牌定义为单独的 Resource 文件。
-- **Pros**: Godot 原生支持，可视化编辑。
-- **Cons**: 60 个文件难以管理；跨卡牌查询需要在场景中加载所有资源。
-- **Rejection Reason**: JSON 单文件更简洁，适合批量数据。
+- **Description**: 使用 Phaser 内置的数据存储机制。
+- **Pros**: Phaser 原生支持。
+- **Cons**: JSON 单文件更简洁，适合批量数据。
+- **Rejection Reason**: JSON 更通用，便于版本控制和设计迭代。
 
 ## Consequences
 
@@ -215,13 +232,14 @@ func add_score(value: float) -> void:
 - 卡牌数据与代码分离，设计者可直接编辑 JSON。
 - 评分公式集中管理，易于调参。
 - 藏干数据独立于卡牌，减少数据冗余。
+- TypeScript 接口提供编译时类型安全。
 
 ### Negative
 - JSON 加载需要错误处理（文件缺失、格式错误）。
 - 藏干到五行的映射需要手动维护（约 12 条规则）。
 
 ### Risks
-- **JSON 加载失败风险**: 文件路径错误或格式错误会导致游戏无法启动。缓解：提供默认回退数据；在 `_ready()` 中捕获错误并打印日志。
+- **JSON 加载失败风险**: 文件路径错误或格式错误会导致游戏无法启动。缓解：提供默认回退数据；在构造函数中捕获错误并打印日志。
 - **藏干映射不完整风险**: 某些地支的藏干规则可能遗漏。缓解：与 GDD 核对；单元测试覆盖所有 60 张牌的评分。
 
 ## GDD Requirements Addressed
@@ -230,7 +248,7 @@ func add_score(value: float) -> void:
 |------------|-------------|--------------------------|
 | system-jiazi-cards.md | 60 甲子牌数据完整 | JSON 包含所有卡牌的完整定义 |
 | system-jiazi-cards.md | 每张牌的天干、地支、五行属性 | 数据结构包含所有字段 |
-| system-scoring.md | 卡牌评分公式 (天干 + 藏干加权) | score = tian_gan_score + 0.5 × Σ(藏干分) |
+| system-scoring.md | 卡牌评分公式 (天干 + 藏干加权) | score = tianGanScore + 0.5 × Σ(藏干分) |
 | system-scoring.md | 持仓收益计算公式 | `HOLD_BONUS(1.2) × 卡牌评分 × 杠杆` |
 | system-scoring.md | 卖出收益计算公式 | `SELL_BASE(8) + (卖出-买入评分)×4 × 杠杆` |
 
@@ -250,5 +268,4 @@ Not applicable (first implementation).
 - [ ] 持仓收益和卖出收益计算正确。
 
 ## Related Decisions
-- ADR-0002: 单例与节点式模块设计 (CardDataBank as Autoload)
-- ADR-0003: 信号驱动的模块间通信 (ScoreManager emits score_changed)
+- ADR-0003: EventEmitter 通信 (ScoreManager emits scoreChanged)
