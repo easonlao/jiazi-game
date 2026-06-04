@@ -94,53 +94,24 @@
 
 ## 公式
 
-### 持仓盈亏（每回合结算）
+### 盈亏与资源转化公式（规范引用）
 
-```
-每回合得分 = 持有牌的盈亏倍率 × 基础分值
-```
+季节对游戏资源（气与分数）转化效率的控制，本质上是通过**改变卡牌在不同季节下的“当季评分”**实现的。为了避免公式版本脱节，本系统所有具体的盈亏计算公式均引用 [system-scoring.md](file:///d:/works/jiazi-game/design/gdd/system-scoring.md)。
 
-| 位置关系 | 持仓倍率 | 示例 |
-|---------|---------|------|
-| 当季 | +HOLD_MAX | 木牌在春 |
-| 同组 | +HOLD_MID | 木牌在夏 |
-| 跨组 | -HOLD_MINOR | 木牌在冬 |
-| 对立 | -HOLD_MAJOR | 木牌在秋 |
-| 土（任意季节） | +HOLD_STABLE | 稳定正收益 |
+主要计算逻辑如下：
 
-### 卖出盈亏（一次性结算）
+1. **当季评分生成**：
+   卡牌的“评分”每回合根据当前季节实时计算，参见 [system-scoring.md - 评分表](file:///d:/works/jiazi-game/design/gdd/system-scoring.md#L59-L70)。当季 = +4，同组 = +2，跨组 = -1，对立 = -3，土 = +0.5。卡牌天干分加藏干分加权得出最终评分（范围约 `[-6.0, +6.0]`）。
 
-```
-卖出得分 = 卖出倍率 × 基础分值
-```
+2. **持仓收益（每回合自动）**：
+   `每回合持仓盈亏 = HOLD_BONUS(1.2) * 当季评分 * 杠杆倍数`。具体参见 [system-scoring.md - 持仓结算](file:///d:/works/jiazi-game/design/gdd/system-scoring.md#L33-L44)。
 
-| 位置关系 | 卖出倍率 |
-|---------|---------|
-| 当季 | +SELL_MAX |
-| 同组 | +SELL_MID |
-| 跨组 | -SELL_MINOR |
-| 对立 | -SELL_MAJOR |
-| 土（任意季节） | +SELL_STABLE |
+3. **卖出收益（一次性）**：
+   `卖出得分 = (SELL_BASE(8) + (卖出评分 - 买入评分) * SPREAD_MULTIPLIER(4)) * 杠杆倍数`。具体参见 [system-scoring.md - 卖出结算](file:///d:/works/jiazi-game/design/gdd/system-scoring.md#L48-L56)。
 
-> **设计约束**：卖出倍率 > 持仓单回合倍率（约 3-5 倍），确保短线操作有存在价值。
+4. **气资源消耗**：
+   卡牌的买入气消耗、持仓气耗和卖出气消耗，具体公式参见 [system-qi-resource.md - 气的消耗](file:///d:/works/jiazi-game/design/gdd/system-qi-resource.md#L36-L77)。
 
-### 气消耗
-
-```
-买入消耗 = 基础消耗 × 季节系数
-卖出消耗 = 基础消耗 × 卖出系数
-```
-
-| 情况 | 消耗系数 |
-|------|---------|
-| 买入当季属性牌 | COST_HIGH（最贵） |
-| 买入同组属性牌 | COST_MID |
-| 买入跨组属性牌 | COST_LOW |
-| 买入对立属性牌 | COST_LOWEST |
-| 买入土牌 | COST_BASE |
-| 卖出 | COST_SELL（固定） |
-
-> 逻辑：当季牌最值钱所以最贵，非当季牌便宜——在便宜时买入，贵时卖出，就是核心博弈。
 
 ## 边界情况
 

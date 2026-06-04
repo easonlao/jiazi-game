@@ -91,27 +91,18 @@
 
 ## 公式
 
-### 手牌持仓每回合总分
+### 手牌持仓与卖出计算（逻辑接口示意）
+
+手牌管理系统负责提供手牌的槽位状态与玩家数据。具体的持仓得分与卖出盈亏计算公式，以 [system-scoring.md](file:///d:/works/jiazi-game/design/gdd/system-scoring.md) 的定义为唯一准则。本模块仅定义逻辑接口结构：
 
 ```typescript
-function calculateHoldScore(hand: JiaziCard[], season: Season): number {
-  let totalScore = 0;
-  for (const card of hand) {
-    const multiplier = getSeasonMultiplier(card.mainElement, season);
-    totalScore += multiplier * BASE_SCORE;
-  }
-  return totalScore;
-}
+// 详细计算公式参见 system-scoring.md
+// 1. 每回合持仓结算：
+// roundScore = Σ settleHoldScore(handSlots, currentSeason)
+// 2. 卖出得分结算：
+// sellScore = settleSellScore(targetSlot, currentSeason)
 ```
 
-### 卖出一次性得分
-
-```typescript
-function calculateSellScore(card: JiaziCard, season: Season): number {
-  const multiplier = getSellMultiplier(card.mainElement, season);
-  return multiplier * BASE_SCORE;
-}
-```
 
 ## 边界情况
 
