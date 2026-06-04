@@ -134,6 +134,27 @@ export class SeasonCycle {
   }
 
   /**
+   * 推进当前季节回合的直接入口
+   */
+  advanceRound(): boolean {
+    return this.advance();
+  }
+
+  /**
+   * 获取当前季节已进行的回合数
+   */
+  getSeasonRound(): number {
+    return this.getCurrentRoundInSeason();
+  }
+
+  /**
+   * 获取总回合数
+   */
+  getTotalRounds(): number {
+    return this.totalRounds;
+  }
+
+  /**
    * 重置季节循环至第 1 回合春季状态，并重新生成随机长度
    */
   reset(): void {

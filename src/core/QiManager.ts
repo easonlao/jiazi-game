@@ -12,16 +12,19 @@ export class QiManager {
   private static readonly BASE_RECOVERY = 7;
   private static readonly WAIT_BONUS = 10;
   private static readonly SELL_COST = 3;
-  private static readonly SELL_RECOVER = 8;
-  private static readonly BASE_BUY_COST = 12;
+  private static readonly SELL_RECOVER = 9;
+  private static readonly BASE_BUY_COST = 11;
   private static readonly BUY_COST_FACTOR = 0.05;
 
   private qi: number;
   private maxQi: number;
 
-  constructor() {
-    this.qi = QiManager.INITIAL_QI;
+  constructor(initialQi?: number) {
     this.maxQi = QiManager.MAX_QI;
+    this.qi = initialQi !== undefined ? initialQi : QiManager.INITIAL_QI;
+    if (initialQi !== undefined) {
+      this.qi = Math.max(0, Math.min(this.maxQi, initialQi));
+    }
   }
 
   /**
@@ -85,12 +88,42 @@ export class QiManager {
    * @param useLeverage 是否加杠杆
    * @returns 消耗的气量值
    */
-  calculateBuyCost(cardScore: number, useLeverage: boolean): number {
+  calculateBuyCost(cardScore: number, useLeverage: boolean = false): number {
     let cost = QiManager.BASE_BUY_COST * (1 + QiManager.BUY_COST_FACTOR * cardScore);
     if (useLeverage) {
       cost += 10; // 杠杆额外消耗 10 气
     }
     return Math.ceil(cost);
+  }
+
+  /** 应用自然回复 */
+  applyNaturalRecovery(): void {
+    this.recover(QiManager.BASE_RECOVERY);
+  }
+
+  /** 应用卖出即时回复 */
+  applySellRecovery(): void {
+    this.recover(QiManager.SELL_RECOVER);
+  }
+
+  /** 应用等待额外回复 */
+  applyWaitRecovery(): void {
+    this.recover(QiManager.WAIT_BONUS);
+  }
+
+  /** 计算持仓气耗 */
+  calculateHoldCost(score: number, leverage: number): number {
+    return Math.max(0.5, 1.5 + 0.4 * score) * leverage;
+  }
+
+  /** 扣除气（支持负值以触发爆仓） */
+  deductQi(amount: number): void {
+    this.qi -= amount;
+  }
+
+  /** 检查是否爆仓 */
+  isMarginCall(): boolean {
+    return this.qi <= 0;
   }
 
   /**

@@ -40,6 +40,7 @@ export class TurnManager {
   private lastAction: ActionType | null;
   private selectedCardIndex: number;
   private useLeverage: boolean;
+  private marginCallCount: number;
 
   // 回调
   private onStateChange?: (state: GameState) => void;
@@ -60,6 +61,7 @@ export class TurnManager {
     this.lastAction = null;
     this.selectedCardIndex = -1;
     this.useLeverage = false;
+    this.marginCallCount = 0;
   }
 
   /**
@@ -115,6 +117,7 @@ export class TurnManager {
   private settleHoldings(): void {
     const hand = this.handManager.getHand();
     const currentSeason = this.seasonCycle.getCurrentSeason();
+    let totalQiCost = 0;
 
     for (const slot of hand) {
       if (slot) {
@@ -126,33 +129,66 @@ export class TurnManager {
         this.scoreManager.addHoldEarnings(holdEarnings);
         slot.holdEarnings += holdEarnings;
 
-        // 扣除持仓气耗
-        const qiCost = this.leverageCalculator.calculateHoldQiCost(
+        // 累计持仓气耗
+        totalQiCost += this.leverageCalculator.calculateHoldQiCost(
           slot.card.getSeasonScore(currentSeason),
           slot.leverage
         );
-        this.qiManager.spend(qiCost);
-
-        // 爆仓检查
-        if (this.leverageCalculator.checkMarginCall(this.qiManager.getQi())) {
-          this.handleMarginCall();
-        }
       }
+    }
+
+    // 强制扣除全部持仓气耗（支持扣成负数或0）
+    if (totalQiCost > 0) {
+      this.qiManager.deductQi(totalQiCost);
+    }
+
+    // 结算完成后进行爆仓判定
+    if (this.leverageCalculator.checkMarginCall(this.qiManager.getQi())) {
+      this.handleMarginCall();
     }
   }
 
   /**
    * 处理玩家爆仓情况：寻找玩家手牌中的杠杆卡牌并强行平仓出售
+   * 强平会循环随机平仓杠杆牌，正常结算卖出积分，但强平不消耗气，亦不提供卖出即时回气
    */
   private handleMarginCall(): void {
     console.log('[TurnManager] 爆仓！气耗尽');
-    // 找到杠杆牌并强平
-    const hand = this.handManager.getHand();
-    for (let i = 0; i < hand.length; i++) {
-      if (hand[i] && hand[i]!.leverage > 1) {
-        this.handManager.sell(i);
+
+    while (this.qiManager.getQi() <= 0) {
+      const hand = this.handManager.getHand();
+      const leverageIndices: number[] = [];
+
+      // 收集所有手牌中带有杠杆（leverage > 1）的插槽索引
+      for (let i = 0; i < hand.length; i++) {
+        if (hand[i] && hand[i]!.leverage > 1.0) {
+          leverageIndices.push(i);
+        }
+      }
+
+      // 若已无杠杆牌，强平终止（仅剩的普通无杠杆牌允许气为 0 持有，下回合被迫等待）
+      if (leverageIndices.length === 0) {
         break;
       }
+
+      // 随机选择一张杠杆牌进行强平
+      const targetIndex = leverageIndices[Math.floor(Math.random() * leverageIndices.length)];
+      const slot = hand[targetIndex]!;
+
+      // 正常获得卖出分数（强平惩罚：正收益打 8 折，负收益 100% 承担）
+      const currentScore = slot.card.getSeasonScore(this.seasonCycle.getCurrentSeason());
+      const baseSellScore = this.scoreManager.calculateSellScore(
+        currentScore,
+        slot.buyScore,
+        slot.leverage
+      );
+      const finalSellScore = baseSellScore > 0 ? Math.floor(baseSellScore * 0.8) : baseSellScore;
+      this.scoreManager.addSellEarnings(finalSellScore);
+
+      // 强平移除卡牌 (直接 sell，不扣除卖出气耗，亦不提供卖出即时回气)
+      this.handManager.sell(targetIndex);
+      this.marginCallCount++;
+      console.log(`[TurnManager] 爆仓强平：移除卡牌 ID ${slot.card.id}，结算收益 ${finalSellScore} 分`);
     }
   }
 
@@ -477,6 +513,11 @@ export class TurnManager {
     return this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason());
   }
 
+  /** 获取当前爆仓强平次数 */
+  getMarginCallCount(): number {
+    return this.marginCallCount;
+  }
+
   /** 重置游戏 */
   reset(): void {
     this.seasonCycle.reset();
@@ -490,5 +531,6 @@ export class TurnManager {
     this.lastAction = null;
     this.selectedCardIndex = -1;
     this.useLeverage = false;
+    this.marginCallCount = 0;
   }
 }

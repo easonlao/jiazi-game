@@ -30,11 +30,11 @@ describe('QiManager', () => {
   it('计算买入消耗应符合公式', () => {
     const qi = new QiManager();
     // cardScore = 3, useLeverage = false
-    // cost = Math.ceil(12 * (1 + 0.05 * 3)) = Math.ceil(12 * 1.15) = Math.ceil(13.8) = 14
-    expect(qi.calculateBuyCost(3, false)).toBe(14);
+    // cost = Math.ceil(11 * (1 + 0.05 * 3)) = Math.ceil(11 * 1.15) = Math.ceil(12.65) = 13
+    expect(qi.calculateBuyCost(3, false)).toBe(13);
 
     // cardScore = 3, useLeverage = true
-    // cost = 14 + 10 = 24
-    expect(qi.calculateBuyCost(3, true)).toBe(24);
+    // cost = 13 + 10 = 23
+    expect(qi.calculateBuyCost(3, true)).toBe(23);
   });
 });

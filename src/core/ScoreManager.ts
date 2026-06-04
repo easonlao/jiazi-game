@@ -70,6 +70,11 @@ export class ScoreManager {
     return ScoreManager.HOLD_BONUS * cardScore * leverage;
   }
 
+  /** 计算卡牌持仓收益（别名） */
+  calculateHoldEarning(cardScore: number, leverage: number): number {
+    return this.calculateHoldEarnings(cardScore, leverage);
+  }
+
   /**
    * 计算卡牌卖出时的得分收益
    * 
