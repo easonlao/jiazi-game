@@ -19,7 +19,6 @@ export class GameScene extends Phaser.Scene {
   private scoreLabel!: Phaser.GameObjects.Text;
   private qiBar!: Phaser.GameObjects.Graphics;
   private qiLabel!: Phaser.GameObjects.Text;
-  private qiMaintenanceLabel!: Phaser.GameObjects.Text;
   private publicCardsContainer!: Phaser.GameObjects.Container;
   private handContainer!: Phaser.GameObjects.Container;
   private buyButton!: Phaser.GameObjects.Container;
@@ -197,7 +196,9 @@ export class GameScene extends Phaser.Scene {
       color: '#5D4037',
       fontFamily: 'Arial',
       align: 'left',
-      wordWrap: { width: 300 },
+      wordWrap: {
+        callback: (text, textObject) => this.wrapChineseText(text, 300, textObject)
+      },
       lineSpacing: 2
     }).setOrigin(0.5).setDepth(413);
     helpElements.push(ruleContent);
@@ -210,6 +211,39 @@ export class GameScene extends Phaser.Scene {
       confirmBtn.destroy();
     });
     confirmBtn.setDepth(413);
+  }
+
+  /** 中文文本自动换行辅助函数 */
+  private wrapChineseText(text: string, wrapWidth: number, textObject: Phaser.GameObjects.Text): string {
+    const context = textObject.canvas.getContext('2d');
+    if (!context) return text;
+
+    const originalFont = context.font;
+    context.font = (textObject.style as any)._font || '12px Arial';
+
+    const paragraphs = text.split('\n');
+    const wrappedParagraphs = paragraphs.map(para => {
+      if (!para) return '';
+      const chars = para.split('');
+      let currentLine = '';
+      const lines: string[] = [];
+
+      for (let i = 0; i < chars.length; i++) {
+        const testLine = currentLine + chars[i];
+        const width = context.measureText(testLine).width;
+        if (width > wrapWidth && i > 0) {
+          lines.push(currentLine);
+          currentLine = chars[i];
+        } else {
+          currentLine = testLine;
+        }
+      }
+      lines.push(currentLine);
+      return lines.join('\n');
+    });
+
+    context.font = originalFont;
+    return wrappedParagraphs.join('\n');
   }
 
   private async initializeGame(): Promise<void> {
@@ -293,18 +327,10 @@ export class GameScene extends Phaser.Scene {
     this.qiBar = this.add.graphics();
     this.updateQiBar(50, 80);
 
-    // 气数值标签文字
-    this.qiLabel = this.add.text(214, 110, '气: 50/80', {
-      fontSize: '14px',
+    // 气数值与持仓气耗合并展示标签文字
+    this.qiLabel = this.add.text(214, 110, '气: 50.0/80 (持仓维持: -0.0气/回合)', {
+      fontSize: '13px',
       color: '#3E2723',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    // 持仓维持气耗预告
-    this.qiMaintenanceLabel = this.add.text(214, 134, '持仓维持: 0.0气/回合', {
-      fontSize: '11px',
-      color: '#795548',
       fontFamily: 'Arial',
       fontStyle: 'bold'
     }).setOrigin(0.5);
@@ -336,7 +362,7 @@ export class GameScene extends Phaser.Scene {
 
   /** 创建公共池卡牌展示区 */
   private createPublicCardsArea(): void {
-    const areaBg = this.add.rectangle(214, 260, 428, 240, 0xf5f0e8);
+    const areaBg = this.add.rectangle(214, 266, 428, 228, 0xf5f0e8);
     areaBg.setStrokeStyle(1, 0xd7ccc8);
 
     this.add.text(214, 150, '公共牌池', {
@@ -345,42 +371,42 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'Arial',
     }).setOrigin(0.5);
 
-    this.publicCardsContainer = this.add.container(214, 260);
+    this.publicCardsContainer = this.add.container(214, 266);
   }
 
   /** 创建玩家手牌区 */
   private createHandArea(): void {
-    const areaBg = this.add.rectangle(214, 490, 428, 220, 0xf5f0e8);
+    const areaBg = this.add.rectangle(214, 480, 428, 200, 0xf5f0e8);
     areaBg.setStrokeStyle(1, 0xd7ccc8);
 
-    this.add.text(214, 380, '我的手牌', {
+    this.add.text(214, 384, '我的手牌', {
       fontSize: '16px',
       color: '#795548',
       fontFamily: 'Arial',
     }).setOrigin(0.5);
 
-    this.handContainer = this.add.container(214, 490);
+    this.handContainer = this.add.container(214, 480);
   }
 
   /** 创建底部控制面板操作区域 */
   private createButtonArea(): void {
     // 买入按钮
-    this.buyButton = this.createButton(107, 645, '买入', 0x2196F3, () => {
+    this.buyButton = this.createButton(107, 648, '买入', 0x2196F3, () => {
       this.onBuyClick();
     });
 
     // 杠杆倍速切换按钮
-    this.leverageButton = this.createButton(321, 645, '杠杆 1.0x', 0x9E9E9E, () => {
+    this.leverageButton = this.createButton(321, 648, '杠杆 1.0x', 0x9E9E9E, () => {
       this.onLeverageClick();
     });
 
     // 卖出卡牌结算按钮
-    this.sellButton = this.createButton(107, 705, '卖出', 0xFF9800, () => {
+    this.sellButton = this.createButton(107, 708, '卖出', 0xFF9800, () => {
       this.onSellClick();
     });
 
     // 等待推进回合按钮
-    this.waitButton = this.createButton(321, 705, '等待', 0x4CAF50, () => {
+    this.waitButton = this.createButton(321, 708, '等待', 0x4CAF50, () => {
       this.onWaitClick();
     });
   }
@@ -437,21 +463,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createDecisionInfo(): void {
-    const bg = this.add.rectangle(214, 584, 400, 60, 0xfffdf5);
+    const bg = this.add.rectangle(214, 592, 400, 62, 0xfffdf5);
     bg.setStrokeStyle(1, 0xd7ccc8);
 
-    this.decisionInfo = this.add.text(214, 584, '选择公共牌买入，或选择手牌卖出', {
+    this.decisionInfo = this.add.text(214, 592, '选择公共牌买入，或选择手牌卖出', {
       fontSize: '12px',
       color: '#5D4037',
       fontFamily: 'Arial',
       align: 'center',
-      wordWrap: { width: 380 },
+      lineSpacing: 4,
+      wordWrap: {
+        callback: (text, textObject) => this.wrapChineseText(text, 380, textObject)
+      },
     }).setOrigin(0.5);
   }
 
   /** 显示临时小 Toast 文字提醒 */
   private showToast(message: string): void {
-    const toast = this.add.text(214, 380, message, {
+    const toast = this.add.text(214, 142, message, {
       fontSize: '15px',
       color: '#ffffff',
       fontFamily: 'Arial',
@@ -462,7 +491,7 @@ export class GameScene extends Phaser.Scene {
 
     this.tweens.add({
       targets: toast,
-      y: 340,
+      y: 128,
       alpha: 0,
       delay: 750,
       duration: 350,
@@ -677,11 +706,10 @@ export class GameScene extends Phaser.Scene {
     }
     this.lastScore = score;
 
-    // 4. 更新气状态
+    // 4. 更新气状态与持仓维持消耗显示
     this.updateQiBar(qi, 80);
-    this.qiLabel.setText(`气: ${qi.toFixed(1)}/80`);
 
-    // 计算当前持仓总气耗并更新预告
+    // 计算当前持仓总气耗并合并更新标签展示
     let totalQiCost = 0;
     const hand = this.turnManager.getHand();
     hand.forEach(slot => {
@@ -689,7 +717,7 @@ export class GameScene extends Phaser.Scene {
         totalQiCost += this.getHoldQiCost(slot.card.getSeasonScore(season), slot.leverage);
       }
     });
-    this.qiMaintenanceLabel.setText(`持仓维持: -${totalQiCost.toFixed(1)}气/回合`);
+    this.qiLabel.setText(`气: ${qi.toFixed(1)}/80 (持仓维持: -${totalQiCost.toFixed(1)}气/回合)`);
 
     // 5. 更新底部状态
     this.bottomInfo.setText(`牌堆剩余: ${deckSize}张 | 杠杆: ${leverage}x`);
@@ -918,7 +946,7 @@ export class GameScene extends Phaser.Scene {
       const x = startX + index * (cardWidth + spacing);
       
       // 选中上悬，未选中居平
-      const targetY = isSelected ? -12 : 0; 
+      const targetY = isSelected ? -6 : 0; 
       const cardSprite = this.createCardSprite(card, x, targetY, cardWidth, cardHeight, null);
 
       cardSprite.setInteractive();
@@ -956,7 +984,7 @@ export class GameScene extends Phaser.Scene {
 
       if (slot) {
         // 选中悬停抬起
-        const targetY = isSelected ? -12 : 0;
+        const targetY = isSelected ? -6 : 0;
         const cardSprite = this.createCardSprite(slot.card, x, targetY, cardWidth, cardHeight, slot);
 
         cardSprite.setInteractive();
@@ -1005,14 +1033,14 @@ export class GameScene extends Phaser.Scene {
     const pubSpacing = 20;
     const pubStartX = -((publicCards.length - 1) * (pubWidth + pubSpacing)) / 2;
     const originX = 214 + (pubStartX + cardIndex * (pubWidth + pubSpacing));
-    const originY = 260 - 12; // 计入上浮偏移量
+    const originY = 266 - 6; // 计入上浮偏移量
 
     // 目标手牌空槽世界坐标
     const handWidth = 120;
     const handSpacing = 10;
     const handStartX = -((3 - 1) * (handWidth + handSpacing)) / 2;
     const targetX = 214 + (handStartX + emptySlotIndex * (handWidth + handSpacing));
-    const targetY = 490;
+    const targetY = 480;
 
     // 克隆产生的卡牌 Container
     const flightObj = this.createCardSprite(card, originX, originY, 120, 160, null);
@@ -1048,7 +1076,7 @@ export class GameScene extends Phaser.Scene {
     const spacing = 10;
     const startX = -((hand.length - 1) * (cardWidth + spacing)) / 2;
     const originX = 214 + (startX + slotIndex * (cardWidth + spacing));
-    const originY = 490 - 12; // 计入选中浮起
+    const originY = 480 - 6; // 计入选中浮起
 
     const flightObj = this.createCardSprite(slot.card, originX, originY, 120, 160, slot);
     flightObj.setDepth(150);
