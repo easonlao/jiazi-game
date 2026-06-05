@@ -80,8 +80,136 @@ export class GameScene extends Phaser.Scene {
       this.showGameOver(finalScore);
     });
 
-    // 初始化并开启首局
-    this.initializeGame();
+    // 展示开始菜单
+    this.showStartScreen();
+  }
+
+  private showStartScreen(): void {
+    const elements: Phaser.GameObjects.GameObject[] = [];
+
+    // 1. 开始背景遮罩（宣纸颜色）
+    const startBg = this.add.rectangle(214, 380, 428, 760, 0xf5f0e8);
+    startBg.setInteractive(); // 阻断点击
+    startBg.setDepth(400);
+    elements.push(startBg);
+
+    // 精致内边框
+    const innerFrame = this.add.rectangle(214, 380, 398, 720);
+    innerFrame.setStrokeStyle(2, 0xd7ccc8);
+    innerFrame.setDepth(401);
+    elements.push(innerFrame);
+
+    // 2. 主标题
+    const titleText = this.add.text(214, 210, '甲 子 纪', {
+      fontSize: '46px',
+      color: '#3E2723',
+      fontFamily: 'Georgia, Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(402);
+    elements.push(titleText);
+
+    // 副标题
+    const subTitleText = this.add.text(214, 265, 'Jiazi Chronicle', {
+      fontSize: '18px',
+      color: '#795548',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(402);
+    elements.push(subTitleText);
+
+    // 玩法核心概念两行字
+    const descText = this.add.text(214, 335, '以六十甲子为主题\n回合制策略卡牌经营', {
+      fontSize: '15px',
+      color: '#5D4037',
+      fontFamily: 'Arial',
+      align: 'center',
+      lineSpacing: 8
+    }).setOrigin(0.5).setDepth(402);
+    elements.push(descText);
+
+    // 3. 开始游戏按钮
+    const startButton = this.createButton(214, 460, '开始游戏', 0x4CAF50, () => {
+      this.soundManager.playClick();
+      // 销毁所有开始界面元素
+      elements.forEach(el => el.destroy());
+      startButton.destroy();
+      helpButton.destroy();
+      aboutLink.destroy();
+      // 正式启动游戏
+      this.initializeGame();
+    });
+    startButton.setDepth(402);
+
+    // 4. 玩法说明大按钮
+    const helpButton = this.createButton(214, 520, '玩法说明', 0x2196F3, () => {
+      this.soundManager.playClick();
+      this.showHelpPopup();
+    });
+    helpButton.setDepth(402);
+
+    // 5. 关于（小字）
+    const aboutLink = this.add.text(214, 715, '关于 ｜ v0.1.0', {
+      fontSize: '11px',
+      color: '#9E9E9E',
+      fontFamily: 'Arial',
+    }).setOrigin(0.5).setDepth(402);
+  }
+
+  private showHelpPopup(): void {
+    const helpElements: Phaser.GameObjects.GameObject[] = [];
+
+    // 玩法弹窗遮罩（半透明黑）
+    const helpMask = this.add.rectangle(214, 380, 428, 760, 0x000000, 0.65);
+    helpMask.setInteractive();
+    helpMask.setDepth(410);
+    helpElements.push(helpMask);
+
+    // 古风卷轴弹窗背景
+    const helpBg = this.add.rectangle(214, 380, 360, 490, 0xfffdf5);
+    helpBg.setStrokeStyle(3, 0x3E2723);
+    helpBg.setDepth(411);
+    helpElements.push(helpBg);
+
+    // 内边框
+    const innerFrame = this.add.rectangle(214, 380, 340, 470);
+    innerFrame.setStrokeStyle(1, 0xd7ccc8);
+    innerFrame.setDepth(412);
+    helpElements.push(innerFrame);
+
+    // 规则标题
+    const ruleTitle = this.add.text(214, 185, '💡 玩法指南 💡', {
+      fontSize: '20px',
+      color: '#3E2723',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(413);
+    helpElements.push(ruleTitle);
+
+    // 规则正文
+    const rules = [
+      '1. 【低吸高抛】从公共牌池买入卡牌，适时在手牌区卖出卡牌以获取差价积分。',
+      '2. 【换季套利】按春、夏、秋、冬四季轮转。卡牌评分在与其五行相配的季节最高（木在春、火在夏、金在秋、水在冬评分最高），此时持有收益最大。',
+      '3. 【等待回气】手牌在每回合开始时会扣除维持气耗。气耗尽会导致杠杆牌被爆仓强平！当气不足时，可选择‘等待’以在下回合获得大量气回复。',
+      '4. 【杠杆买入】买入时开启杠杆，可大幅放大持仓利息与卖出收益，但也成倍增加每回合维持气耗。'
+    ];
+    const ruleContent = this.add.text(214, 355, rules.join('\n\n'), {
+      fontSize: '12px',
+      color: '#5D4037',
+      fontFamily: 'Arial',
+      align: 'left',
+      wordWrap: { width: 300 },
+      lineSpacing: 2
+    }).setOrigin(0.5).setDepth(413);
+    helpElements.push(ruleContent);
+
+    // “我知道了”按钮
+    const confirmBtn = this.createButton(214, 575, '我知道了', 0x4CAF50, () => {
+      this.soundManager.playClick();
+      // 销毁所有帮助界面元素
+      helpElements.forEach(el => el.destroy());
+      confirmBtn.destroy();
+    });
+    confirmBtn.setDepth(413);
   }
 
   private async initializeGame(): Promise<void> {
@@ -309,10 +437,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createDecisionInfo(): void {
-    const bg = this.add.rectangle(214, 590, 400, 48, 0xfffdf5);
+    const bg = this.add.rectangle(214, 584, 400, 60, 0xfffdf5);
     bg.setStrokeStyle(1, 0xd7ccc8);
 
-    this.decisionInfo = this.add.text(214, 590, '选择公共牌买入，或选择手牌卖出', {
+    this.decisionInfo = this.add.text(214, 584, '选择公共牌买入，或选择手牌卖出', {
       fontSize: '12px',
       color: '#5D4037',
       fontFamily: 'Arial',
@@ -362,6 +490,14 @@ export class GameScene extends Phaser.Scene {
     return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
   }
 
+  private getSeasonScorePreview(card: JiaziCard): string {
+    const spring = card.getSeasonScore('spring');
+    const summer = card.getSeasonScore('summer');
+    const autumn = card.getSeasonScore('autumn');
+    const winter = card.getSeasonScore('winter');
+    return `🌸春 ${this.formatSigned(spring, 0)} ｜ ☀️夏 ${this.formatSigned(summer, 0)} ｜ 🍂秋 ${this.formatSigned(autumn, 0)} ｜ ❄️冬 ${this.formatSigned(winter, 0)}`;
+  }
+
   private updateDecisionInfo(): void {
     const season = this.turnManager.getCurrentSeason();
     const publicCards = this.turnManager.getPublicCards();
@@ -376,9 +512,11 @@ export class GameScene extends Phaser.Scene {
         const buyCost = this.getBuyCost(card, this.leverageEnabled);
         const holdGain = this.getHoldEarning(cardScore, activeLeverage);
         const holdCost = this.getHoldQiCost(cardScore, activeLeverage);
-        const leverageText = this.leverageEnabled ? `｜杠杆 ${leverage}x` : '';
+        const leverageText = this.leverageEnabled ? `（杠杆 ${leverage}x）` : '';
         this.decisionInfo.setText(
-          `${card.name}${leverageText}｜评分 ${this.formatSigned(cardScore)}｜买入 -${buyCost}气｜持仓 ${this.formatSigned(holdGain)}分/回合｜耗气 -${holdCost.toFixed(1)}`
+          `【${card.name}】${leverageText} ｜ 当季评分 ${this.formatSigned(cardScore)} ｜ 维持气耗 -${holdCost.toFixed(1)}气/回合\n` +
+          `买入消耗: -${buyCost}气 ｜ 持仓收益: +${holdGain.toFixed(1)}分/回合\n` +
+          `四季天时评分: ${this.getSeasonScorePreview(card)}`
         );
         return;
       }
@@ -389,9 +527,11 @@ export class GameScene extends Phaser.Scene {
       if (slot) {
         const currentScore = slot.card.getSeasonScore(season);
         const sellScore = this.getSellScore(slot);
-        const riskText = this.turnManager.getQi() < 24 && slot.leverage > 1 ? '｜爆仓风险' : '';
+        const riskText = this.turnManager.getQi() < 24 && slot.leverage > 1 ? ' ｜ ⚠️爆仓风险' : '';
         this.decisionInfo.setText(
-          `${slot.card.name}｜买入 ${this.formatSigned(slot.buyScore)} 当前 ${this.formatSigned(currentScore)}｜卖出 ${this.formatSigned(sellScore)}分｜累计 ${this.formatSigned(slot.holdEarnings)}${riskText}`
+          `【${slot.card.name}】 ｜ 买入评分 ${this.formatSigned(slot.buyScore)} ｜ 当前评分 ${this.formatSigned(currentScore)}\n` +
+          `卖出得分: +${sellScore.toFixed(0)}分 ｜ 累计收益: +${slot.holdEarnings.toFixed(1)}分${riskText}\n` +
+          `四季天时评分: ${this.getSeasonScorePreview(slot.card)}`
         );
         return;
       }
