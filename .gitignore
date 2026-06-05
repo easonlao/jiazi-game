@@ -79,3 +79,7 @@ $RECYCLE.BIN/
 *.msm
 *.msp
 *.lnk
+
+# === Game Engine & Editor Cache ===
+.godot/
+.codex/

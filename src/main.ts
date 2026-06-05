@@ -14,4 +14,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [GameScene],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+if (import.meta.env.DEV) {
+  (window as any).game = game;
+}

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { TurnManager, GameState, JiaziCard, HandSlot } from '../core';
+import { TurnManager, GameState, JiaziCard, HandSlot, SettlementDetail, MarginCallDetail } from '../core';
 import { SoundManager } from '../ui/SoundManager';
 
 /**
@@ -19,6 +19,7 @@ export class GameScene extends Phaser.Scene {
   private scoreLabel!: Phaser.GameObjects.Text;
   private qiBar!: Phaser.GameObjects.Graphics;
   private qiLabel!: Phaser.GameObjects.Text;
+  private qiMaintenanceLabel!: Phaser.GameObjects.Text;
   private publicCardsContainer!: Phaser.GameObjects.Container;
   private handContainer!: Phaser.GameObjects.Container;
   private buyButton!: Phaser.GameObjects.Container;
@@ -26,6 +27,7 @@ export class GameScene extends Phaser.Scene {
   private waitButton!: Phaser.GameObjects.Container;
   private leverageButton!: Phaser.GameObjects.Container;
   private bottomInfo!: Phaser.GameObjects.Text;
+  private decisionInfo!: Phaser.GameObjects.Text;
 
   // 交互状态
   private selectedPublicCard: number = -1;
@@ -36,6 +38,16 @@ export class GameScene extends Phaser.Scene {
   private isAnimating: boolean = false;
   private lastSeason: string = '';
   private lastScore: number = 0;
+  private previousQi: number = 50;
+  private previousScore: number = 0;
+  private lastSettlementRoundShown: number = 0;
+  private isShowingSettlement: boolean = false;
+  private shownGuidance = {
+    roundOne: false,
+    selectedPublic: false,
+    leverage: false,
+    lowQi: false,
+  };
 
   constructor() {
     super('GameScene');
@@ -51,6 +63,7 @@ export class GameScene extends Phaser.Scene {
     this.createQiBar();
     this.createPublicCardsArea();
     this.createHandArea();
+    this.createDecisionInfo();
     this.createButtonArea();
     this.createBottomInfo();
 
@@ -122,6 +135,10 @@ export class GameScene extends Phaser.Scene {
     // 快捷读档按钮
     this.createMiniButton(383, 40, '读', 0x795548, () => {
       this.soundManager.playClick();
+      if (!this.turnManager.hasSave()) {
+        this.showToast('无有效存档');
+        return;
+      }
       const success = this.turnManager.loadGame();
       if (success) {
         this.showToast('进度加载成功');
@@ -133,7 +150,7 @@ export class GameScene extends Phaser.Scene {
         this.lastScore = this.turnManager.getScore();
         this.updateUI();
       } else {
-        this.showToast('无有效存档');
+        this.showToast('存档已损坏，请重新开始');
       }
     });
   }
@@ -155,6 +172,14 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'Arial',
       fontStyle: 'bold'
     }).setOrigin(0.5);
+
+    // 持仓维持气耗预告
+    this.qiMaintenanceLabel = this.add.text(214, 134, '持仓维持: 0.0气/回合', {
+      fontSize: '11px',
+      color: '#795548',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
   }
 
   /** 动态渐变重绘气血条 */
@@ -165,12 +190,15 @@ export class GameScene extends Phaser.Scene {
     this.qiBar.fillStyle(0xe0e0e0, 1);
     this.qiBar.fillRect(14, 95, 400, 30);
 
+    // 限制气在 [0, maxQi] 之间
+    const clampedQi = Math.max(0, Math.min(qi, maxQi));
+
     // 填充色逻辑 (爆仓警告临界)
-    const width = (qi / maxQi) * 400;
+    const width = (clampedQi / maxQi) * 400;
     let color = 0x4CAF50; // 丰盈常绿
-    if (qi / maxQi < 0.3) {
+    if (clampedQi / maxQi < 0.3) {
       color = 0xE53935; // 枯绝赤红
-    } else if (qi / maxQi < 0.6) {
+    } else if (clampedQi / maxQi < 0.6) {
       color = 0xFFC107; // 警告萎黄
     }
 
@@ -209,22 +237,22 @@ export class GameScene extends Phaser.Scene {
   /** 创建底部控制面板操作区域 */
   private createButtonArea(): void {
     // 买入按钮
-    this.buyButton = this.createButton(107, 640, '买入', 0x2196F3, () => {
+    this.buyButton = this.createButton(107, 645, '买入', 0x2196F3, () => {
       this.onBuyClick();
     });
 
     // 杠杆倍速切换按钮
-    this.leverageButton = this.createButton(321, 640, '杠杆 1.0x', 0x9E9E9E, () => {
+    this.leverageButton = this.createButton(321, 645, '杠杆 1.0x', 0x9E9E9E, () => {
       this.onLeverageClick();
     });
 
     // 卖出卡牌结算按钮
-    this.sellButton = this.createButton(107, 700, '卖出', 0xFF9800, () => {
+    this.sellButton = this.createButton(107, 705, '卖出', 0xFF9800, () => {
       this.onSellClick();
     });
 
     // 等待推进回合按钮
-    this.waitButton = this.createButton(321, 700, '等待', 0x4CAF50, () => {
+    this.waitButton = this.createButton(321, 705, '等待', 0x4CAF50, () => {
       this.onWaitClick();
     });
   }
@@ -280,6 +308,19 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5);
   }
 
+  private createDecisionInfo(): void {
+    const bg = this.add.rectangle(214, 590, 400, 48, 0xfffdf5);
+    bg.setStrokeStyle(1, 0xd7ccc8);
+
+    this.decisionInfo = this.add.text(214, 590, '选择公共牌买入，或选择手牌卖出', {
+      fontSize: '12px',
+      color: '#5D4037',
+      fontFamily: 'Arial',
+      align: 'center',
+      wordWrap: { width: 380 },
+    }).setOrigin(0.5);
+  }
+
   /** 显示临时小 Toast 文字提醒 */
   private showToast(message: string): void {
     const toast = this.add.text(214, 380, message, {
@@ -301,10 +342,143 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private getBuyCost(card: JiaziCard, useLeverage: boolean): number {
+    return this.turnManager.previewBuyCost(card, useLeverage);
+  }
+
+  private getHoldEarning(cardScore: number, leverage: number): number {
+    return this.turnManager.previewHoldEarning(cardScore, leverage);
+  }
+
+  private getHoldQiCost(cardScore: number, leverage: number): number {
+    return this.turnManager.previewHoldQiCost(cardScore, leverage);
+  }
+
+  private getSellScore(slot: HandSlot): number {
+    return this.turnManager.previewSellScore(slot);
+  }
+
+  private formatSigned(value: number, digits: number = 1): string {
+    return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
+  }
+
+  private updateDecisionInfo(): void {
+    const season = this.turnManager.getCurrentSeason();
+    const publicCards = this.turnManager.getPublicCards();
+    const hand = this.turnManager.getHand();
+    const leverage = this.turnManager.getLeverageMultiplier();
+
+    if (this.selectedPublicCard !== -1) {
+      const card = publicCards[this.selectedPublicCard];
+      if (card) {
+        const cardScore = card.getSeasonScore(season);
+        const activeLeverage = this.leverageEnabled ? leverage : 1;
+        const buyCost = this.getBuyCost(card, this.leverageEnabled);
+        const holdGain = this.getHoldEarning(cardScore, activeLeverage);
+        const holdCost = this.getHoldQiCost(cardScore, activeLeverage);
+        const leverageText = this.leverageEnabled ? `｜杠杆 ${leverage}x` : '';
+        this.decisionInfo.setText(
+          `${card.name}${leverageText}｜评分 ${this.formatSigned(cardScore)}｜买入 -${buyCost}气｜持仓 ${this.formatSigned(holdGain)}分/回合｜耗气 -${holdCost.toFixed(1)}`
+        );
+        return;
+      }
+    }
+
+    if (this.selectedHandCard !== -1) {
+      const slot = hand[this.selectedHandCard];
+      if (slot) {
+        const currentScore = slot.card.getSeasonScore(season);
+        const sellScore = this.getSellScore(slot);
+        const riskText = this.turnManager.getQi() < 24 && slot.leverage > 1 ? '｜爆仓风险' : '';
+        this.decisionInfo.setText(
+          `${slot.card.name}｜买入 ${this.formatSigned(slot.buyScore)} 当前 ${this.formatSigned(currentScore)}｜卖出 ${this.formatSigned(sellScore)}分｜累计 ${this.formatSigned(slot.holdEarnings)}${riskText}`
+        );
+        return;
+      }
+    }
+
+    this.decisionInfo.setText('选择公共牌买入，或选择手牌卖出');
+  }
+
+  private setButtonLabel(button: Phaser.GameObjects.Container, text: string): void {
+    const label = button.getAt(1) as Phaser.GameObjects.Text;
+    label.setText(text);
+  }
+
+  private showRoundDeltaFeedback(): void {
+    if (this.isShowingSettlement) return;
+
+    const qi = this.turnManager.getQi();
+    const score = this.turnManager.getScore();
+    const qiDelta = qi - this.previousQi;
+    const scoreDelta = score - this.previousScore;
+
+    // 转换为 1 位小数精度的浮点数，用以判定有效变动
+    const displayScore = parseFloat(scoreDelta.toFixed(1));
+    const displayQi = parseFloat(qiDelta.toFixed(1));
+
+    // 如果两者的有效变动都小于 0.1，则无需提示
+    if (Math.abs(displayQi) < 0.1 && Math.abs(displayScore) < 0.1) return;
+
+    const parts: string[] = [];
+    if (Math.abs(displayScore) >= 0.1) {
+      parts.push(`分数 ${this.formatSigned(displayScore, 1)}`);
+    }
+    if (Math.abs(displayQi) >= 0.1) {
+      parts.push(`气 ${this.formatSigned(displayQi, 1)}`);
+    }
+    if (this.turnManager.getMarginCallCount() > 0 && qi <= 0) {
+      parts.push('杠杆强平风险');
+    }
+
+    if (parts.length > 0) {
+      this.showToast(parts.join(' ｜ '));
+    }
+  }
+
+  private updateGuidance(): void {
+    const round = this.turnManager.getCurrentRound();
+    const qi = this.turnManager.getQi();
+    const hand = this.turnManager.getHand();
+
+    if (round === 1 && !this.shownGuidance.roundOne) {
+      this.shownGuidance.roundOne = true;
+      this.showToast('当前是春季，木牌收益最高');
+      return;
+    }
+
+    if (this.selectedPublicCard !== -1 && !this.shownGuidance.selectedPublic) {
+      this.shownGuidance.selectedPublic = true;
+      this.showToast('评分越高，持仓分越高，也会消耗更多气');
+      return;
+    }
+
+    if (this.leverageEnabled && !this.shownGuidance.leverage) {
+      this.shownGuidance.leverage = true;
+      this.showToast('杠杆会放大收益，也会放大持仓耗气');
+      return;
+    }
+
+    if (qi < 24 && hand.some(slot => slot && slot.leverage > 1) && !this.shownGuidance.lowQi) {
+      this.shownGuidance.lowQi = true;
+      this.showToast('气过低时，杠杆牌可能被强制平仓');
+    }
+  }
+
   /** 全局状态刷新与动效处理 */
   private updateUI(): void {
     const season = this.turnManager.getCurrentSeason();
     const round = this.turnManager.getCurrentRound();
+
+    // 检测是否展示结算面板 (幂等性判断)
+    if (round !== this.lastSettlementRoundShown && round > 1 && !this.isShowingSettlement) {
+      const settlement = this.turnManager.getLastSettlementDetail();
+      if (settlement && settlement.round === round) {
+        this.showRoundSettlementPanel(settlement);
+        return;
+      }
+    }
+
     const qi = this.turnManager.getQi();
     const score = this.turnManager.getScore();
     const deckSize = this.turnManager.getDeckSize();
@@ -365,7 +539,17 @@ export class GameScene extends Phaser.Scene {
 
     // 4. 更新气状态
     this.updateQiBar(qi, 80);
-    this.qiLabel.setText(`气: ${qi}/80`);
+    this.qiLabel.setText(`气: ${qi.toFixed(1)}/80`);
+
+    // 计算当前持仓总气耗并更新预告
+    let totalQiCost = 0;
+    const hand = this.turnManager.getHand();
+    hand.forEach(slot => {
+      if (slot) {
+        totalQiCost += this.getHoldQiCost(slot.card.getSeasonScore(season), slot.leverage);
+      }
+    });
+    this.qiMaintenanceLabel.setText(`持仓维持: -${totalQiCost.toFixed(1)}气/回合`);
 
     // 5. 更新底部状态
     this.bottomInfo.setText(`牌堆剩余: ${deckSize}张 | 杠杆: ${leverage}x`);
@@ -375,7 +559,156 @@ export class GameScene extends Phaser.Scene {
     this.updateHandCards();
 
     // 7. 更新决策按钮状态限制
+    this.updateDecisionInfo();
     this.updateButtons();
+    this.updateGuidance();
+  }
+
+  /** 呈现回合结算面板 */
+  private showRoundSettlementPanel(settlement: SettlementDetail): void {
+    this.isShowingSettlement = true;
+
+    // 1. 半透明黑色背景遮罩，阻止背景点击
+    const mask = this.add.rectangle(214, 380, 428, 760, 0x000000, 0.65);
+    mask.setInteractive();
+    mask.setDepth(210);
+
+    // 2. 结算面板背景卷轴
+    const panelBg = this.add.rectangle(214, 380, 360, 440, 0xfffdf5);
+    panelBg.setStrokeStyle(3, 0x3E2723);
+    panelBg.setDepth(211);
+
+    // 3. 装饰框线（让视觉更精致）
+    const innerFrame = this.add.rectangle(214, 380, 340, 420);
+    innerFrame.setStrokeStyle(1, 0xd7ccc8);
+    innerFrame.setDepth(212);
+
+    const elements: Phaser.GameObjects.GameObject[] = [mask, panelBg, innerFrame];
+
+    // 4. 面板标题
+    const titleText = this.add.text(214, 200, `第 ${settlement.round - 1} 回合 结算`, {
+      fontSize: '22px',
+      color: '#3E2723',
+      fontFamily: 'Georgia, Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(213);
+    elements.push(titleText);
+
+    // 5. 季节指示器
+    const seasonNames: Record<string, string> = {
+      spring: '🌸 阳春',
+      summer: '☀️ 朱明',
+      autumn: '🍂 金秋',
+      winter: '❄️ 玄冬',
+    };
+    const seasonText = this.add.text(214, 235, `天时: ${seasonNames[settlement.season] || settlement.season}`, {
+      fontSize: '14px',
+      color: '#795548',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(213);
+    elements.push(seasonText);
+
+    // 6. 核心数据报告
+    // 持仓收益
+    const holdEarningsText = this.add.text(80, 270, `持仓收益:`, {
+      fontSize: '14px',
+      color: '#5D4037',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setDepth(213);
+    const holdEarningsVal = this.add.text(348, 270, `${settlement.holdEarnings >= 0 ? '+' : ''}${settlement.holdEarnings.toFixed(1)} 分`, {
+      fontSize: '14px',
+      color: settlement.holdEarnings >= 0 ? '#2E7D32' : '#C62828',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(1, 0).setDepth(213);
+    elements.push(holdEarningsText, holdEarningsVal);
+
+    // 维持气耗
+    const holdQiText = this.add.text(80, 300, `维持气耗:`, {
+      fontSize: '14px',
+      color: '#5D4037',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setDepth(213);
+    const holdQiVal = this.add.text(348, 300, `-${settlement.holdQiCost.toFixed(1)} 气`, {
+      fontSize: '14px',
+      color: settlement.holdQiCost > 0 ? '#C62828' : '#795548',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(1, 0).setDepth(213);
+    elements.push(holdQiText, holdQiVal);
+
+    // 气回复拆解
+    const qiRecoverText = this.add.text(80, 330, `回复气量:`, {
+      fontSize: '14px',
+      color: '#5D4037',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setDepth(213);
+    
+    let recoverDetail = `自然 +${settlement.baseQiRecover.toFixed(0)}`;
+    if (settlement.waitQiRecover > 0) {
+      recoverDetail += ` ｜ 等待 +${settlement.waitQiRecover.toFixed(0)}`;
+    }
+    const qiRecoverVal = this.add.text(348, 330, recoverDetail, {
+      fontSize: '13px',
+      color: '#2E7D32',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(1, 0).setDepth(213);
+    elements.push(qiRecoverText, qiRecoverVal);
+
+    // 分隔线
+    const line = this.add.line(214, 365, 0, 0, 270, 0, 0xd7ccc8).setDepth(213);
+    elements.push(line);
+
+    // 7. 结算后最终状态报告
+    const stateText = this.add.text(214, 380, `结算气: ${settlement.finalQi.toFixed(1)}/80 ｜ 当前总分: ${settlement.finalScore.toFixed(1)}`, {
+      fontSize: '13px',
+      color: '#3E2723',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(213);
+    elements.push(stateText);
+
+    // 8. 爆仓强平报告显示
+    if (settlement.marginCallTriggered && settlement.marginCallDetails.length > 0) {
+      // 爆仓警告标志
+      const marginCallWarnText = this.add.text(214, 410, `⚠️ 气归零，发生爆仓强平！`, {
+        fontSize: '13px',
+        color: '#E53935',
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(213);
+      elements.push(marginCallWarnText);
+
+      // 显示被强平的第一张牌名称（最多只展示一行）
+      const detail = settlement.marginCallDetails[0];
+      const marginCallDetailText = this.add.text(214, 430, `杠杆牌【${detail.cardName}】被平仓 结算得分: ${detail.sellScore.toFixed(1)}`, {
+        fontSize: '11px',
+        color: '#E53935',
+        fontFamily: 'Arial',
+        align: 'center'
+      }).setOrigin(0.5).setDepth(213);
+      elements.push(marginCallDetailText);
+    }
+
+    // 9. “继续”按钮
+    const continueBtn = this.createButton(214, 500, '继续', 0x2196F3, () => {
+      this.soundManager.playClick();
+      // 销毁全部结算界面元素
+      elements.forEach(el => el.destroy());
+      continueBtn.destroy();
+      
+      this.isShowingSettlement = false;
+      this.lastSettlementRoundShown = settlement.round;
+      
+      // 重绘刷新主界面卡牌与公共池
+      this.updateUI();
+    });
+    continueBtn.setDepth(213);
   }
 
   /** 展示换季诗词特效与滤镜闪动 */
@@ -446,7 +779,7 @@ export class GameScene extends Phaser.Scene {
       
       // 选中上悬，未选中居平
       const targetY = isSelected ? -12 : 0; 
-      const cardSprite = this.createCardSprite(card, x, targetY, cardWidth, cardHeight, false);
+      const cardSprite = this.createCardSprite(card, x, targetY, cardWidth, cardHeight, null);
 
       cardSprite.setInteractive();
       cardSprite.on('pointerdown', () => {
@@ -484,7 +817,7 @@ export class GameScene extends Phaser.Scene {
       if (slot) {
         // 选中悬停抬起
         const targetY = isSelected ? -12 : 0;
-        const cardSprite = this.createCardSprite(slot.card, x, targetY, cardWidth, cardHeight, true);
+        const cardSprite = this.createCardSprite(slot.card, x, targetY, cardWidth, cardHeight, slot);
 
         cardSprite.setInteractive();
         cardSprite.on('pointerdown', () => {
@@ -542,7 +875,7 @@ export class GameScene extends Phaser.Scene {
     const targetY = 490;
 
     // 克隆产生的卡牌 Container
-    const flightObj = this.createCardSprite(card, originX, originY, 120, 160, false);
+    const flightObj = this.createCardSprite(card, originX, originY, 120, 160, null);
     flightObj.setDepth(150);
 
     // 缓动飞行平移
@@ -577,7 +910,7 @@ export class GameScene extends Phaser.Scene {
     const originX = 214 + (startX + slotIndex * (cardWidth + spacing));
     const originY = 490 - 12; // 计入选中浮起
 
-    const flightObj = this.createCardSprite(slot.card, originX, originY, 120, 160, true);
+    const flightObj = this.createCardSprite(slot.card, originX, originY, 120, 160, slot);
     flightObj.setDepth(150);
 
     // 高抛加速飞出屏幕顶部并渐隐
@@ -602,7 +935,7 @@ export class GameScene extends Phaser.Scene {
     y: number,
     width: number,
     height: number,
-    showProfit: boolean
+    slot?: HandSlot | null
   ): Phaser.GameObjects.Container {
     const elementColors: Record<string, number> = {
       wood: 0xE8F5E9,
@@ -640,6 +973,17 @@ export class GameScene extends Phaser.Scene {
       fontFamily: 'Arial',
     }).setOrigin(0.5);
 
+    const yinYangNames: Record<string, string> = {
+      yin: '阴',
+      yang: '阳',
+    };
+
+    const metaLabel = this.add.text(0, -height / 2 + 78, `${yinYangNames[card.yinYang]}${elementNames[card.mainElement]}`, {
+      fontSize: '12px',
+      color: '#795548',
+      fontFamily: 'Arial',
+    }).setOrigin(0.5);
+
     // 当季评分得分
     const score = card.getSeasonScore(this.turnManager.getCurrentSeason());
     const scoreLabel = this.add.text(0, height / 2 - 38, `${score >= 0 ? '+' : ''}${score.toFixed(1)}`, {
@@ -649,7 +993,38 @@ export class GameScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    const container = this.add.container(x, y, [bg, nameLabel, elementLabel, scoreLabel]);
+    let detailText = '';
+    let detailColor = '#795548';
+
+    if (slot) {
+      const profit = slot.getProfit(this.turnManager.getCurrentSeason());
+      detailText = `差价 ${this.formatSigned(profit)}`;
+      detailColor = profit >= 0 ? '#2E7D32' : '#C62828';
+    } else {
+      detailText = `买入 -${this.getBuyCost(card, this.leverageEnabled)}气`;
+    }
+
+    const detailLabel = this.add.text(0, height / 2 - 18, detailText, {
+      fontSize: width > 130 ? '13px' : '11px',
+      color: detailColor,
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    const children: Phaser.GameObjects.GameObject[] = [bg, nameLabel, elementLabel, metaLabel, scoreLabel, detailLabel];
+
+    if (slot && slot.leverage > 1) {
+      const badgeBg = this.add.rectangle(width / 2 - 25, height / 2 - 18, 42, 20, 0xff6f00);
+      const badgeText = this.add.text(width / 2 - 25, height / 2 - 18, `${slot.leverage}x`, {
+        fontSize: '11px',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      children.push(badgeBg, badgeText);
+    }
+
+    const container = this.add.container(x, y, children);
     container.setSize(width, height);
 
     return container;
@@ -657,40 +1032,88 @@ export class GameScene extends Phaser.Scene {
 
   /** 状态驱动更新按钮状态与遮罩显示 */
   private updateButtons(): void {
+    const qi = this.turnManager.getQi();
     const state = this.turnManager.getState();
-    const canBuy = state === 'player_action' && this.turnManager.getHand().some(slot => slot === null);
-    const canSell = state === 'player_action' && this.turnManager.getHand().some(slot => slot !== null);
+    const publicCards = this.turnManager.getPublicCards();
+    const hand = this.turnManager.getHand();
+    const selectedPublic = this.selectedPublicCard !== -1 ? publicCards[this.selectedPublicCard] : null;
+    const selectedSlot = this.selectedHandCard !== -1 ? hand[this.selectedHandCard] : null;
+    const hasEmptySlot = hand.some(slot => slot === null);
+    const hasHandCard = hand.some(slot => slot !== null);
 
-    // 买入按钮遮罩
-    this.buyButton.setAlpha(canBuy ? 1 : 0.5);
+    let buyLabel = '买入';
+    let canBuy = state === 'player_action' && !!selectedPublic && hasEmptySlot;
+    if (!hasEmptySlot) {
+      buyLabel = '手牌已满';
+      canBuy = false;
+    } else if (selectedPublic) {
+      const buyCost = this.getBuyCost(selectedPublic, this.leverageEnabled);
+      buyLabel = qi >= buyCost ? `买入 -${buyCost}气` : '气不足';
+      canBuy = canBuy && qi >= buyCost;
+    }
+    const buyLabelText = this.buyButton.getAt(1) as Phaser.GameObjects.Text;
+    buyLabelText.setFontSize('16px');
+    this.setButtonLabel(this.buyButton, buyLabel);
+    this.buyButton.setAlpha(canBuy && !this.isShowingSettlement && !this.isAnimating ? 1 : 0.5);
 
-    // 卖出按钮遮罩
-    this.sellButton.setAlpha(canSell ? 1 : 0.5);
-
-    // 杠杆数值显示与颜色
     const leverage = this.turnManager.getLeverageMultiplier();
     const leverageButton = this.leverageButton.getAt(0) as Phaser.GameObjects.Rectangle;
-    const leverageLabel = this.leverageButton.getAt(1) as Phaser.GameObjects.Text;
-
-    if (leverage > 1) {
-      leverageLabel.setText(`杠杆 ${leverage}x`);
+    if (leverage > 1 && selectedPublic) {
+      this.setButtonLabel(this.leverageButton, `杠杆 ${leverage}x ${this.leverageEnabled ? '开' : '关'}`);
       leverageButton.setFillStyle(this.leverageEnabled ? 0xE65100 : 0x9E9E9E);
+      this.leverageButton.setAlpha(!this.isShowingSettlement && !this.isAnimating ? 1 : 0.5);
     } else {
-      leverageLabel.setText('杠杆 1.0x');
+      this.setButtonLabel(this.leverageButton, `杠杆 ${leverage}x`);
       leverageButton.setFillStyle(0x9E9E9E);
+      this.leverageButton.setAlpha(0.5);
     }
+
+    let sellLabel = '卖出';
+    let canSell = state === 'player_action' && !!selectedSlot && qi >= 3;
+    if (!hasHandCard) {
+      sellLabel = '无牌可卖';
+    } else if (selectedSlot) {
+      sellLabel = qi >= 3 ? `卖出 ${this.formatSigned(this.getSellScore(selectedSlot), 0)}分` : '气不足';
+    }
+    const sellLabelText = this.sellButton.getAt(1) as Phaser.GameObjects.Text;
+    sellLabelText.setFontSize('16px');
+    this.setButtonLabel(this.sellButton, sellLabel);
+    this.sellButton.setAlpha(canSell && !this.isShowingSettlement && !this.isAnimating ? 1 : 0.5);
+
+    const waitLabelText = this.waitButton.getAt(1) as Phaser.GameObjects.Text;
+    waitLabelText.setFontSize('13px');
+    this.setButtonLabel(this.waitButton, '等待 (下回合+17气)');
+    const canWait = state === 'player_action' && !this.isShowingSettlement && !this.isAnimating;
+    this.waitButton.setAlpha(canWait ? 1 : 0.5);
   }
 
   /** 执行卡牌购买及飞入槽位动画 */
   private onBuyClick(): void {
-    if (this.selectedPublicCard === -1) return;
-    if (this.isAnimating) return;
+    if (this.isShowingSettlement || this.isAnimating) return;
+
+    if (this.selectedPublicCard === -1) {
+      this.showToast('请先选择公共牌');
+      return;
+    }
 
     const emptySlotIndex = this.turnManager.getHand().findIndex(slot => slot === null);
     if (emptySlotIndex === -1) {
       this.showToast('手牌已满');
       return;
     }
+
+    const publicCards = this.turnManager.getPublicCards();
+    const card = publicCards[this.selectedPublicCard];
+    if (!card) return;
+
+    const buyCost = this.getBuyCost(card, this.leverageEnabled);
+    if (this.turnManager.getQi() < buyCost) {
+      this.showToast('气不足无法买入');
+      return;
+    }
+
+    this.previousQi = this.turnManager.getQi();
+    this.previousScore = this.turnManager.getScore();
 
     // 状态加锁阻断重复点击
     this.isAnimating = true;
@@ -705,6 +1128,7 @@ export class GameScene extends Phaser.Scene {
         this.selectedPublicCard = -1;
         this.leverageEnabled = false;
         this.updateUI();
+        this.showRoundDeltaFeedback();
       } else {
         this.showToast('购买失败，气不足');
         this.updateUI();
@@ -714,19 +1138,38 @@ export class GameScene extends Phaser.Scene {
 
   /** 选择杠杆 */
   private onLeverageClick(): void {
-    if (this.isAnimating) return;
+    if (this.isShowingSettlement || this.isAnimating) return;
+
+    if (this.selectedPublicCard === -1) {
+      this.showToast('请先选择公共牌');
+      return;
+    }
     const leverage = this.turnManager.getLeverageMultiplier();
     if (leverage > 1) {
       this.soundManager.playClick();
       this.leverageEnabled = !this.leverageEnabled;
       this.updateUI();
+    } else {
+      this.showToast('当前无杠杆加成');
     }
   }
 
   /** 卖出手牌及高抛飞逸动画 */
   private onSellClick(): void {
-    if (this.selectedHandCard === -1) return;
-    if (this.isAnimating) return;
+    if (this.isShowingSettlement || this.isAnimating) return;
+
+    if (this.selectedHandCard === -1) {
+      this.showToast('请先选择手牌');
+      return;
+    }
+
+    if (this.turnManager.getQi() < 3) {
+      this.showToast('气不足无法卖出');
+      return;
+    }
+
+    this.previousQi = this.turnManager.getQi();
+    this.previousScore = this.turnManager.getScore();
 
     this.isAnimating = true;
 
@@ -739,6 +1182,7 @@ export class GameScene extends Phaser.Scene {
         this.soundManager.playSell();
         this.selectedHandCard = -1;
         this.updateUI();
+        this.showRoundDeltaFeedback();
       } else {
         this.showToast('卖出失败，气不足');
         this.updateUI();
@@ -748,14 +1192,18 @@ export class GameScene extends Phaser.Scene {
 
   /** 等待动作 */
   private onWaitClick(): void {
-    if (this.isAnimating) return;
+    if (this.isShowingSettlement || this.isAnimating) return;
     this.soundManager.playClick();
     
+    this.previousQi = this.turnManager.getQi();
+    this.previousScore = this.turnManager.getScore();
+
     this.turnManager.executeWait();
     this.selectedPublicCard = -1;
     this.selectedHandCard = -1;
     this.leverageEnabled = false;
     this.updateUI();
+    this.showRoundDeltaFeedback();
   }
 
   /** 呈现终局统计界面 */
@@ -788,13 +1236,16 @@ export class GameScene extends Phaser.Scene {
 
     // 构成描述
     const descText = this.add.text(214, 345, 
-      `持仓总收益: ${this.turnManager.getScore().toFixed(1)}\n\n` + 
-      `牌堆已抽空，本局结束。\n` + 
-      `修身养气，周而复始。`, {
-      fontSize: '15px',
+      `持仓收益: ${this.turnManager.getTotalHoldEarnings().toFixed(1)} ｜ 卖出收益: ${this.turnManager.getTotalSellEarnings().toFixed(1)}\n` + 
+      `买入次数: ${this.turnManager.getTotalBuys()} 次 (杠杆 ${this.turnManager.getTotalLeverageBuys()} 次)\n` + 
+      `卖出次数: ${this.turnManager.getTotalSells()} 次 ｜ 等待次数: ${this.turnManager.getTotalWaits()} 次\n` + 
+      `爆仓次数: ${this.turnManager.getMarginCallCount()} 次\n\n` + 
+      `六十天时已满，本局结束。`, {
+      fontSize: '13px',
       color: '#5D4037',
       fontFamily: 'Arial',
-      align: 'center'
+      align: 'center',
+      lineSpacing: 4
     }).setOrigin(0.5).setDepth(252);
 
     // 按钮 Container
@@ -805,6 +1256,8 @@ export class GameScene extends Phaser.Scene {
       this.selectedPublicCard = -1;
       this.selectedHandCard = -1;
       this.leverageEnabled = false;
+      this.lastSettlementRoundShown = 0;
+      this.isShowingSettlement = false;
       
       // 重置对比参数
       this.lastSeason = 'spring';

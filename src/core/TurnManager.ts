@@ -14,6 +14,31 @@ export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_
 /** 玩家操作类型 */
 export type ActionType = 'buy' | 'sell' | 'wait';
 
+export interface MarginCallDetail {
+  cardName: string;
+  sellScore: number;
+  reason: string;
+}
+
+export interface SettlementDetail {
+  round: number;
+  season: string;
+  holdEarnings: number;
+  holdQiCost: number;
+  holdItems: {
+    cardName: string;
+    earning: number;
+    qiCost: number;
+    leverage: number;
+  }[];
+  baseQiRecover: number;
+  waitQiRecover: number;
+  marginCallTriggered: boolean;
+  marginCallDetails: MarginCallDetail[];
+  finalQi: number;
+  finalScore: number;
+}
+
 /**
  * 回合管理器
  * 
@@ -42,6 +67,13 @@ export class TurnManager {
   private useLeverage: boolean;
   private marginCallCount: number;
 
+  // 局内反馈与统计
+  private lastSettlementDetail: SettlementDetail | null = null;
+  private totalBuys: number = 0;
+  private totalSells: number = 0;
+  private totalWaits: number = 0;
+  private totalLeverageBuys: number = 0;
+
   // 回调
   private onStateChange?: (state: GameState) => void;
   private onTurnStart?: (round: number) => void;
@@ -62,6 +94,12 @@ export class TurnManager {
     this.selectedCardIndex = -1;
     this.useLeverage = false;
     this.marginCallCount = 0;
+
+    this.lastSettlementDetail = null;
+    this.totalBuys = 0;
+    this.totalSells = 0;
+    this.totalWaits = 0;
+    this.totalLeverageBuys = 0;
   }
 
   /**
@@ -96,6 +134,21 @@ export class TurnManager {
       return;
     }
 
+    // 初始化本轮结算明细
+    this.lastSettlementDetail = {
+      round: this.currentRound,
+      season: this.seasonCycle.getCurrentSeason(),
+      holdEarnings: 0,
+      holdQiCost: 0,
+      holdItems: [],
+      baseQiRecover: 0,
+      waitQiRecover: 0,
+      marginCallTriggered: false,
+      marginCallDetails: [],
+      finalQi: 0,
+      finalScore: 0,
+    };
+
     // 1. 持仓结算
     this.settleHoldings();
 
@@ -104,6 +157,12 @@ export class TurnManager {
 
     // 3. 气回复
     this.recoverQi();
+
+    // 记录本回合最终分和气数值
+    if (this.lastSettlementDetail) {
+      this.lastSettlementDetail.finalQi = this.qiManager.getQi();
+      this.lastSettlementDetail.finalScore = this.scoreManager.getScore();
+    }
 
     // 4. 等待玩家操作
     this.state = 'player_action';
@@ -118,6 +177,7 @@ export class TurnManager {
     const hand = this.handManager.getHand();
     const currentSeason = this.seasonCycle.getCurrentSeason();
     let totalQiCost = 0;
+    let totalHoldEarnings = 0;
 
     for (const slot of hand) {
       if (slot) {
@@ -128,13 +188,28 @@ export class TurnManager {
         );
         this.scoreManager.addHoldEarnings(holdEarnings);
         slot.holdEarnings += holdEarnings;
+        totalHoldEarnings += holdEarnings;
 
         // 累计持仓气耗
-        totalQiCost += this.leverageCalculator.calculateHoldQiCost(
+        const qiCost = this.leverageCalculator.calculateHoldQiCost(
           slot.card.getSeasonScore(currentSeason),
           slot.leverage
         );
+        totalQiCost += qiCost;
+
+        // 记录明细项
+        this.lastSettlementDetail?.holdItems.push({
+          cardName: slot.card.name,
+          earning: holdEarnings,
+          qiCost: qiCost,
+          leverage: slot.leverage
+        });
       }
+    }
+
+    if (this.lastSettlementDetail) {
+      this.lastSettlementDetail.holdEarnings = totalHoldEarnings;
+      this.lastSettlementDetail.holdQiCost = totalQiCost;
     }
 
     // 强制扣除全部持仓气耗（支持扣成负数或0）
@@ -144,7 +219,11 @@ export class TurnManager {
 
     // 结算完成后进行爆仓判定
     if (this.leverageCalculator.checkMarginCall(this.qiManager.getQi())) {
-      this.handleMarginCall();
+      const details = this.handleMarginCall();
+      if (this.lastSettlementDetail && details.length > 0) {
+        this.lastSettlementDetail.marginCallTriggered = true;
+        this.lastSettlementDetail.marginCallDetails = details;
+      }
     }
   }
 
@@ -152,8 +231,9 @@ export class TurnManager {
    * 处理玩家爆仓情况：寻找玩家手牌中的杠杆卡牌并强行平仓出售
    * 强平会循环随机平仓杠杆牌，正常结算卖出积分，但强平不消耗气，亦不提供卖出即时回气
    */
-  private handleMarginCall(): void {
+  private handleMarginCall(): MarginCallDetail[] {
     console.log('[TurnManager] 爆仓！气耗尽');
+    const details: MarginCallDetail[] = [];
 
     while (this.qiManager.getQi() <= 0) {
       const hand = this.handManager.getHand();
@@ -185,21 +265,38 @@ export class TurnManager {
       const finalSellScore = baseSellScore > 0 ? Math.floor(baseSellScore * 0.8) : baseSellScore;
       this.scoreManager.addSellEarnings(finalSellScore);
 
+      // 记录强平细节
+      details.push({
+        cardName: slot.card.name,
+        sellScore: finalSellScore,
+        reason: '气量归零强制平仓'
+      });
+
       // 强平移除卡牌 (直接 sell，不扣除卖出气耗，亦不提供卖出即时回气)
       this.handManager.sell(targetIndex);
       this.marginCallCount++;
       console.log(`[TurnManager] 爆仓强平：移除卡牌 ID ${slot.card.id}，结算收益 ${finalSellScore} 分`);
     }
+
+    return details;
   }
 
   /**
    * 自然回复玩家的气，若上回合选择等待则提供额外奖励
    */
   private recoverQi(): void {
-    this.qiManager.recover(this.qiManager.getBaseRecovery());
+    const baseRecovery = this.qiManager.getBaseRecovery();
+    this.qiManager.recover(baseRecovery);
+    if (this.lastSettlementDetail) {
+      this.lastSettlementDetail.baseQiRecover = baseRecovery;
+    }
 
     if (this.lastAction === 'wait') {
-      this.qiManager.recover(this.qiManager.getWaitBonus());
+      const waitBonus = this.qiManager.getWaitBonus();
+      this.qiManager.recover(waitBonus);
+      if (this.lastSettlementDetail) {
+        this.lastSettlementDetail.waitQiRecover = waitBonus;
+      }
     }
   }
 
@@ -235,6 +332,10 @@ export class TurnManager {
 
     // 执行买入
     this.qiManager.spend(buyCost);
+    this.totalBuys++;
+    if (leverage) {
+      this.totalLeverageBuys++;
+    }
     const buyScore = card.getSeasonScore(this.seasonCycle.getCurrentSeason());
     const slotIndex = this.handManager.buy(
       card,
@@ -273,6 +374,7 @@ export class TurnManager {
 
     // 执行卖出
     this.qiManager.spend(this.qiManager.getSellCost());
+    this.totalSells++;
 
     const currentScore = slot.card.getSeasonScore(this.seasonCycle.getCurrentSeason());
     const sellScore = this.scoreManager.calculateSellScore(
@@ -305,6 +407,7 @@ export class TurnManager {
     this.cardPoolManager.returnCards(publicCards);
 
     this.lastAction = 'wait';
+    this.totalWaits++;
     this.advanceTurn();
     return true;
   }
@@ -350,6 +453,10 @@ export class TurnManager {
         score: this.scoreManager.getScore(),
         totalHoldEarnings: this.scoreManager.getTotalHoldEarnings(),
         totalSellEarnings: this.scoreManager.getTotalSellEarnings(),
+        totalBuys: this.totalBuys,
+        totalSells: this.totalSells,
+        totalWaits: this.totalWaits,
+        totalLeverageBuys: this.totalLeverageBuys,
         season: {
           index: this.seasonCycle.getCurrentSeasonIndex(),
           roundInSeason: this.seasonCycle.getCurrentRoundInSeason(),
@@ -389,7 +496,27 @@ export class TurnManager {
       }
       const data = JSON.parse(raw);
 
-      // 1. 还原基础状态
+      // 1. 基础字段验证，确保 qi 是有效数值
+      if (
+        data.currentRound === undefined ||
+        data.qi === undefined ||
+        typeof data.qi !== 'number' ||
+        isNaN(data.qi)
+      ) {
+        console.warn('[TurnManager] 存档数据格式不正确，qi 为无效数值');
+        this.clearSave();
+        return false;
+      }
+
+      // 2. 校验无效存档（Round 1 且无手牌且气 <= 0 视为无效坏档）
+      const isHandEmpty = !data.hand || data.hand.every((slot: any) => slot === null);
+      if (data.currentRound <= 1 && isHandEmpty && data.qi <= 0) {
+        console.warn('[TurnManager] 检测到 Round 1 的无效坏档');
+        this.clearSave();
+        return false;
+      }
+
+      // 3. 还原基础状态
       this.currentRound = data.currentRound;
       this.state = data.state;
       this.lastAction = data.lastAction;
@@ -397,6 +524,12 @@ export class TurnManager {
       // 2. 还原气与积分
       this.qiManager.setQi(data.qi);
       this.scoreManager.setScore(data.score, data.totalHoldEarnings, data.totalSellEarnings);
+
+      // 还原统计数据
+      this.totalBuys = data.totalBuys !== undefined ? data.totalBuys : 0;
+      this.totalSells = data.totalSells !== undefined ? data.totalSells : 0;
+      this.totalWaits = data.totalWaits !== undefined ? data.totalWaits : 0;
+      this.totalLeverageBuys = data.totalLeverageBuys !== undefined ? data.totalLeverageBuys : 0;
 
       // 3. 还原季节周期
       this.seasonCycle.loadState(data.season.index, data.season.roundInSeason, data.season.lengths);
@@ -518,6 +651,56 @@ export class TurnManager {
     return this.marginCallCount;
   }
 
+  getTotalHoldEarnings(): number {
+    return this.scoreManager.getTotalHoldEarnings();
+  }
+
+  getTotalSellEarnings(): number {
+    return this.scoreManager.getTotalSellEarnings();
+  }
+
+  /** 预览买入卡牌气消耗 */
+  previewBuyCost(card: JiaziCard, useLeverage: boolean): number {
+    const score = card.getSeasonScore(this.getCurrentSeason());
+    return this.qiManager.calculateBuyCost(score, useLeverage);
+  }
+
+  /** 预览持仓卡牌每回合的分收益 */
+  previewHoldEarning(cardScore: number, leverage: number): number {
+    return this.scoreManager.calculateHoldEarnings(cardScore, leverage);
+  }
+
+  /** 预览持仓卡牌每回合的气消耗 */
+  previewHoldQiCost(cardScore: number, leverage: number): number {
+    return this.leverageCalculator.calculateHoldQiCost(cardScore, leverage);
+  }
+
+  /** 预览卖出卡牌的得分结算 */
+  previewSellScore(slot: HandSlot): number {
+    const currentScore = slot.card.getSeasonScore(this.getCurrentSeason());
+    return this.scoreManager.calculateSellScore(currentScore, slot.buyScore, slot.leverage);
+  }
+
+  getLastSettlementDetail(): SettlementDetail | null {
+    return this.lastSettlementDetail;
+  }
+
+  getTotalBuys(): number {
+    return this.totalBuys;
+  }
+
+  getTotalSells(): number {
+    return this.totalSells;
+  }
+
+  getTotalWaits(): number {
+    return this.totalWaits;
+  }
+
+  getTotalLeverageBuys(): number {
+    return this.totalLeverageBuys;
+  }
+
   /** 重置游戏 */
   reset(): void {
     this.seasonCycle.reset();
@@ -532,5 +715,11 @@ export class TurnManager {
     this.selectedCardIndex = -1;
     this.useLeverage = false;
     this.marginCallCount = 0;
+
+    this.lastSettlementDetail = null;
+    this.totalBuys = 0;
+    this.totalSells = 0;
+    this.totalWaits = 0;
+    this.totalLeverageBuys = 0;
   }
 }

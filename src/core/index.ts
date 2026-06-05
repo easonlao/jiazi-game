@@ -1,5 +1,5 @@
 export { TurnManager } from './TurnManager';
-export type { GameState, ActionType } from './TurnManager';
+export type { GameState, ActionType, SettlementDetail, MarginCallDetail } from './TurnManager';
 
 export { SeasonCycle } from './SeasonCycle';
 export type { Season } from './SeasonCycle';

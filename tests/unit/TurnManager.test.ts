@@ -113,4 +113,46 @@ describe('TurnManager', () => {
     expect(newTm.getScore()).toBeCloseTo(savedScore);
     expect(newTm.getHand().filter(slot => slot !== null).length).toBe(savedHandSize);
   });
+
+  it('异常坏档防御性拦截校验', async () => {
+    const tm = new TurnManager();
+    await tm.initialize();
+    tm.startGame();
+
+    const initialQi = tm.getQi();
+    const initialRound = tm.getCurrentRound();
+
+    // 1. 模拟写入坏档数据 (Round 1, 无手牌，气 qi <= 0)
+    const badSaveData = {
+      currentRound: 1,
+      state: 'player_action',
+      lastAction: null,
+      qi: 0,
+      score: 0,
+      totalHoldEarnings: 0,
+      totalSellEarnings: 0,
+      season: {
+        index: 0,
+        roundInSeason: 1,
+        lengths: [5, 9, 9, 8]
+      },
+      hand: [null, null, null],
+      pool: {
+        deckIds: [1, 2, 3],
+        publicIds: [1, 2]
+      }
+    };
+    localStorage.setItem('jiazi_game_save', JSON.stringify(badSaveData));
+
+    // 2. 调用读档应被拦截，拒绝加载返回 false
+    const loadResult = tm.loadGame();
+    expect(loadResult).toBe(false);
+
+    // 3. 检查存档是否已被自动清除
+    expect(tm.hasSave()).toBe(false);
+
+    // 4. 断言游戏内的数据未被坏档污染
+    expect(tm.getQi()).toBe(initialQi);
+    expect(tm.getCurrentRound()).toBe(initialRound);
+  });
 });
