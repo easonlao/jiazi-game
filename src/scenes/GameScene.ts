@@ -81,6 +81,18 @@ export class GameScene extends Phaser.Scene {
 
     // 展示开始菜单
     this.showStartScreen();
+
+    // 全局点击空白取消选择 (防止事件穿透，限玩家操作回合)
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+      if (this.isShowingSettlement || this.isAnimating) return;
+      if (this.turnManager && this.turnManager.getState() === 'player_action') {
+        if (currentlyOver.length === 0) {
+          this.selectedPublicCard = -1;
+          this.selectedHandCard = -1;
+          this.updateUI();
+        }
+      }
+    });
   }
 
   private showStartScreen(): void {
@@ -558,9 +570,9 @@ export class GameScene extends Phaser.Scene {
         const leverageText = this.leverageEnabled ? `（杠杆 ${leverage}x）` : '';
         const lockedQi = buyCost - 2;
         this.decisionInfo.setText(
-          `【${card.name}】${leverageText} ｜ 当季评分 ${this.formatSigned(cardScore)} ｜ 维持气耗 -${holdCost.toFixed(1)}气/回合\n` +
-          `买入总耗: -${buyCost}气 (手续费 2气，锁定保证金 -${lockedQi}气) ｜ 持仓收益: +${holdGain.toFixed(1)}分/回合\n` +
-          `四季天时评分: ${this.getSeasonScorePreview(card)}`
+          `【${card.name}】${leverageText} ｜ 当季评分 ${this.formatSigned(cardScore)} ｜ 维持气耗 -${holdCost.toFixed(1)}气/T\n` +
+          `买入成本: -${buyCost}气 (手续费 2气 + 锁保证金 ${lockedQi}气) ｜ 预计收益: +${holdGain.toFixed(1)}分/T\n` +
+          `天时预览: ${this.getSeasonScorePreview(card)} ｜ 💡 再次点击或点击空白取消选择`
         );
         return;
       }
@@ -572,22 +584,22 @@ export class GameScene extends Phaser.Scene {
         const currentScore = slot.card.getSeasonScore(season);
         const sellScore = this.getSellScore(slot);
         
-        // 计算自救数据
         const lockedQi = slot.lockedQi;
         const sellCost = 4;
         const sellQiReturn = lockedQi + Math.max(-8, Math.min(8, sellScore * 0.2)) - sellCost;
         const holdQiCost = this.getHoldQiCost(currentScore, slot.leverage);
 
-        let selfRescueText = `💡 自救预览：平仓可释放保证金 +${lockedQi}气 ｜ 预计实得回气 +${sellQiReturn.toFixed(1)}气 ｜ 降低气耗 -${holdQiCost.toFixed(1)}气/回合`;
+        let selfRescueText = `💡 自救预览：退保证金 +${lockedQi}气 ｜ 预计净回气 +${sellQiReturn.toFixed(1)}气 ｜ 降气耗 -${holdQiCost.toFixed(1)}气/T`;
         if (sellQiReturn < 0) {
-          selfRescueText = `⚠️ 严重亏损：卖出此卡将产生净耗气 -${Math.abs(sellQiReturn).toFixed(1)}气，需有足够可用气以平仓！`;
+          selfRescueText = `⚠️ 割肉平仓将产生净耗气 -${Math.abs(sellQiReturn).toFixed(1)}气，请确保气量充足`;
         }
 
-        const riskText = qi < 24 && slot.leverage > 1 ? ' ｜ ⚠️爆仓风险' : '';
+        const riskText = qi < 24 && slot.leverage > 1 ? ' ｜ ⚠️ 爆仓风险' : '';
+        const sellScoreText = sellScore >= 0 ? `预计盈亏: +${sellScore.toFixed(1)}分` : `预计盈亏: ${sellScore.toFixed(1)}分`;
         this.decisionInfo.setText(
-          `【${slot.card.name}】 ｜ 杠杆: ${slot.leverage}x ｜ 累计收益: +${slot.holdEarnings.toFixed(1)}分${riskText}\n` +
-          `卖出得分: +${sellScore.toFixed(0)}分 ｜ ${selfRescueText}\n` +
-          `四季天时评分: ${this.getSeasonScorePreview(slot.card)}`
+          `【${slot.card.name}】（持仓第${slot.buyRound}回合，杠杆 ${slot.leverage}x）${riskText}\n` +
+          `${sellScoreText} ｜ ${selfRescueText}\n` +
+          `天时预览: ${this.getSeasonScorePreview(slot.card)} ｜ 💡 再次点击或点击空白取消选择`
         );
         return;
       }
@@ -604,11 +616,11 @@ export class GameScene extends Phaser.Scene {
 
     if (hasLeverage && qi - totalQiCost <= 0) {
       this.decisionInfo.setText(
-        '⚠️ 爆仓警报：当前可用气不足以支撑回合结束后的结算气耗！\n' +
-        '推进回合必遭强平！请立刻点击下方手牌并进行卖出平仓自救，释放锁定保证金！'
+        '⚠️ 【爆仓警报】当前可用气不足！本回合结束将立刻爆仓强平！\n' +
+        '💡 请立刻点击下方手牌并进行卖出以释放保证金自救！'
       );
     } else {
-      this.decisionInfo.setText('选择公共牌买入，或选择手牌卖出');
+      this.decisionInfo.setText('选择公共牌买入，或选择手牌卖出。再次点击卡牌或点击空白取消选择。');
     }
   }
 
@@ -1181,7 +1193,38 @@ export class GameScene extends Phaser.Scene {
 
     // 宣纸色卡片底
     const bg = this.add.rectangle(0, 0, width, height, bgColor);
-    bg.setStrokeStyle(2, 0xd7ccc8);
+    let strokeColor = 0xd7ccc8;
+    let strokeWidth = 2;
+    if (slot && slot.leverage > 1) {
+      let tempRiskStr = '无';
+      let totalHoldCostForStroke = 0;
+      this.turnManager.getHand().forEach(s => {
+        if (s) {
+          totalHoldCostForStroke += this.turnManager.previewHoldQiCost(s.card.getSeasonScore(this.turnManager.getCurrentSeason()), s.leverage);
+        }
+      });
+      if (totalHoldCostForStroke > 0) {
+        const tempTurnsToLive = this.turnManager.getQi() / totalHoldCostForStroke;
+        if (tempTurnsToLive < 2) {
+          tempRiskStr = '极高';
+        } else if (tempTurnsToLive < 4) {
+          tempRiskStr = '高';
+        } else if (tempTurnsToLive < 7) {
+          tempRiskStr = '中';
+        }
+      }
+      if (tempRiskStr === '极高') {
+        strokeColor = 0xD50000;
+        strokeWidth = 3;
+      } else if (tempRiskStr === '高') {
+        strokeColor = 0xE65100;
+        strokeWidth = 3;
+      } else if (tempRiskStr === '中') {
+        strokeColor = 0xF57C00;
+        strokeWidth = 2.5;
+      }
+    }
+    bg.setStrokeStyle(strokeWidth, strokeColor);
 
     // 天干地支卡牌命名
     const nameLabel = this.add.text(0, -height / 2 + 32, card.name, {
@@ -1257,7 +1300,7 @@ export class GameScene extends Phaser.Scene {
       const sellScore = this.turnManager.previewSellScore(slot);
       const sellScoreSign = sellScore >= 0 ? `+${sellScore.toFixed(0)}` : `${sellScore.toFixed(0)}`;
 
-      const line1 = `占:${slot.lockedQi}气 耗:${holdQiCost.toFixed(1)}/T`;
+      const line1 = `押:${slot.lockedQi}气 ｜ 耗:-${holdQiCost.toFixed(1)}/T`;
       const label1 = this.add.text(0, height / 2 - 42, line1, {
         fontSize: '10px',
         color: '#5D4037',
@@ -1265,7 +1308,7 @@ export class GameScene extends Phaser.Scene {
         fontStyle: 'bold'
       }).setOrigin(0.5);
 
-      const label2 = this.add.text(-22, height / 2 - 20, `盈:${sellScoreSign}分`, {
+      const label2 = this.add.text(-22, height / 2 - 20, `盈:${sellScoreSign}`, {
         fontSize: '10px',
         color: sellScore >= 0 ? '#2E7D32' : '#C62828',
         fontFamily: 'Arial',
@@ -1301,9 +1344,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (slot && slot.leverage > 1) {
-      const badgeBg = this.add.rectangle(width / 2 - 25, height / 2 - 18, 42, 20, 0xff6f00);
-      const badgeText = this.add.text(width / 2 - 25, height / 2 - 18, `${slot.leverage}x`, {
-        fontSize: '11px',
+      const badgeBg = this.add.rectangle(width / 2 - 22, -height / 2 + 12, 38, 16, 0xff6f00);
+      const badgeText = this.add.text(width / 2 - 22, -height / 2 + 12, `${slot.leverage}x`, {
+        fontSize: '10px',
         color: '#ffffff',
         fontFamily: 'Arial',
         fontStyle: 'bold',
@@ -1387,14 +1430,20 @@ export class GameScene extends Phaser.Scene {
   private onBuyClick(): void {
     if (this.isShowingSettlement || this.isAnimating) return;
 
+    const state = this.turnManager.getState();
+    if (state !== 'player_action') {
+      this.showToast('当前非玩家操作回合');
+      return;
+    }
+
     if (this.selectedPublicCard === -1) {
-      this.showToast('请先选择公共牌');
+      this.showToast('请先在上方卡池中选择卡牌');
       return;
     }
 
     const emptySlotIndex = this.turnManager.getHand().findIndex(slot => slot === null);
     if (emptySlotIndex === -1) {
-      this.showToast('手牌已满');
+      this.showToast('手牌已满 3 张，请先卖出部分持仓');
       return;
     }
 
@@ -1404,11 +1453,38 @@ export class GameScene extends Phaser.Scene {
 
     const buyCost = this.getBuyCost(card, this.leverageEnabled);
     if (this.turnManager.getQi() < buyCost) {
-      this.showToast('气不足无法买入');
+      this.showToast('可用气不足，无法支付买入费用与保证金');
       return;
     }
 
-    this.previousQi = this.turnManager.getQi();
+    // 二次确认：1. 杠杆买入确认
+    if (this.leverageEnabled) {
+      const confirm = window.confirm('【杠杆买入确认】开启杠杆买入将锁定保证金，并且会成倍增加后续每回合的持仓维持气耗，且无法取消。确定要开启杠杆买入吗？');
+      if (!confirm) return;
+    }
+
+    // 二次确认：2. 流动性危急买入确认
+    const qi = this.turnManager.getQi();
+    const season = this.turnManager.getCurrentSeason();
+    let currentTotalHoldCost = 0;
+    this.turnManager.getHand().forEach(s => {
+      if (s) {
+        currentTotalHoldCost += this.getHoldQiCost(s.card.getSeasonScore(season), s.leverage);
+      }
+    });
+    const newCardScore = card.getSeasonScore(season);
+    const newCardHoldCost = this.getHoldQiCost(newCardScore, this.leverageEnabled ? this.turnManager.getLeverageMultiplier() : 1);
+    const nextHoldCost = currentTotalHoldCost + newCardHoldCost;
+    const nextQi = qi - buyCost;
+    const nextTurnsToLive = nextHoldCost > 0 ? nextQi / nextHoldCost : 99;
+    const isLowQiBuy = qi < 20 || (nextQi < nextHoldCost) || (nextTurnsToLive <= 1.0);
+
+    if (isLowQiBuy) {
+      const confirm = window.confirm('【流动性危急买入】当前可用气较低，或买入后可用气无法支撑下一回合维持气耗（预计存活回合数将为 0/1），极易导致爆仓。确定要继续买入吗？');
+      if (!confirm) return;
+    }
+
+    this.previousQi = qi;
     this.previousScore = this.turnManager.getScore();
 
     // 状态加锁阻断重复点击
@@ -1436,8 +1512,14 @@ export class GameScene extends Phaser.Scene {
   private onLeverageClick(): void {
     if (this.isShowingSettlement || this.isAnimating) return;
 
+    const state = this.turnManager.getState();
+    if (state !== 'player_action') {
+      this.showToast('当前非玩家操作回合');
+      return;
+    }
+
     if (this.selectedPublicCard === -1) {
-      this.showToast('请先选择公共牌');
+      this.showToast('请先在上方卡池中选择卡牌以开启杠杆');
       return;
     }
     const leverage = this.turnManager.getLeverageMultiplier();
@@ -1454,20 +1536,44 @@ export class GameScene extends Phaser.Scene {
   private onSellClick(): void {
     if (this.isShowingSettlement || this.isAnimating) return;
 
+    const state = this.turnManager.getState();
+    if (state !== 'player_action') {
+      this.showToast('当前非玩家操作回合');
+      return;
+    }
+
     const hand = this.turnManager.getHand();
     const selectedSlot = this.selectedHandCard !== -1 ? hand[this.selectedHandCard] : null;
     if (!selectedSlot) {
-      this.showToast('请先选择手牌');
+      this.showToast('请先在下方手牌中选择要卖出的卡牌');
       return;
     }
 
     const qiChange = this.turnManager.previewSellQiChange(selectedSlot);
     if (qiChange < 0 && this.turnManager.getQi() < Math.abs(qiChange)) {
-      this.showToast('气不足以支付卖出净损耗');
+      this.showToast('可用气不足以支付卖出的气量消耗');
       return;
     }
 
-    this.previousQi = this.turnManager.getQi();
+    // 二次确认：仅大额且非自救割肉确认
+    const sellScore = this.getSellScore(selectedSlot);
+    const qi = this.turnManager.getQi();
+    const season = this.turnManager.getCurrentSeason();
+    let currentTotalHoldCost = 0;
+    hand.forEach(s => {
+      if (s) {
+        currentTotalHoldCost += this.getHoldQiCost(s.card.getSeasonScore(season), s.leverage);
+      }
+    });
+    const turnsToLive = currentTotalHoldCost > 0 ? qi / currentTotalHoldCost : 99;
+    const inDanger = (qi < 20) || (turnsToLive <= 2.0);
+
+    if (sellScore <= -5 && !inDanger) {
+      const confirm = window.confirm('【大额亏损平仓确认】此卡牌当前亏损严重，且您当前流动性安全，确定要在这时割肉卖出吗？');
+      if (!confirm) return;
+    }
+
+    this.previousQi = qi;
     this.previousScore = this.turnManager.getScore();
 
     this.isAnimating = true;
@@ -1492,9 +1598,33 @@ export class GameScene extends Phaser.Scene {
   /** 等待动作 */
   private onWaitClick(): void {
     if (this.isShowingSettlement || this.isAnimating) return;
+
+    const state = this.turnManager.getState();
+    if (state !== 'player_action') {
+      this.showToast('当前非玩家操作回合');
+      return;
+    }
+
+    const qi = this.turnManager.getQi();
+    const hand = this.turnManager.getHand();
+    const season = this.turnManager.getCurrentSeason();
+    let currentTotalHoldCost = 0;
+    hand.forEach(s => {
+      if (s) {
+        currentTotalHoldCost += this.getHoldQiCost(s.card.getSeasonScore(season), s.leverage);
+      }
+    });
+    const hasLeverage = hand.some(slot => slot && slot.leverage > 1);
+    const willMarginCallNextTurn = hasLeverage && (qi - currentTotalHoldCost <= 0);
+
+    if (willMarginCallNextTurn) {
+      const confirm = window.confirm('⚠️【警告：下回合必爆仓！】检测到当前持仓在下一回合结束后会扣干您的全部可用气触发强制平仓！确定要死扛不平仓、直接等待推进吗？');
+      if (!confirm) return;
+    }
+
     this.soundManager.playClick();
     
-    this.previousQi = this.turnManager.getQi();
+    this.previousQi = qi;
     this.previousScore = this.turnManager.getScore();
 
     this.turnManager.executeWait();
