@@ -6,13 +6,15 @@ export class HandSlot {
   readonly buyScore: number;
   readonly leverage: number;
   readonly buyRound: number;
+  readonly lockedQi: number;
   holdEarnings: number;
 
-  constructor(card: JiaziCard, buyScore: number, leverage: number, buyRound: number) {
+  constructor(card: JiaziCard, buyScore: number, leverage: number, buyRound: number, lockedQi: number) {
     this.card = card;
     this.buyScore = buyScore;
     this.leverage = leverage;
     this.buyRound = buyRound;
+    this.lockedQi = lockedQi;
     this.holdEarnings = 0;
   }
 

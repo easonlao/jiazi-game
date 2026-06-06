@@ -108,6 +108,15 @@ export class ScoreManager {
   }
 
   /**
+   * 应用爆仓强平扣分惩罚
+   * @param penaltyAmount 扣分额度
+   */
+  applyMarginCallPenalty(penaltyAmount: number = 35): void {
+    this.score = Math.max(0, this.score - penaltyAmount);
+    this.totalSellEarnings -= penaltyAmount;
+  }
+
+  /**
    * 重置分数与各项收益记录为 0
    */
   reset(): void {

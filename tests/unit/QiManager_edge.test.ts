@@ -39,9 +39,9 @@ describe('QiManager - 气耗管理边界测试', () => {
   it('应该正确计算卖出即时回复', () => {
     const qiManager = new QiManager(50);
     
-    // 卖出即时回复9气
+    // 卖出即时回复0气
     qiManager.applySellRecovery();
-    expect(qiManager.getQi()).toBe(59);
+    expect(qiManager.getQi()).toBe(50);
   });
 
   it('应该正确计算等待额外回复', () => {

@@ -11,10 +11,15 @@ export class QiManager {
   private static readonly INITIAL_QI = 50;
   private static readonly BASE_RECOVERY = 7;
   private static readonly WAIT_BONUS = 10;
-  private static readonly SELL_COST = 3;
-  private static readonly SELL_RECOVER = 9;
+  private static readonly SELL_COST = 4;
+  private static readonly SELL_RECOVER = 0;
   private static readonly BASE_BUY_COST = 11;
   private static readonly BUY_COST_FACTOR = 0.05;
+  private static readonly LQC = 14;
+
+  private static readonly BUY_ENTRY_FEE = 2;
+  private static readonly FORCED_LIQUIDATION_QI_RETURN_FACTOR = 0.5;
+  private static readonly FORCED_LIQUIDATION_SCORE_MULTIPLIER = 0.8;
 
   private qi: number;
   private maxQi: number;
@@ -39,8 +44,9 @@ export class QiManager {
    * 强制设定当前的气值（多用于加载游戏存档还原状态）
    * @param value 气值
    */
-  setQi(value: number): void {
-    this.qi = Math.max(0, Math.min(this.maxQi, value));
+  setQi(value: number, totalLockedQi: number = 0): void {
+    const currentMax = this.maxQi - totalLockedQi;
+    this.qi = Math.max(0, Math.min(currentMax, value));
   }
 
   /**
@@ -66,8 +72,9 @@ export class QiManager {
    * 恢复指定额度的气，且不会超过最大气上限限制
    * @param amount 恢复额度
    */
-  recover(amount: number): void {
-    this.qi = Math.min(this.maxQi, this.qi + amount);
+  recover(amount: number, totalLockedQi: number = 0): void {
+    const currentMax = this.maxQi - totalLockedQi;
+    this.qi = Math.min(currentMax, this.qi + amount);
   }
 
   /**
@@ -82,7 +89,7 @@ export class QiManager {
   /**
    * 计算买入某张卡牌时的气耗（受卡牌当前季节评分和是否使用杠杆的影响）
    * 
-   * 计算公式: Math.ceil(BASE_BUY_COST * (1 + BUY_COST_FACTOR * cardScore)) [+ 10 (杠杆)]
+   * 计算公式: Math.ceil(BASE_BUY_COST * (1 + BUY_COST_FACTOR * cardScore)) [+ LQC (杠杆)]
    * 
    * @param cardScore 该卡牌在当前季节的评分
    * @param useLeverage 是否加杠杆
@@ -91,7 +98,7 @@ export class QiManager {
   calculateBuyCost(cardScore: number, useLeverage: boolean = false): number {
     let cost = QiManager.BASE_BUY_COST * (1 + QiManager.BUY_COST_FACTOR * cardScore);
     if (useLeverage) {
-      cost += 10; // 杠杆额外消耗 10 气
+      cost += QiManager.LQC; // 杠杆额外消耗 LQC
     }
     return Math.ceil(cost);
   }
@@ -128,7 +135,7 @@ export class QiManager {
 
   /**
    * 获取卖出卡牌需要扣除的气耗
-   * @returns 卖出气耗 (默认为 3)
+   * @returns 卖出气耗 (当前设定为 4)
    */
   getSellCost(): number {
     return QiManager.SELL_COST;
@@ -136,7 +143,7 @@ export class QiManager {
 
   /**
    * 获取卖出卡牌后即时回复的气值
-   * @returns 卖出回复气量 (默认为 8)
+   * @returns 卖出回复气量 (当前设定为 0)
    */
   getSellRecover(): number {
     return QiManager.SELL_RECOVER;
@@ -156,6 +163,35 @@ export class QiManager {
    */
   getWaitBonus(): number {
     return QiManager.WAIT_BONUS;
+  }
+
+  /**
+   * 获取杠杆额外买入消耗气值
+   * @returns 杠杆额外消耗
+   */
+  getLQC(): number {
+    return QiManager.LQC;
+  }
+
+  /**
+   * 获取买入手续费
+   */
+  getBuyEntryFee(): number {
+    return QiManager.BUY_ENTRY_FEE;
+  }
+
+  /**
+   * 获取强平保证金退还系数
+   */
+  getForcedLiquidationQiReturnFactor(): number {
+    return QiManager.FORCED_LIQUIDATION_QI_RETURN_FACTOR;
+  }
+
+  /**
+   * 获取强平得分折价系数
+   */
+  getForcedLiquidationScoreMultiplier(): number {
+    return QiManager.FORCED_LIQUIDATION_SCORE_MULTIPLIER;
   }
 
   /**

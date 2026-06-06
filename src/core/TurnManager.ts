@@ -255,6 +255,11 @@ export class TurnManager {
       const targetIndex = leverageIndices[Math.floor(Math.random() * leverageIndices.length)];
       const slot = hand[targetIndex]!;
 
+      // 强平移除卡牌 (直接 sell，不扣除卖出气耗，亦不提供卖出即时回气)
+      this.handManager.sell(targetIndex);
+      const newTotalLocked = this.getTotalLockedQi();
+      this.marginCallCount++;
+
       // 正常获得卖出分数（强平惩罚：正收益打 8 折，负收益 100% 承担）
       const currentScore = slot.card.getSeasonScore(this.seasonCycle.getCurrentSeason());
       const baseSellScore = this.scoreManager.calculateSellScore(
@@ -262,20 +267,32 @@ export class TurnManager {
         slot.buyScore,
         slot.leverage
       );
-      const finalSellScore = baseSellScore > 0 ? Math.floor(baseSellScore * 0.8) : baseSellScore;
+      const multiplier = this.qiManager.getForcedLiquidationScoreMultiplier();
+      const finalSellScore = baseSellScore > 0 ? Math.floor(baseSellScore * multiplier) : baseSellScore;
       this.scoreManager.addSellEarnings(finalSellScore);
+
+      // 施加强平罚款 (35分) —— 必须在得分结算后扣除，防止被 0 分早期截断
+      this.scoreManager.applyMarginCallPenalty(35);
+
+      // 强平返还部分保证金
+      const forcedLiquidationQiReturn = Math.floor(slot.lockedQi * this.qiManager.getForcedLiquidationQiReturnFactor());
+      this.qiManager.recover(forcedLiquidationQiReturn, newTotalLocked);
 
       // 记录强平细节
       details.push({
         cardName: slot.card.name,
         sellScore: finalSellScore,
-        reason: '气量归零强制平仓'
+        reason: `气量归零强制平仓，退回保证金 ${forcedLiquidationQiReturn}气，并扣除 35 分罚款`
       });
 
-      // 强平移除卡牌 (直接 sell，不扣除卖出气耗，亦不提供卖出即时回气)
-      this.handManager.sell(targetIndex);
-      this.marginCallCount++;
-      console.log(`[TurnManager] 爆仓强平：移除卡牌 ID ${slot.card.id}，结算收益 ${finalSellScore} 分`);
+      console.log(`[TurnManager] 爆仓强平：移除卡牌 ID ${slot.card.id}，结算收益 ${finalSellScore} 分，退回保证金 ${forcedLiquidationQiReturn}，扣罚 35 分`);
+
+      // 强平成功 1 张后，将 qi 设置为 min(max(currentQi, 10), currentMaxQi)，提供低保缓冲并退出，打断连环强平
+      const currentMaxQi = this.qiManager.getMaxQi() - newTotalLocked;
+      const newQi = Math.min(Math.max(this.qiManager.getQi(), 10), currentMaxQi);
+      this.qiManager.setQi(newQi, newTotalLocked);
+      console.log(`[TurnManager] 爆仓低保缓冲：气恢复至 ${newQi}`);
+      break;
     }
 
     return details;
@@ -285,15 +302,16 @@ export class TurnManager {
    * 自然回复玩家的气，若上回合选择等待则提供额外奖励
    */
   private recoverQi(): void {
+    const totalLocked = this.getTotalLockedQi();
     const baseRecovery = this.qiManager.getBaseRecovery();
-    this.qiManager.recover(baseRecovery);
+    this.qiManager.recover(baseRecovery, totalLocked);
     if (this.lastSettlementDetail) {
       this.lastSettlementDetail.baseQiRecover = baseRecovery;
     }
 
     if (this.lastAction === 'wait') {
       const waitBonus = this.qiManager.getWaitBonus();
-      this.qiManager.recover(waitBonus);
+      this.qiManager.recover(waitBonus, totalLocked);
       if (this.lastSettlementDetail) {
         this.lastSettlementDetail.waitQiRecover = waitBonus;
       }
@@ -337,11 +355,13 @@ export class TurnManager {
       this.totalLeverageBuys++;
     }
     const buyScore = card.getSeasonScore(this.seasonCycle.getCurrentSeason());
+    const lockedQi = buyCost - this.qiManager.getBuyEntryFee();
     const slotIndex = this.handManager.buy(
       card,
       buyScore,
       leverage ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason()) : 1,
-      this.currentRound
+      this.currentRound,
+      lockedQi
     );
 
     if (slotIndex === -1) return false;
@@ -366,29 +386,37 @@ export class TurnManager {
     const slot = this.handManager.getSlot(slotIndex);
     if (!slot) return false;
 
-    // 检查气是否足够
-    if (!this.qiManager.canAfford(this.qiManager.getSellCost())) {
-      console.log('[TurnManager] 气不足');
-      return false;
-    }
-
-    // 执行卖出
-    this.qiManager.spend(this.qiManager.getSellCost());
-    this.totalSells++;
-
     const currentScore = slot.card.getSeasonScore(this.seasonCycle.getCurrentSeason());
     const sellScore = this.scoreManager.calculateSellScore(
       currentScore,
       slot.buyScore,
       slot.leverage
     );
-    this.scoreManager.addSellEarnings(sellScore);
 
-    // 即时回复气
-    this.qiManager.recover(this.qiManager.getSellRecover());
+    // 计算 sellQiReturn
+    const lockedQi = slot.lockedQi;
+    const sellCost = this.qiManager.getSellCost();
+    const sellQiReturn = lockedQi + Math.max(-8, Math.min(8, sellScore * 0.2)) - sellCost;
 
-    // 移除卡牌
+    // 检查气是否足够 (如果 sellQiReturn 为负，说明是净损耗，玩家需要能支付得起)
+    if (sellQiReturn < 0 && !this.qiManager.canAfford(Math.abs(sellQiReturn))) {
+      console.log('[TurnManager] 气不足以支付卖出净损耗');
+      return false;
+    }
+
+    // 移除卡牌以释放对应的保证金锁定额
     this.handManager.sell(slotIndex);
+    const newTotalLocked = this.getTotalLockedQi();
+
+    // 执行卖出扣气/回气
+    if (sellQiReturn < 0) {
+      this.qiManager.spend(Math.abs(sellQiReturn));
+    } else {
+      this.qiManager.recover(sellQiReturn, newTotalLocked);
+    }
+
+    this.totalSells++;
+    this.scoreManager.addSellEarnings(sellScore);
 
     this.lastAction = 'sell';
     this.advanceTurn();
@@ -467,6 +495,7 @@ export class TurnManager {
           buyScore: slot.buyScore,
           leverage: slot.leverage,
           buyRound: slot.buyRound,
+          lockedQi: slot.lockedQi,
           holdEarnings: slot.holdEarnings
         } : null),
         pool: {
@@ -521,8 +550,7 @@ export class TurnManager {
       this.state = data.state;
       this.lastAction = data.lastAction;
 
-      // 2. 还原气与积分
-      this.qiManager.setQi(data.qi);
+      // 2. 还原积分
       this.scoreManager.setScore(data.score, data.totalHoldEarnings, data.totalSellEarnings);
 
       // 还原统计数据
@@ -539,11 +567,15 @@ export class TurnManager {
         if (!slotData) return null;
         const card = this.cardDataBank.getCard(slotData.cardId);
         if (!card) throw new Error(`找不到 ID 为 ${slotData.cardId} 的卡牌`);
-        const slot = new HandSlot(card, slotData.buyScore, slotData.leverage, slotData.buyRound);
+        const lockedQi = slotData.lockedQi !== undefined ? slotData.lockedQi : Math.max(0, this.qiManager.calculateBuyCost(slotData.buyScore, slotData.leverage > 1) - this.qiManager.getBuyEntryFee());
+        const slot = new HandSlot(card, slotData.buyScore, slotData.leverage, slotData.buyRound, lockedQi);
         slot.holdEarnings = slotData.holdEarnings;
         return slot;
       });
       this.handManager.loadHand(restoredHand);
+
+      // 5. 还原气值（基于最新手牌计算的 totalLockedQi）
+      this.qiManager.setQi(data.qi, this.getTotalLockedQi());
 
       // 5. 还原公共牌池与牌堆
       const restoredDeck = data.pool.deckIds.map((id: number) => {
@@ -681,6 +713,14 @@ export class TurnManager {
     return this.scoreManager.calculateSellScore(currentScore, slot.buyScore, slot.leverage);
   }
 
+  /** 预览卖出卡牌的气变化量 */
+  previewSellQiChange(slot: HandSlot): number {
+    const currentScore = slot.card.getSeasonScore(this.getCurrentSeason());
+    const sellScore = this.scoreManager.calculateSellScore(currentScore, slot.buyScore, slot.leverage);
+    const lockedQi = slot.lockedQi;
+    return lockedQi + Math.max(-8, Math.min(8, sellScore * 0.2)) - this.qiManager.getSellCost();
+  }
+
   getLastSettlementDetail(): SettlementDetail | null {
     return this.lastSettlementDetail;
   }
@@ -699,6 +739,16 @@ export class TurnManager {
 
   getTotalLeverageBuys(): number {
     return this.totalLeverageBuys;
+  }
+
+  getTotalLockedQi(): number {
+    let total = 0;
+    this.handManager.getHand().forEach(slot => {
+      if (slot) {
+        total += slot.lockedQi;
+      }
+    });
+    return total;
   }
 
   /** 重置游戏 */

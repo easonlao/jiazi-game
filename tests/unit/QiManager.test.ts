@@ -34,7 +34,7 @@ describe('QiManager', () => {
     expect(qi.calculateBuyCost(3, false)).toBe(13);
 
     // cardScore = 3, useLeverage = true
-    // cost = 13 + 10 = 23
-    expect(qi.calculateBuyCost(3, true)).toBe(23);
+    // cost = 13 + 14 = 27
+    expect(qi.calculateBuyCost(3, true)).toBe(27);
   });
 });

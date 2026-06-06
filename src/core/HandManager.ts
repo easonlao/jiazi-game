@@ -66,13 +66,13 @@ export class HandManager {
    * @param buyRound 购买时的游戏大回合数
    * @returns 成功放置的插槽索引 (0-2)；若满仓失败则返回 -1
    */
-  buy(card: JiaziCard, buyScore: number, leverage: number, buyRound: number): number {
+  buy(card: JiaziCard, buyScore: number, leverage: number, buyRound: number, lockedQi: number): number {
     if (!this.canBuy()) return -1;
 
     const emptySlotIndex = this.hand.findIndex(slot => slot === null);
     if (emptySlotIndex === -1) return -1;
 
-    this.hand[emptySlotIndex] = new HandSlot(card, buyScore, leverage, buyRound);
+    this.hand[emptySlotIndex] = new HandSlot(card, buyScore, leverage, buyRound, lockedQi);
     return emptySlotIndex;
   }
 
