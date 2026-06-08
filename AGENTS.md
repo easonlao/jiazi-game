@@ -66,3 +66,30 @@
 ## 上下文管理
 
 @docs/context-management.md
+
+---
+
+## 平台适配
+
+本项目目标平台为 **Web H5 → 微信小游戏 → App**，开发时需同时考虑多平台兼容性。
+
+@docs/platform/mini-program.md
+
+@docs/platform/weapp-phaser-adapter.md
+
+@docs/platform/web-h5.md
+
+### 平台开发优先级
+
+| 阶段 | 平台 | 说明 |
+|------|------|------|
+| **MVP** | Web H5 | 快速验证核心玩法 |
+| **Alpha** | Web H5 + 微信小游戏 | 扩大用户群 |
+| **Beta** | 全平台 | App 打包 |
+
+### 跨平台开发原则
+
+1. **API 抽象**：存储、音频、网络等 API 使用统一封装，根据平台自动切换实现
+2. **资源 CDN**：大体积资源统一托管 CDN，避免小游戏包体超限
+3. **触摸优先**：UI 设计以触摸交互为主，鼠标作为增强
+4. **无 DOM 依赖**：核心逻辑不依赖 DOM API，确保小游戏兼容
