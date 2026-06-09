@@ -83,3 +83,6 @@ $RECYCLE.BIN/
 # === Game Engine & Editor Cache ===
 .godot/
 .codex/
+
+# Preview files
+.preview
