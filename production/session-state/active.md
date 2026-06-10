@@ -8,7 +8,7 @@
 
 | 属性 | 值 |
 |------|------|
-| 会话ID | 2026-06-07-001 |
+| 会话ID | 2026-06-10-002 |
 | 项目阶段 | MVP |
 | 当前版本 | 0.1.0 |
 
@@ -18,9 +18,9 @@
 
 | 属性 | 值 |
 |------|------|
-| 任务 | 修复 GitHub Actions CI 工作流失败 |
-| 状态 | 已完成 |
-| 当前步骤 | 4/4 验证线上 CI 成功绿灯 |
+| 任务 | 完善协作文档闭环机制 |
+| 状态 | completed |
+| 当前步骤 | 4/4 更新决策日志状态 |
 | 进度 | 100% |
 
 ---
@@ -29,12 +29,11 @@
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| production/session-state/active.md | 更新 | 更新当前任务和状态 |
-| production/session-logs/session-log.md | 更新 | 操作日志 |
-| .github/workflows/ci.yml | 修改 | 将工作流迁移到 pnpm |
-| package-lock.json | 删除 | 移除旧的 npm 锁文件 |
-| package.json | 修改 | 允许 pnpm 构建 esbuild |
-| pnpm-workspace.yaml | 新建 | 允许 pnpm v11 构建 esbuild 并配置工作区 |
+| docs/rules/collaboration.md | 修改 | 添加任务生命周期、审计闭环章节 |
+| docs/rules/behavior.md | 修改 | 增强会话审计清单、添加违规处理章节 |
+| production/decision-log/decisions.md | 修改 | 更新决策 #001、#002 状态为已执行 |
+| production/session-state/active.md | 更新 | 记录本会话状态 |
+| production/session-logs/session-log.md | 更新 | 记录本会话操作 |
 
 ---
 
@@ -46,18 +45,20 @@
 
 ## 已完成工作
 
-- [x] 通过 `gh run view` 定位了旧 CI 报错的原因为 `npm ci` 跨平台可选依赖缺失
-- [x] 将 CI 迁移至 pnpm 架构，修改了 `.github/workflows/ci.yml` 并删除了 `package-lock.json`
-- [x] 添加了 `pnpm` 对 `esbuild` 脚本构建权限配置（`package.json` 与 `pnpm-workspace.yaml`）
-- [x] 本地通过 `pnpm install`、`pnpm test` 和 `pnpm build` 验证了依赖及构建无异常
-- [x] 提交变更并推送至 main，验证 GitHub Actions CI 已经全部成功绿灯通过
+- [x] 分析现有文档体系结构
+- [x] 在 collaboration.md 添加任务生命周期定义（7个状态、流转图、转换条件）
+- [x] 在 collaboration.md 添加审计与闭环章节
+- [x] 在 behavior.md 增强会话检查清单（开始/进行中/结束审计）
+- [x] 在 behavior.md 添加违规处理章节
+- [x] 更新决策日志状态
 
 ---
 
 ## 快速恢复步骤
 
-1. 项目目前已经完整使用 `pnpm` 作为默认包管理器，日常开发可以直接运行 `npm run dev` 或 `pnpm dev`。
-2. 如需重新安装依赖，请全局安装 pnpm（`npm install -g pnpm`）并运行 `pnpm install`。
+1. 文档体系已完善，AI 可通过 AGENTS.md 快速接入
+2. 会话状态审计流程已建立，每次会话结束前需完成审计清单
+3. 任务生命周期已定义，支持 pending → in_progress → blocked → completed 流转
 
 ---
 
@@ -69,5 +70,5 @@
 
 ## 下一步计划
 
-1. 确认本次 CI 修复状态（已绿灯）。
-2. 可继续推进当前开发分支的其他业务功能或场景优化。
+1. 继续推进 MVP 阶段的其他业务功能
+2. 在实际协作中验证文档体系的有效性
