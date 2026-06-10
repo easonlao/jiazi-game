@@ -17,13 +17,31 @@
 | 20:55:13 | EXEC | git status | 检查本地Git状态 |
 | 20:56:04 | EXEC | gh run list | 查询 GitHub Actions 运行记录 |
 | 20:56:08 | EXEC | git fetch origin | 拉取远程更新 |
-| 20:56:17 | EXEC | gh run view 27216275241 | 查看失败 the GitHub Actions 详情 |
+| 20:56:17 | EXEC | gh run view 27216275241 | 查看失败的 GitHub Actions 详情 |
 | 20:56:23 | EXEC | gh run view 27216275241 --log-failed | 分析依赖安装失败原因 |
 | 20:56:32 | EXEC | git stash | 暂存本地场景修改 |
 | 20:56:34 | EXEC | git pull origin main --rebase | 合并远程分支更改 |
 | 20:56:59 | WRITE | implementation_plan.md | 创建 CI 修复设计方案 |
+| 21:16:34 | EXEC | git rm package-lock.json | 移除了旧的 npm 锁文件 |
+| 21:16:38 | EDIT | .github/workflows/ci.yml | 切换 CI 为 pnpm 架构 |
+| 21:40:35 | WRITE | .npmrc (已删除) | 创建临时配置文件 |
+| 21:45:38 | EDIT | package.json | 添加 pnpm 构建 esbuild 的许可配置 |
+| 21:45:41 | WRITE | pnpm-workspace.yaml | 创建 pnpm 工作区及构建白名单配置 |
+| 21:45:43 | EXEC | pnpm install | 本地依赖安装校验成功 |
+| 21:45:48 | EXEC | pnpm test -- --run | 本地单元测试运行成功 |
+| 21:45:52 | EXEC | pnpm build | 本地打包编译成功 |
+| 21:46:12 | EXEC | git commit | 提交 CI 修复变更 |
+| 21:46:14 | EXEC | git push origin main | 推送变更至 GitHub |
+| 21:47:40 | EXEC | gh run list | 查询最新触发的 CI 工作流状态 |
+| 21:48:02 | EXEC | gh run list | 验证线上 CI 顺利通过并全部绿灯 |
+| 21:48:07 | WRITE | walkthrough.md | 输出交付日志 |
 
-### 结束时间: 进行中
+### 提交记录
+
+- 3832a78 fix(ci): migrate CI workflow to pnpm to fix build failures
+- 7c9c104 fix(ci): add packages field to pnpm-workspace.yaml
+
+### 结束时间: 2026-06-10 21:49:00
 
 ---
 

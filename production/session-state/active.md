@@ -19,9 +19,9 @@
 | 属性 | 值 |
 |------|------|
 | 任务 | 修复 GitHub Actions CI 工作流失败 |
-| 状态 | 规划中 |
-| 当前步骤 | 1/4 规划与方案设计 |
-| 进度 | 25% |
+| 状态 | 已完成 |
+| 当前步骤 | 4/4 验证线上 CI 成功绿灯 |
+| 进度 | 100% |
 
 ---
 
@@ -31,28 +31,33 @@
 |------|------|------|
 | production/session-state/active.md | 更新 | 更新当前任务和状态 |
 | production/session-logs/session-log.md | 更新 | 操作日志 |
+| .github/workflows/ci.yml | 修改 | 将工作流迁移到 pnpm |
+| package-lock.json | 删除 | 移除旧的 npm 锁文件 |
+| package.json | 修改 | 允许 pnpm 构建 esbuild |
+| pnpm-workspace.yaml | 新建 | 允许 pnpm v11 构建 esbuild 并配置工作区 |
 
 ---
 
 ## 待用户决策
 
-- [ ] 审批实现方案以修复 CI
-- [ ] 是否在本次变更中删除 `package-lock.json` 以统一包管理
+无
 
 ---
 
 ## 已完成工作
 
-- [x] 拉取并合并了远程仓库 main 的最新提交
-- [x] 通过 `gh run view` 定位了 GitHub Actions 的失败原因为 `npm ci` 缺少其他平台的可选依赖
-- [x] 确立了将 CI 迁移至 pnpm 的修复方案，并创建了实现计划
+- [x] 通过 `gh run view` 定位了旧 CI 报错的原因为 `npm ci` 跨平台可选依赖缺失
+- [x] 将 CI 迁移至 pnpm 架构，修改了 `.github/workflows/ci.yml` 并删除了 `package-lock.json`
+- [x] 添加了 `pnpm` 对 `esbuild` 脚本构建权限配置（`package.json` 与 `pnpm-workspace.yaml`）
+- [x] 本地通过 `pnpm install`、`pnpm test` 和 `pnpm build` 验证了依赖及构建无异常
+- [x] 提交变更并推送至 main，验证 GitHub Actions CI 已经全部成功绿灯通过
 
 ---
 
 ## 快速恢复步骤
 
-1. 阅读 `implementation_plan.md` 了解 CI 的修复方案
-2. 等待用户确认并审批方案
+1. 项目目前已经完整使用 `pnpm` 作为默认包管理器，日常开发可以直接运行 `npm run dev` 或 `pnpm dev`。
+2. 如需重新安装依赖，请全局安装 pnpm（`npm install -g pnpm`）并运行 `pnpm install`。
 
 ---
 
@@ -64,6 +69,5 @@
 
 ## 下一步计划
 
-1. 等待用户批准实现方案
-2. 按照方案修改 `.github/workflows/ci.yml` 并本地验证
-3. 推送变更以验证 CI 是否通过
+1. 确认本次 CI 修复状态（已绿灯）。
+2. 可继续推进当前开发分支的其他业务功能或场景优化。
