@@ -83,16 +83,62 @@ export class GameScene extends Phaser.Scene {
     this.showStartScreen();
 
     // 全局点击空白取消选择 (防止事件穿透，限玩家操作回合)
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (this.isShowingSettlement || this.isAnimating) return;
       if (this.turnManager && this.turnManager.getState() === 'player_action') {
-        if (currentlyOver.length === 0) {
+        if (!this.isPointerOnInteractiveGameArea(pointer)) {
           this.selectedPublicCard = -1;
           this.selectedHandCard = -1;
+          this.leverageEnabled = false;
           this.updateUI();
         }
       }
     });
+  }
+
+  private isPointerInRect(pointer: Phaser.Input.Pointer, x: number, y: number, width: number, height: number): boolean {
+    return (
+      pointer.x >= x - width / 2 &&
+      pointer.x <= x + width / 2 &&
+      pointer.y >= y - height / 2 &&
+      pointer.y <= y + height / 2
+    );
+  }
+
+  private isPointerOnInteractiveGameArea(pointer: Phaser.Input.Pointer): boolean {
+    const publicCards = this.turnManager.getPublicCards();
+    const publicCardWidth = 160;
+    const publicCardHeight = 200;
+    const publicCardSpacing = 20;
+    const publicStartX = 214 - ((publicCards.length - 1) * (publicCardWidth + publicCardSpacing)) / 2;
+    for (let index = 0; index < publicCards.length; index++) {
+      const yOffset = this.selectedPublicCard === index ? -6 : 0;
+      if (this.isPointerInRect(pointer, publicStartX + index * (publicCardWidth + publicCardSpacing), 266 + yOffset, publicCardWidth, publicCardHeight)) {
+        return true;
+      }
+    }
+
+    const hand = this.turnManager.getHand();
+    const handCardWidth = 120;
+    const handCardHeight = 160;
+    const handCardSpacing = 10;
+    const handStartX = 214 - ((hand.length - 1) * (handCardWidth + handCardSpacing)) / 2;
+    for (let index = 0; index < hand.length; index++) {
+      if (!hand[index]) continue;
+      const yOffset = this.selectedHandCard === index ? -6 : 0;
+      if (this.isPointerInRect(pointer, handStartX + index * (handCardWidth + handCardSpacing), 480 + yOffset, handCardWidth, handCardHeight)) {
+        return true;
+      }
+    }
+
+    return (
+      this.isPointerInRect(pointer, 45, 40, 44, 26) ||
+      this.isPointerInRect(pointer, 383, 40, 44, 26) ||
+      this.isPointerInRect(pointer, 107, 648, 180, 40) ||
+      this.isPointerInRect(pointer, 321, 648, 180, 40) ||
+      this.isPointerInRect(pointer, 107, 708, 180, 40) ||
+      this.isPointerInRect(pointer, 321, 708, 180, 40)
+    );
   }
 
   private showStartScreen(): void {
