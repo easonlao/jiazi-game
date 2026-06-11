@@ -10,7 +10,7 @@
 |------|------|
 | 会话ID | 2026-06-10-002 |
 | 项目阶段 | MVP |
-| 当前版本 | 0.1.0 |
+| 当前版本 | 0.2.0 |
 
 ---
 
@@ -18,7 +18,7 @@
 
 | 属性 | 值 |
 |------|------|
-| 任务 | Review并修复文档体系问题 |
+| 任务 | 排查并修复规则矛盾 |
 | 状态 | completed |
 | 当前步骤 | 3/3 提交修复变更 |
 | 进度 | 100% |
@@ -32,6 +32,9 @@
 | AGENTS.md | 修改 | 同步版本号为 0.2.0 |
 | production/templates/session-template.md | 新增 | 创建会话模板文件 |
 | production/decision-log/decisions.md | 修改 | 为决策 #003-#005 添加执行时间 |
+| docs/rules/file-access.md | 修改 | 新增 tmp/ 目录权限，明确新建文件规则 |
+| docs/rules/behavior.md | 修改 | 更新新建文件规则，区分 tmp/ 目录 |
+| docs/rules/collaboration.md | 修改 | 删除重复审计清单，修复章节编号 |
 | production/session-state/active.md | 更新 | 记录本会话状态 |
 | production/session-logs/session-log.md | 更新 | 记录本会话操作 |
 
@@ -49,15 +52,18 @@
 - [x] 同步版本号（0.1.0 → 0.2.0）
 - [x] 创建会话模板文件
 - [x] 完善决策记录（添加执行时间）
-- [x] 更新会话状态和操作日志
+- [x] 排查规则矛盾
+- [x] 修复新建文件权限矛盾（新增 tmp/ 目录）
+- [x] 删除重复审计清单
+- [x] 修复章节编号错误
 
 ---
 
 ## 快速恢复步骤
 
 1. 文档体系已完善，AI 可通过 AGENTS.md 快速接入
-2. 会话状态审计流程已建立，每次会话结束前需完成审计清单
-3. 任务生命周期已定义，支持 pending → in_progress → blocked → completed 流转
+2. 规则矛盾已修复，新建文件区分 tmp/ 和项目代码
+3. 会话状态审计流程已建立，每次会话结束前需完成审计清单
 
 ---
 
