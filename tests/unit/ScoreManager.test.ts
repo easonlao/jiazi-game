@@ -19,8 +19,8 @@ describe('ScoreManager', () => {
   it('正确计算卖出得分', () => {
     const score = new ScoreManager();
     // currentScore = 3, buyScore = 2, leverage = 1.5
-    // sellScore = (8 + (3 - 2) * 4) * 1.5 = (8 + 4) * 1.5 = 12 * 1.5 = 18
-    expect(score.calculateSellScore(3, 2, 1.5)).toBeCloseTo(18);
+    // sellScore = ((3 - 2) * 4) * 1.5 = 4 * 1.5 = 6
+    expect(score.calculateSellScore(3, 2, 1.5)).toBeCloseTo(6);
   });
 
   it('累加持仓与卖出收益', () => {

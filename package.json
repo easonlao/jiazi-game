@@ -4,15 +4,14 @@
   "description": "甲子纪 - 六十甲子回合制策略卡牌游戏",
   "type": "module",
   "scripts": {
-    "build": "tsc && vite build",
-    "dev": "vite --port 5000",
-    "preview": "vite preview --port 5000",
-    "test": "vitest"
-  },
-  "dependencies": {
-    "phaser": "^3.90.0"
+    "build": "npm --prefix app run build",
+    "dev": "npm --prefix app run dev",
+    "preview": "npm --prefix app run preview",
+    "test": "vitest",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "typescript": "^5.9.3",
     "vite": "^6.4.3",
     "vitest": "^4.1.8"

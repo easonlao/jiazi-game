@@ -47,4 +47,17 @@ describe('SeasonCycle - 极端季节序列测试', () => {
     expect(totalRounds).toBe(60);
     expect(seasonCycle.getTotalRounds()).toBe(60);
   });
+
+  it('随机生成的季节段长度不应超过12，且总和为60', () => {
+    // 蒙特卡洛：多次生成验证边界
+    for (let i = 0; i < 100; i++) {
+      const seasonCycle = new SeasonCycle();
+      const lengths = seasonCycle.getSeasonLengths();
+      const total = lengths.reduce((sum, len) => sum + len, 0);
+      expect(total).toBe(60);
+      for (const len of lengths) {
+        expect(len).toBeLessThanOrEqual(12);
+      }
+    }
+  });
 });

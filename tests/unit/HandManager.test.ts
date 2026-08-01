@@ -57,13 +57,14 @@ describe('HandManager', () => {
   it('加载外部手牌数据 (loadHand)', () => {
     const hm = new HandManager();
     const restoredSlots = [
-      new HandSlot(mockCard, 3, 1.5, 1),
+      new HandSlot(mockCard, 3, true, 1.5, 1),
       null,
-      new HandSlot(mockCard, 2, 1.0, 2)
+      new HandSlot(mockCard, 2, false, 1.0, 2)
     ];
     hm.loadHand(restoredSlots);
     
     expect(hm.getHandSize()).toBe(2);
+    expect(hm.getSlot(0)!.useLeverage).toBe(true);
     expect(hm.getSlot(0)!.leverage).toBe(1.5);
     expect(hm.getSlot(1)).toBeNull();
     expect(hm.getSlot(2)!.buyRound).toBe(2);

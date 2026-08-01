@@ -5,16 +5,16 @@ describe('QiManager - 气耗管理边界测试', () => {
   it('应该处理低气开局（10气）', () => {
     const qiManager = new QiManager(10); // 初始10气
     
-    // 第一回合自然回复7气
-    qiManager.applyNaturalRecovery();
-    expect(qiManager.getQi()).toBe(17);
+    // 自然回复10气
+    qiManager.recover(10);
+    expect(qiManager.getQi()).toBe(20);
   });
 
   it('应该处理高气开局（80气）', () => {
     const qiManager = new QiManager(80); // 初始80气
     
-    // 第一回合自然回复7气，但不能超过上限
-    qiManager.applyNaturalRecovery();
+    // 自然回复10气，但不能超过上限
+    qiManager.recover(10);
     expect(qiManager.getQi()).toBe(80); // 不能超过上限
   });
 
@@ -27,28 +27,11 @@ describe('QiManager - 气耗管理边界测试', () => {
     expect(cost).toBe(14);
   });
 
-  it('应该正确计算持仓气耗', () => {
-    const qiManager = new QiManager(50);
-    
-    // 持仓气耗 = max(0.5, 1.5 + 0.4 * 评分) * 杠杆
-    // 评分4.0，杠杆1.0时：max(0.5, 1.5 + 0.4 * 4.0) * 1.0 = max(0.5, 3.1) * 1.0 = 3.1
-    const cost = qiManager.calculateHoldCost(4.0, 1.0);
-    expect(cost).toBeCloseTo(3.1, 1);
-  });
-
-  it('应该正确计算卖出即时回复', () => {
-    const qiManager = new QiManager(50);
-    
-    // 卖出即时回复0气
-    qiManager.applySellRecovery();
-    expect(qiManager.getQi()).toBe(50);
-  });
-
   it('应该正确计算等待额外回复', () => {
     const qiManager = new QiManager(50);
     
     // 等待额外回复10气
-    qiManager.applyWaitRecovery();
+    qiManager.recover(10);
     expect(qiManager.getQi()).toBe(60);
   });
 
@@ -72,5 +55,16 @@ describe('QiManager - 气耗管理边界测试', () => {
     qiManager.deductQi(60);
     expect(qiManager.getQi()).toBe(-10);
     expect(qiManager.isMarginCall()).toBe(true);
+  });
+
+  it('应该正确获取基础回复量', () => {
+    const qiManager = new QiManager(50);
+    expect(qiManager.getBaseRecovery()).toBe(10);
+    expect(qiManager.getWaitBonus()).toBe(10);
+  });
+
+  it('应该正确获取卖出消耗', () => {
+    const qiManager = new QiManager(50);
+    expect(qiManager.getSellCost()).toBe(4);
   });
 });
