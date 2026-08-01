@@ -1,609 +1,555 @@
+"""甲子纪规则对齐模拟器。
+
+该脚本只用于数值验证，不是第二套游戏规则。卡牌数据、评分公式和经济常量
+均按 ``src/core`` 当前实现镜像，并在 ``test_simulator.py`` 中用固定动作做
+确定性回归。运行示例：
+
+    python scripts/simulator.py --games 200 --seed 20260801 --json
 """
-Monte Carlo 对局模拟器
-模拟多种玩家策略下的完整对局，验证经济循环健康度。
-运行: python scripts/simulator.py
-"""
 
-import random
-from collections import defaultdict
+from __future__ import annotations
 
-# ── 基础数据（与 score_table.py 保持一致）─────────────────────
+import argparse
+import json
+import math
+import statistics
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Iterable
 
-TIAN_GAN = {
-    '甲': 'wood', '乙': 'wood',
-    '丙': 'fire', '丁': 'fire',
-    '戊': 'earth', '己': 'earth',
-    '庚': 'metal', '辛': 'metal',
-    '壬': 'water', '癸': 'water',
-}
 
-DI_ZHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
+TOTAL_ROUNDS = 60
+MAX_HAND_SIZE = 3
+SEASONS = ("spring", "summer", "autumn", "winter")
+SEASON_ELEMENTS = dict(zip(SEASONS, ("wood", "fire", "metal", "water")))
+LEVERAGE_TABLE = ((2, 1.0), (5, 1.5), (8, 2.0), (11, 2.5), (12, 3.0))
 
-HIDDEN_STEMS = {
-    '子': [('癸', 1.0)],
-    '丑': [('己', 0.6), ('癸', 0.3), ('辛', 0.1)],
-    '寅': [('甲', 0.6), ('丙', 0.3), ('戊', 0.1)],
-    '卯': [('乙', 1.0)],
-    '辰': [('戊', 0.6), ('乙', 0.3), ('癸', 0.1)],
-    '巳': [('丙', 0.6), ('戊', 0.3), ('庚', 0.1)],
-    '午': [('丁', 0.7), ('己', 0.3)],
-    '未': [('己', 0.6), ('丁', 0.3), ('乙', 0.1)],
-    '申': [('庚', 0.6), ('壬', 0.3), ('戊', 0.1)],
-    '酉': [('辛', 1.0)],
-    '戌': [('戊', 0.6), ('辛', 0.3), ('丁', 0.1)],
-    '亥': [('壬', 0.7), ('甲', 0.3)],
-}
-
-STEM_ELEMENT = {
-    '甲': 'wood', '乙': 'wood',
-    '丙': 'fire', '丁': 'fire',
-    '戊': 'earth', '己': 'earth',
-    '庚': 'metal', '辛': 'metal',
-    '壬': 'water', '癸': 'water',
-}
-
-SEASON_BASE = {
-    'spring': {'wood': 4, 'fire': 2, 'earth': 1, 'metal': -4, 'water': -2},
-    'summer': {'wood': 2, 'fire': 4, 'earth': 1, 'metal': -2, 'water': -4},
-    'autumn': {'wood': -4, 'fire': -2, 'earth': 1, 'metal': 4, 'water': 2},
-    'winter': {'wood': -2, 'fire': -4, 'earth': 1, 'metal': 2, 'water': 4},
-}
-
-SEASON_ORDER = ['spring', 'summer', 'autumn', 'winter']
-
-# ── 游戏常量 ─────────────────────────────────────────────────
-
+# 与 BalanceConfig / QiManager / ScoreManager / LeverageCalculator 对齐。
 MAX_QI = 80
 INITIAL_QI = 50
 BASE_RECOVERY = 10
 WAIT_BONUS = 10
 SELL_COST = 4
-SELL_BASE = 0
 BASE_BUY_COST = 11
 BUY_COST_FACTOR = 0.05
-LQC = 14  # 杠杆买入额外消耗
+LQC = 14
 BUY_ENTRY_FEE = 2
-MAX_HAND_SIZE = 3
-TOTAL_ROUNDS = 60
+FORCED_QI_RETURN_FACTOR = 0.5
+FORCED_SCORE_MULTIPLIER = 0.8
+MARGIN_CALL_PENALTY_PER_SCORE = 6
+HOLD_BONUS = 1.2
+SELL_MULTIPLIER = 4
+HOLD_QI_BASE = 1.5
+HOLD_QI_SCORE_FACTOR = 0.4
+HOLD_QI_MIN = 0.5
+LEVERAGE_QI_COST_PER_X = 4
 
-# 杠杆倍率表: (季节内最大回合, 倍数)
-LEVERAGE_TABLE = [
-    (3, 1.0),
-    (6, 1.5),
-    (9, 2.0),
-    (11, 2.5),
-    (12, 3.0),
-]
+STEM_ELEMENT = {
+    "甲": "wood", "乙": "wood", "丙": "fire", "丁": "fire",
+    "戊": "earth", "己": "earth", "庚": "metal", "辛": "metal",
+    "壬": "water", "癸": "water",
+}
+HIDDEN_STEMS = {
+    "子": (("癸", 1.0),),
+    "丑": (("己", 0.6), ("癸", 0.3), ("辛", 0.1)),
+    "寅": (("甲", 0.6), ("丙", 0.3), ("戊", 0.1)),
+    "卯": (("乙", 1.0),),
+    "辰": (("戊", 0.6), ("乙", 0.3), ("癸", 0.1)),
+    "巳": (("丙", 0.6), ("戊", 0.3), ("庚", 0.1)),
+    "午": (("丁", 0.7), ("己", 0.3)),
+    "未": (("己", 0.6), ("丁", 0.3), ("乙", 0.1)),
+    "申": (("庚", 0.6), ("壬", 0.3), ("戊", 0.1)),
+    "酉": (("辛", 1.0),),
+    "戌": (("戊", 0.6), ("辛", 0.3), ("丁", 0.1)),
+    "亥": (("壬", 0.7), ("甲", 0.3)),
+}
+WOOD_FIRE = {"wood", "fire"}
+METAL_WATER = {"metal", "water"}
+OPPOSITE = {frozenset(("wood", "metal")), frozenset(("fire", "water"))}
 
-# ── 评分计算 ─────────────────────────────────────────────────
 
-def relation_score(tg_elem, dz_elem):
-    if tg_elem == dz_elem:
+@dataclass(frozen=True)
+class Card:
+    id: int
+    name: str
+    tian_gan: str
+    di_zhi: str
+    tian_gan_element: str
+    di_zhi_element: str
+    main_element: str
+    yin_yang: str
+
+
+class Mulberry32:
+    """与 src/core/RandomSource.ts 的 SeededRandomSource 完全一致。"""
+
+    def __init__(self, seed: int):
+        self.state = seed & 0xFFFFFFFF
+
+    @staticmethod
+    def _imul(a: int, b: int) -> int:
+        return (a * b) & 0xFFFFFFFF
+
+    def next(self) -> float:
+        self.state = (self.state + 0x6D2B79F5) & 0xFFFFFFFF
+        t = self.state
+        t = self._imul(t ^ (t >> 15), t | 1)
+        t ^= (t + self._imul(t ^ (t >> 7), t | 61)) & 0xFFFFFFFF
+        return ((t ^ (t >> 14)) & 0xFFFFFFFF) / 4294967296
+
+    def int(self, minimum: int, maximum_exclusive: int) -> int:
+        return minimum + math.floor(self.next() * (maximum_exclusive - minimum))
+
+
+def load_cards() -> list[Card]:
+    path = Path(__file__).resolve().parents[1] / "assets" / "data" / "jiazi_cards.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    cards = [
+        Card(
+            id=item["id"],
+            name=item["name"],
+            tian_gan=item["tianGan"],
+            di_zhi=item["diZhi"],
+            tian_gan_element=item["tianGanElement"],
+            di_zhi_element=item["diZhiElement"],
+            main_element=item["mainElement"],
+            yin_yang=item["yinYang"],
+        )
+        for item in raw
+    ]
+    if len(cards) != 60 or {card.id for card in cards} != set(range(1, 61)):
+        raise ValueError("jiazi_cards.json 必须包含 ID 1-60 的完整牌池")
+    return cards
+
+
+def score_element_in_season(element: str, season_element: str) -> float:
+    if element == "earth":
+        return 1.0
+    if element == season_element:
+        return 4.0
+    if (element in WOOD_FIRE and season_element in WOOD_FIRE) or (
+        element in METAL_WATER and season_element in METAL_WATER
+    ):
         return 2.0
-    wood_fire = ['wood', 'fire']
-    metal_water = ['metal', 'water']
-    tg_wf = tg_elem in wood_fire
-    dz_wf = dz_elem in wood_fire
-    tg_mw = tg_elem in metal_water
-    dz_mw = dz_elem in metal_water
-    if (tg_wf and dz_wf) or (tg_mw and dz_mw):
+    if frozenset((element, season_element)) in OPPOSITE:
+        return -4.0
+    return -2.0
+
+
+def relation_score(tian_gan_element: str, di_zhi_element: str) -> float:
+    if tian_gan_element == di_zhi_element:
+        return 2.0
+    if (tian_gan_element in WOOD_FIRE and di_zhi_element in WOOD_FIRE) or (
+        tian_gan_element in METAL_WATER and di_zhi_element in METAL_WATER
+    ):
         return 1.5
-    opposite = [('wood', 'metal'), ('fire', 'water')]
-    if (tg_elem, dz_elem) in opposite or (dz_elem, tg_elem) in opposite:
+    if frozenset((tian_gan_element, di_zhi_element)) in OPPOSITE:
         return -2.0
     return 0.0
 
-def calc_score(tg, dz, season):
-    tg_elem = TIAN_GAN[tg]
-    stem_score = SEASON_BASE[season][tg_elem]
-    hidden = HIDDEN_STEMS.get(dz, [])
-    if hidden:
-        branch_score = sum(
-            SEASON_BASE[season][STEM_ELEMENT[stem]] * weight
-            for stem, weight in hidden
-        )
-    else:
-        branch_score = SEASON_BASE[season]['earth']
-    rel_score = relation_score(tg_elem, STEM_ELEMENT.get(dz, 'earth'))
-    return stem_score * 0.5 + branch_score * 0.3 + rel_score * 0.2
 
-# ── 卡牌生成 ─────────────────────────────────────────────────
+def js_round(value: float) -> int:
+    """JavaScript Math.round 的非负/负数行为（本项目扣分均用此处）。"""
+    return math.floor(value + 0.5)
 
-def generate_cards():
-    cards = []
-    cid = 1
-    for tg in ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']:
-        for dz in DI_ZHI:
-            cards.append({
-                'id': cid, 'tg': tg, 'dz': dz, 'name': f"{tg}{dz}",
-                'element': TIAN_GAN[tg],
-            })
-            cid += 1
-    return cards
 
-# ── 季节循环 ─────────────────────────────────────────────────
+def calc_score(card: Card, season: str) -> float:
+    season_element = SEASON_ELEMENTS[season]
+    stem_score = score_element_in_season(card.tian_gan_element, season_element)
+    hidden = HIDDEN_STEMS.get(card.di_zhi, ())
+    branch_score = sum(
+        score_element_in_season(STEM_ELEMENT[stem], season_element) * weight
+        for stem, weight in hidden
+    )
+    relation = relation_score(card.tian_gan_element, card.di_zhi_element)
+    return round(0.5 * stem_score + 0.3 * branch_score + 0.2 * relation, 2)
 
-def generate_season_lengths():
-    """生成填满60回合的季节长度列表"""
-    lengths = []
-    total = 0
-    while total < TOTAL_ROUNDS:
-        l = random.randint(3, 12)
-        if total + l > TOTAL_ROUNDS:
-            l = TOTAL_ROUNDS - total
-        lengths.append(l)
-        total += l
+
+def generate_season_lengths(random: Mulberry32) -> list[int]:
+    n = random.int(5, 21)
+    lengths = [3] * n
+    remaining = TOTAL_ROUNDS - 3 * n
+    underfull = list(range(n))
+    while remaining:
+        pick = random.int(0, len(underfull))
+        index = underfull[pick]
+        lengths[index] += 1
+        remaining -= 1
+        if lengths[index] >= 12:
+            underfull.pop(pick)
     return lengths
 
-def get_season_at_round(season_lengths, round_num):
-    """获取指定回合的季节和季节内回合"""
-    cumulative = 0
-    for i, length in enumerate(season_lengths):
-        cumulative += length
-        if round_num <= cumulative:
-            season_index = i % 4
-            round_in_season = round_num - (cumulative - length)
-            return SEASON_ORDER[season_index], round_in_season, season_index, length
-    # 超出范围，返回最后一个
-    return SEASON_ORDER[-1], season_lengths[-1], len(season_lengths) - 1, season_lengths[-1]
 
-# ── 杠杆计算 ─────────────────────────────────────────────────
+def leverage_for_round(round_in_season: int) -> float:
+    for maximum, multiplier in LEVERAGE_TABLE:
+        if round_in_season <= maximum:
+            return multiplier
+    return LEVERAGE_TABLE[-1][1]
 
-def get_leverage_multiplier(round_in_season):
-    for max_round, mult in LEVERAGE_TABLE:
-        if round_in_season <= max_round:
-            return mult
-    return 3.0
 
-# ── 游戏状态 ─────────────────────────────────────────────────
+class CardPool:
+    def __init__(self, cards: Iterable[Card], random: Mulberry32):
+        self.random = random
+        self.deck = list(cards)
+        self.public: list[Card] = []
+        # 当前核心在“卖出后进入下一回合”时会直接覆盖旧 publicCards；保留被
+        # 覆盖的卡牌，既镜像该行为，也让牌数守恒检查能暴露这条待办。
+        self.discarded: list[Card] = []
+        self.shuffle()
+
+    def shuffle(self) -> None:
+        for index in range(len(self.deck) - 1, 0, -1):
+            other = self.random.int(0, index + 1)
+            self.deck[index], self.deck[other] = self.deck[other], self.deck[index]
+
+    def draw(self) -> None:
+        if self.public:
+            self.discarded.extend(self.public)
+        self.public = self.deck[:2]
+        del self.deck[:2]
+
+    def return_cards(self, cards: Iterable[Card]) -> None:
+        for card in cards:
+            index = self.random.int(0, len(self.deck) + 1)
+            self.deck.insert(index, card)
+
+    def buy(self, index: int) -> Card | None:
+        if index < 0 or index >= len(self.public):
+            return None
+        card = self.public[index]
+        self.return_cards(card_item for i, card_item in enumerate(self.public) if i != index)
+        self.public = []
+        return card
+
+    def wait(self) -> None:
+        self.return_cards(self.public)
+        self.public = []
+
+
+@dataclass
+class Holding:
+    card: Card
+    buy_score: float
+    use_leverage: bool
+    locked_qi: int
+    hold_earnings: float = 0.0
+
 
 class GameState:
-    def __init__(self):
-        self.all_cards = generate_cards()
-        random.shuffle(self.all_cards)
-        self.deck = list(self.all_cards)
-        self.public_cards = []
-        self.hand = [None] * MAX_HAND_SIZE  # HandSlot: {card, buy_score, leverage, buy_round, locked_qi, hold_earnings}
-        self.qi = INITIAL_QI
-        self.score = 0
-        self.total_hold_earnings = 0
-        self.total_sell_earnings = 0
+    def __init__(self, seed: int):
+        self.random = Mulberry32(seed)
+        self.season_lengths = generate_season_lengths(self.random)
+        self.season_index = 0
+        self.round_in_season = 1
         self.current_round = 1
-        self.season_lengths = generate_season_lengths()
-        self.last_action = None
-        self.total_buys = 0
-        self.total_sells = 0
-        self.total_waits = 0
-        self.total_leverage_buys = 0
-        self.margin_call_count = 0
-        self.forced_waits = 0  # 被迫等待次数（气不足）
-        self.total_qi_spent = 0
-        self.total_qi_recovered = 0
-        self.history = []
+        self.pool = CardPool(load_cards(), self.random)
+        self.hand: list[Holding | None] = [None] * MAX_HAND_SIZE
+        self.qi = float(INITIAL_QI)
+        self.score = 0.0
+        self.last_action: str | None = None
+        self.total_buys = self.total_sells = self.total_waits = 0
+        self.total_leverage_buys = self.margin_calls = 0
+        self.total_qi_spent = self.total_qi_recovered = 0.0
+        self.total_hold_earnings = self.total_sell_earnings = 0.0
+        self.forced_waits = 0
+        self.history: list[dict] = []
 
-    def get_season_info(self):
-        return get_season_at_round(self.season_lengths, self.current_round)
+    @property
+    def season(self) -> str:
+        return SEASONS[self.season_index % 4]
 
-    def get_total_locked_qi(self):
-        return sum(slot['locked_qi'] for slot in self.hand if slot is not None)
+    def advance_season(self) -> None:
+        self.current_round += 1
+        self.round_in_season += 1
+        if self.round_in_season > self.season_lengths[self.season_index]:
+            self.season_index += 1
+            self.round_in_season = 1
 
-    def get_current_max_qi(self):
-        return MAX_QI - self.get_total_locked_qi()
+    def hand_size(self) -> int:
+        return sum(slot is not None for slot in self.hand)
 
-    def draw_cards(self):
-        """从牌堆抽2张到公共区"""
-        num = min(2, len(self.deck))
-        self.public_cards = self.deck[:num]
-        self.deck = self.deck[num:]
+    def locked_qi(self) -> int:
+        return sum(slot.locked_qi for slot in self.hand if slot is not None)
 
-    def calculate_buy_cost(self, card_score, use_leverage):
-        cost = BASE_BUY_COST * (1 + BUY_COST_FACTOR * card_score)
+    def buy_cost(self, score: float, use_leverage: bool) -> int:
+        cost = BASE_BUY_COST * (1 + BUY_COST_FACTOR * score)
         if use_leverage:
             cost += LQC
-        return int(__import__('math').ceil(cost))
+        return math.ceil(cost)
 
-    def settle_holdings(self):
-        """结算持仓：计算收益、扣除气耗、检查爆仓"""
-        season, round_in_season, _, _ = self.get_season_info()
-        total_qi_cost = 0
-        total_hold_earning = 0
+    def hold_qi_cost(self, score: float, leverage: float) -> float:
+        base = max(HOLD_QI_MIN, HOLD_QI_BASE + HOLD_QI_SCORE_FACTOR * score)
+        return base + (leverage * LEVERAGE_QI_COST_PER_X if leverage > 1 else 0)
 
-        for i, slot in enumerate(self.hand):
-            if slot is not None:
-                card_score = slot['card']['element']
-                # 计算卡牌当季评分
-                card_score_val = calc_score(slot['card']['tg'], slot['card']['dz'], season)
-                leverage = slot['leverage']
+    def settle(self) -> dict:
+        detail = {"round": self.current_round, "season": self.season, "hold_earnings": 0.0,
+                  "hold_qi_cost": 0.0, "margin_call": False, "margin_call_cards": []}
+        for slot in self.hand:
+            if slot is None:
+                continue
+            leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
+            score = calc_score(slot.card, self.season)
+            earning = HOLD_BONUS * score * leverage
+            qi_cost = self.hold_qi_cost(score, leverage)
+            self.score += earning
+            self.total_hold_earnings += earning
+            slot.hold_earnings += earning
+            detail["hold_earnings"] += earning
+            detail["hold_qi_cost"] += qi_cost
+        self.qi -= detail["hold_qi_cost"]
+        if self.qi <= 0:
+            detail["margin_call"] = self.margin_call()
+            detail["margin_call_cards"] = detail.pop("margin_call_cards")
+        return detail
 
-                # 持仓收益
-                hold_earning = 1.2 * card_score_val * leverage
-                self.score += hold_earning
-                self.total_hold_earnings += hold_earning
-                slot['hold_earnings'] += hold_earning
-                total_hold_earning += hold_earning
+    def margin_call(self) -> bool:
+        leverage_indices = [
+            index for index, slot in enumerate(self.hand)
+            if slot is not None and slot.use_leverage
+        ]
+        if not leverage_indices:
+            return False
+        target = leverage_indices[self.random.int(0, len(leverage_indices))]
+        slot = self.hand[target]
+        assert slot is not None
+        leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
+        current_score = calc_score(slot.card, self.season)
+        sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
+        final_sell = math.floor(sell_score * FORCED_SCORE_MULTIPLIER) if sell_score > 0 else sell_score
+        self.score += final_sell
+        self.total_sell_earnings += final_sell
+        penalty = js_round(leverage * abs(current_score) * MARGIN_CALL_PENALTY_PER_SCORE)
+        self.score = max(0.0, self.score - penalty)
+        self.hand[target] = None
+        self.pool.return_cards([slot.card])
+        self.qi = min(MAX_QI, self.qi + math.floor(slot.locked_qi * FORCED_QI_RETURN_FACTOR))
+        self.margin_calls += 1
+        return True
 
-                # 持仓气耗
-                base_cost = max(0.5, 1.5 + 0.4 * card_score_val)
-                leverage_extra = 6 if leverage > 1 else 0
-                qi_cost = base_cost + leverage_extra
-                total_qi_cost += qi_cost
-
-        # 扣除气耗
-        self.qi -= total_qi_cost
-
-        # 爆仓检查
-        margin_call_happened = False
-        while self.qi <= 0:
-            # 找杠杆牌
-            leverage_indices = [i for i, slot in enumerate(self.hand) if slot is not None and slot['leverage'] > 1]
-            if not leverage_indices:
-                break
-
-            # 随机强平一张
-            target = random.choice(leverage_indices)
-            slot = self.hand[target]
-            season, _, _, _ = self.get_season_info()
-            current_score = calc_score(slot['card']['tg'], slot['card']['dz'], season)
-
-            # 卖出得分
-            sell_score = (SELL_BASE + (current_score - slot['buy_score']) * 4) * slot['leverage']
-            if sell_score > 0:
-                sell_score = int(sell_score * 0.8)
-            self.score += sell_score
-            self.total_sell_earnings += sell_score
-
-            # 爆仓扣分
-            penalty = round(slot['leverage'] * abs(current_score) * 6)
-            self.score = max(0, self.score - penalty)
-
-            # 返还保证金
-            qi_return = int(slot['locked_qi'] * 0.5)
-            self.qi += qi_return
-
-            # 移除卡牌
-            self.hand[target] = None
-            self.margin_call_count += 1
-            margin_call_happened = True
-
-        return margin_call_happened
-
-    def recover_qi(self):
-        """气回复"""
-        # 自然回复
-        recovery = BASE_RECOVERY
-        max_qi = self.get_current_max_qi()
-        self.qi = min(max_qi, self.qi + recovery)
-        self.total_qi_recovered += recovery
-
-        # 等待额外回复
-        if self.last_action == 'wait':
-            self.qi = min(max_qi, self.qi + WAIT_BONUS)
+    def recover(self) -> None:
+        self.qi = min(MAX_QI, self.qi + BASE_RECOVERY)
+        self.total_qi_recovered += BASE_RECOVERY
+        if self.last_action == "wait":
+            self.qi = min(MAX_QI, self.qi + WAIT_BONUS)
             self.total_qi_recovered += WAIT_BONUS
 
-    def can_afford(self, amount):
-        return self.qi >= amount
+    def draw_and_recover(self) -> dict:
+        detail = self.settle()
+        self.pool.draw()
+        self.recover()
+        return detail
 
-    def execute_buy(self, public_index, use_leverage):
-        """执行买入"""
-        if not self.public_cards:
+    def buy(self, public_index: int, use_leverage: bool) -> bool:
+        if self.current_round >= TOTAL_ROUNDS or self.hand_size() >= MAX_HAND_SIZE:
             return False
-        if public_index >= len(self.public_cards):
+        card = self.pool.public[public_index] if 0 <= public_index < len(self.pool.public) else None
+        if card is None:
             return False
-
-        card = self.public_cards[public_index]
-        season, round_in_season, _, _ = self.get_season_info()
-        card_score = calc_score(card['tg'], card['dz'], season)
-        buy_cost = self.calculate_buy_cost(card_score, use_leverage)
-
-        if not self.can_afford(buy_cost):
+        score = calc_score(card, self.season)
+        cost = self.buy_cost(score, use_leverage)
+        if self.qi < cost:
             return False
-
-        # 检查手牌空间
-        empty_slot = None
-        for i, slot in enumerate(self.hand):
-            if slot is None:
-                empty_slot = i
-                break
-        if empty_slot is None:
-            return False
-
-        # 执行买入
-        self.qi -= buy_cost
-        self.total_qi_spent += buy_cost
-        leverage = get_leverage_multiplier(round_in_season) if use_leverage else 1.0
-        locked_qi = buy_cost - BUY_ENTRY_FEE
-
-        self.hand[empty_slot] = {
-            'card': card,
-            'buy_score': card_score,
-            'leverage': leverage,
-            'buy_round': self.current_round,
-            'locked_qi': locked_qi,
-            'hold_earnings': 0,
-        }
-
-        # 未选的牌回牌堆
-        remaining = [c for i, c in enumerate(self.public_cards) if i != public_index]
-        self.deck.extend(remaining)
-        self.public_cards = []
-
-        self.total_buys += 1
+        self.qi -= cost
+        self.total_qi_spent += cost
+        slot_index = self.hand.index(None)
+        self.hand[slot_index] = Holding(card, score, use_leverage, cost - BUY_ENTRY_FEE)
         if use_leverage:
             self.total_leverage_buys += 1
-        self.last_action = 'buy'
+        self.total_buys += 1
+        self.pool.buy(public_index)
+        self.last_action = "buy"
         return True
 
-    def execute_sell(self, hand_index):
-        """执行卖出"""
-        if hand_index >= len(self.hand) or self.hand[hand_index] is None:
+    def sell(self, slot_index: int) -> bool:
+        if slot_index < 0 or slot_index >= len(self.hand):
             return False
-
-        if not self.can_afford(SELL_COST):
+        slot = self.hand[slot_index]
+        if slot is None:
             return False
-
-        slot = self.hand[hand_index]
-        season, _, _, _ = self.get_season_info()
-        current_score = calc_score(slot['card']['tg'], slot['card']['dz'], season)
-
-        # 卖出得分
-        sell_score = (SELL_BASE + (current_score - slot['buy_score']) * 4) * slot['leverage']
-        self.score += sell_score
-        self.total_sell_earnings += sell_score
-
-        # 固定扣气
+        if self.qi + slot.locked_qi < SELL_COST:
+            return False
+        current_score = calc_score(slot.card, self.season)
+        leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
+        sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
+        self.hand[slot_index] = None
+        self.pool.return_cards([slot.card])
+        self.qi = min(MAX_QI, self.qi + slot.locked_qi)
         self.qi -= SELL_COST
         self.total_qi_spent += SELL_COST
-
-        # 移除卡牌
-        self.hand[hand_index] = None
+        self.score += sell_score
+        self.total_sell_earnings += sell_score
         self.total_sells += 1
-        self.last_action = 'sell'
+        self.last_action = "sell"
         return True
 
-    def execute_wait(self):
-        """执行等待"""
-        # 公共牌回牌堆
-        self.deck.extend(self.public_cards)
-        self.public_cards = []
+    def wait(self) -> None:
+        self.pool.wait()
         self.total_waits += 1
-        self.last_action = 'wait'
-        return True
+        self.last_action = "wait"
 
-    def advance_round(self):
-        self.current_round += 1
+    def invariant(self) -> None:
+        ids = [card.id for card in self.pool.deck + self.pool.public + self.pool.discarded]
+        ids.extend(slot.card.id for slot in self.hand if slot is not None)
+        if len(ids) != 60 or len(set(ids)) != 60:
+            raise AssertionError(f"牌池守恒失败: {len(ids)} 张, {len(set(ids))} 个唯一 ID")
 
-    def is_game_over(self):
-        return self.current_round > TOTAL_ROUNDS
-
-# ── 玩家策略 ─────────────────────────────────────────────────
-
-def strategy_always_wait(game):
-    """永远等待（基线策略）"""
-    return ('wait', None, None)
-
-def strategy_random(game):
-    """随机策略"""
-    actions = [('wait', None, None)]
-    if game.public_cards and game.get_total_locked_qi() < MAX_QI - 10:
-        for i in range(len(game.public_cards)):
-            season, ris, _, _ = game.get_season_info()
-            card_score = calc_score(game.public_cards[i]['tg'], game.public_cards[i]['dz'], season)
-            cost = game.calculate_buy_cost(card_score, False)
-            if game.can_afford(cost):
-                actions.append(('buy', i, False))
-                if game.can_afford(cost + LQC):
-                    actions.append(('buy', i, True))
-    for i, slot in enumerate(game.hand):
-        if slot is not None and game.can_afford(SELL_COST):
-            actions.append(('sell', i, None))
-    return random.choice(actions)
-
-def strategy_conservative(game):
-    """保守策略：只买无杠杆，评分>0才买，亏损>5就卖"""
-    season, ris, _, _ = game.get_season_info()
-
-    # 先检查是否有该卖的
-    for i, slot in enumerate(game.hand):
-        if slot is not None:
-            current_score = calc_score(slot['card']['tg'], slot['card']['dz'], season)
-            profit = current_score - slot['buy_score']
-            if profit < -5 and game.can_afford(SELL_COST):
-                return ('sell', i, None)
-
-    # 再考虑买
-    if game.public_cards:
-        best_idx = None
-        best_score = -999
-        for i, card in enumerate(game.public_cards):
-            card_score = calc_score(card['tg'], card['dz'], season)
-            cost = game.calculate_buy_cost(card_score, False)
-            if card_score > 0 and game.can_afford(cost) and card_score > best_score:
-                best_score = card_score
-                best_idx = i
-        if best_idx is not None:
-            return ('buy', best_idx, False)
-
-    return ('wait', None, None)
-
-def strategy_aggressive(game):
-    """激进策略：永远加杠杆，永远买最高分"""
-    season, ris, _, _ = game.get_season_info()
-
-    if game.public_cards:
-        best_idx = None
-        best_score = -999
-        for i, card in enumerate(game.public_cards):
-            card_score = calc_score(card['tg'], card['dz'], season)
-            cost = game.calculate_buy_cost(card_score, True)
-            if game.can_afford(cost) and card_score > best_score:
-                best_score = card_score
-                best_idx = i
-        if best_idx is not None:
-            return ('buy', best_idx, True)
-
-    # 没牌可买就等
-    return ('wait', None, None)
-
-def strategy_balanced(game):
-    """平衡策略：根据气量决定是否加杠杆，有赚就卖"""
-    season, ris, _, _ = game.get_season_info()
-
-    # 持仓气耗过高就卖
-    total_hold_cost = 0
-    for slot in game.hand:
-        if slot is not None:
-            card_score = calc_score(slot['card']['tg'], slot['card']['dz'], season)
-            base = max(0.5, 1.5 + 0.4 * card_score)
-            total_hold_cost += base + (6 if slot['leverage'] > 1 else 0)
-
-    # 气不够就卖一张
-    if game.qi - total_hold_cost < 5:
-        for i, slot in enumerate(game.hand):
-            if slot is not None and game.can_afford(SELL_COST):
-                return ('sell', i, None)
-
-    # 买牌逻辑
-    if game.public_cards:
-        best_idx = None
-        best_score = -999
-        for i, card in enumerate(game.public_cards):
-            card_score = calc_score(card['tg'], card['dz'], season)
-            # 气量健康就加杠杆
-            use_leverage = game.qi > 30 and ris > 3
-            cost = game.calculate_buy_cost(card_score, use_leverage)
-            if card_score > 0.5 and game.can_afford(cost) and card_score > best_score:
-                best_score = card_score
-                best_idx = i
-                best_leverage = use_leverage
-        if best_idx is not None:
-            return ('buy', best_idx, best_leverage)
-
-    return ('wait', None, None)
-
-# ── 模拟引擎 ─────────────────────────────────────────────────
-
-def run_single_game(strategy, verbose=False):
-    """运行单局游戏，返回最终状态"""
-    game = GameState()
-
-    while not game.is_game_over():
-        # 1. 持仓结算
-        game.settle_holdings()
-
-        # 2. 刷牌
-        game.draw_cards()
-
-        # 3. 气回复
-        game.recover_qi()
-
-        # 4. 玩家决策
-        action, idx, leverage = strategy(game)
-
-        if action == 'buy':
-            success = game.execute_buy(idx, leverage)
+    def play(self, strategy: Callable[["GameState"], tuple[str, int | None, bool | None]]) -> "GameState":
+        while self.current_round <= TOTAL_ROUNDS:
+            detail = self.draw_and_recover()
+            action, index, leverage = strategy(self)
+            success = False
+            if action == "buy":
+                success = self.buy(index if index is not None else -1, bool(leverage))
+            elif action == "sell":
+                success = self.sell(index if index is not None else -1)
             if not success:
-                game.execute_wait()
-        elif action == 'sell':
-            success = game.execute_sell(idx)
-            if not success:
-                game.execute_wait()
-        else:
-            game.execute_wait()
+                if action != "wait":
+                    self.forced_waits += 1
+                self.wait()
+            self.history.append({**detail, "action": self.last_action, "qi": self.qi, "score": self.score,
+                                 "season_round": self.round_in_season, "leverage": leverage_for_round(self.round_in_season)})
+            self.invariant()
+            self.advance_season()
+        return self
 
-        # 5. 推进回合
-        game.advance_round()
 
-    return game
+Strategy = Callable[[GameState], tuple[str, int | None, bool | None]]
 
-def run_simulation(strategy, strategy_name, num_games=1000):
-    """运行多局模拟，统计结果"""
-    results = []
-    for _ in range(num_games):
-        game = run_single_game(strategy, verbose=False)
-        results.append({
-            'score': game.score,
-            'buys': game.total_buys,
-            'sells': game.total_sells,
-            'waits': game.total_waits,
-            'leverage_buys': game.total_leverage_buys,
-            'margin_calls': game.margin_call_count,
-            'qi_spent': game.total_qi_spent,
-            'qi_recovered': game.total_qi_recovered,
-            'hold_earnings': game.total_hold_earnings,
-            'sell_earnings': game.total_sell_earnings,
-        })
 
-    scores = [r['score'] for r in results]
-    margin_calls = [r['margin_calls'] for r in results]
-    buys = [r['buys'] for r in results]
-    sells = [r['sells'] for r in results]
-    waits = [r['waits'] for r in results]
-    leverage_buys = [r['leverage_buys'] for r in results]
+def strategy_always_wait(game: GameState) -> tuple[str, int | None, bool | None]:
+    return "wait", None, None
 
-    print(f"\n{'='*60}")
-    print(f"策略: {strategy_name} ({num_games} 局)")
-    print(f"{'='*60}")
-    print(f"最终分数: 平均={sum(scores)/len(scores):.1f}, 中位数={sorted(scores)[len(scores)//2]:.1f}, 最低={min(scores):.1f}, 最高={max(scores):.1f}")
-    print(f"操作统计: 平均买={sum(buys)/len(buys):.1f}, 卖={sum(sells)/len(sells):.1f}, 等={sum(waits)/len(waits):.1f}")
-    print(f"杠杆买入: 平均={sum(leverage_buys)/len(leverage_buys):.1f}")
-    print(f"爆仓次数: 平均={sum(margin_calls)/len(margin_calls):.2f}, 最多={max(margin_calls)}, 爆仓局数={sum(1 for m in margin_calls if m > 0)}/{num_games}")
 
-    # 分数分布
-    buckets = [0, 0, 0, 0, 0]  # <0, 0-10, 10-30, 30-60, >60
-    for s in scores:
-        if s < 0:
-            buckets[0] += 1
-        elif s < 10:
-            buckets[1] += 1
-        elif s < 30:
-            buckets[2] += 1
-        elif s < 60:
-            buckets[3] += 1
-        else:
-            buckets[4] += 1
-    print(f"分数分布: <0={buckets[0]}, 0-10={buckets[1]}, 10-30={buckets[2]}, 30-60={buckets[3]}, >60={buckets[4]}")
+def strategy_random(game: GameState) -> tuple[str, int | None, bool | None]:
+    actions: list[tuple[str, int | None, bool | None]] = [("wait", None, None)]
+    for index, card in enumerate(game.pool.public):
+        score = calc_score(card, game.season)
+        for leverage in (False, True):
+            if game.hand_size() < MAX_HAND_SIZE and game.qi >= game.buy_cost(score, leverage):
+                actions.append(("buy", index, leverage))
+    for index, slot in enumerate(game.hand):
+        if slot and game.qi + slot.locked_qi >= SELL_COST:
+            actions.append(("sell", index, None))
+    return actions[game.random.int(0, len(actions))]
 
-    return results
 
-def main():
-    print("=" * 60)
-    print("甲子纪 Monte Carlo 对局模拟器")
-    print("=" * 60)
-
-    # 先验证评分系统
-    print("\n【评分系统验证】")
-    all_scores = []
-    seasons = ['spring', 'summer', 'autumn', 'winter']
-    for card in generate_cards():
-        for s in seasons:
-            all_scores.append(calc_score(card['tg'], card['dz'], s))
-    print(f"60张牌×4季节评分范围: [{min(all_scores):.1f}, {max(all_scores):.1f}]")
-    print(f"平均: {sum(all_scores)/len(all_scores):.1f}, 中位数: {sorted(all_scores)[len(all_scores)//2]:.1f}")
-
-    # 运行各策略模拟
-    strategies = [
-        (strategy_always_wait, "永远等待（基线）"),
-        (strategy_random, "随机策略"),
-        (strategy_conservative, "保守策略"),
-        (strategy_aggressive, "激进策略"),
-        (strategy_balanced, "平衡策略"),
+def strategy_conservative(game: GameState) -> tuple[str, int | None, bool | None]:
+    for index, slot in enumerate(game.hand):
+        if slot and calc_score(slot.card, game.season) - slot.buy_score < -5 and game.qi + slot.locked_qi >= SELL_COST:
+            return "sell", index, None
+    candidates = [
+        (calc_score(card, game.season), index)
+        for index, card in enumerate(game.pool.public)
+        if calc_score(card, game.season) > 0 and game.qi >= game.buy_cost(calc_score(card, game.season), False)
     ]
+    if candidates:
+        _, index = max(candidates)
+        return "buy", index, False
+    return strategy_always_wait(game)
 
-    all_results = {}
-    for strategy, name in strategies:
-        results = run_simulation(strategy, name, num_games=2000)
-        all_results[name] = results
 
-    # 策略对比
-    print(f"\n{'='*60}")
-    print("策略对比总结")
-    print(f"{'='*60}")
-    print(f"{'策略':<20} | {'平均分':>8} | {'中位数':>8} | {'最低':>8} | {'最高':>8} | {'爆仓率':>8}")
-    print("-" * 80)
-    for name, results in all_results.items():
-        scores = [r['score'] for r in results]
-        margin_rate = sum(1 for r in results if r['margin_calls'] > 0) / len(results) * 100
-        print(f"{name:<20} | {sum(scores)/len(scores):>8.1f} | {sorted(scores)[len(scores)//2]:>8.1f} | {min(scores):>8.1f} | {max(scores):>8.1f} | {margin_rate:>7.1f}%")
+def strategy_aggressive(game: GameState) -> tuple[str, int | None, bool | None]:
+    candidates = [
+        (calc_score(card, game.season), index)
+        for index, card in enumerate(game.pool.public)
+        if game.qi >= game.buy_cost(calc_score(card, game.season), True) and game.hand_size() < MAX_HAND_SIZE
+    ]
+    if candidates:
+        _, index = max(candidates)
+        return "buy", index, True
+    return strategy_always_wait(game)
 
-if __name__ == '__main__':
+
+def strategy_balanced(game: GameState) -> tuple[str, int | None, bool | None]:
+    current_hold_cost = sum(
+        game.hold_qi_cost(calc_score(slot.card, game.season), leverage_for_round(game.round_in_season) if slot.use_leverage else 1.0)
+        for slot in game.hand if slot is not None
+    )
+    if game.qi - current_hold_cost < 5:
+        for index, slot in enumerate(game.hand):
+            if slot and game.qi + slot.locked_qi >= SELL_COST:
+                return "sell", index, None
+    candidates = []
+    for index, card in enumerate(game.pool.public):
+        score = calc_score(card, game.season)
+        leverage = game.qi > 30 and game.round_in_season > 3
+        if score > 0.5 and game.qi >= game.buy_cost(score, leverage) and game.hand_size() < MAX_HAND_SIZE:
+            candidates.append((score, index, leverage))
+    if candidates:
+        _, index, leverage = max(candidates)
+        return "buy", index, leverage
+    return strategy_always_wait(game)
+
+
+STRATEGIES: dict[str, Strategy] = {
+    "wait": strategy_always_wait,
+    "random": strategy_random,
+    "conservative": strategy_conservative,
+    "aggressive": strategy_aggressive,
+    "balanced": strategy_balanced,
+}
+
+
+def card_score_report(cards: list[Card]) -> dict:
+    values = {season: [calc_score(card, season) for card in cards] for season in SEASONS}
+    return {
+        season: {
+            "mean": statistics.mean(scores),
+            "sd": statistics.pstdev(scores),
+            "min": min(scores),
+            "max": max(scores),
+            "positive_share": sum(score > 0 for score in scores) / len(scores),
+        }
+        for season, scores in values.items()
+    }
+
+
+def summarize(games: list[GameState]) -> dict:
+    scores = [game.score for game in games]
+    margin = [game.margin_calls for game in games]
+    return {
+        "games": len(games),
+        "score": {"mean": statistics.mean(scores), "median": statistics.median(scores), "min": min(scores), "max": max(scores)},
+        "margin_call_rate": sum(value > 0 for value in margin) / len(margin),
+        "margin_calls_mean": statistics.mean(margin),
+        "buys_mean": statistics.mean(game.total_buys for game in games),
+        "sells_mean": statistics.mean(game.total_sells for game in games),
+        "waits_mean": statistics.mean(game.total_waits for game in games),
+        "forced_wait_rate": sum(game.forced_waits > 0 for game in games) / len(games),
+        "leverage_buys_mean": statistics.mean(game.total_leverage_buys for game in games),
+        "qi_end_mean": statistics.mean(game.qi for game in games),
+        "hold_earnings_mean": statistics.mean(game.total_hold_earnings for game in games),
+        "sell_earnings_mean": statistics.mean(game.total_sell_earnings for game in games),
+        "discarded_public_cards_mean": statistics.mean(len(game.pool.discarded) for game in games),
+    }
+
+
+def run_baseline(games: int, seed: int, strategy_names: list[str]) -> dict:
+    cards = load_cards()
+    output = {"rule_source": "src/core mirror", "card_count": len(cards), "total_rounds": TOTAL_ROUNDS,
+              "score_distribution": card_score_report(cards), "strategies": {}}
+    for name in strategy_names:
+        if name not in STRATEGIES:
+            raise ValueError(f"未知策略: {name}")
+        output["strategies"][name] = summarize([GameState(seed + index).play(STRATEGIES[name]) for index in range(games)])
+    return output
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="甲子纪真实规则 Monte Carlo 基线")
+    parser.add_argument("--games", type=int, default=200)
+    parser.add_argument("--seed", type=int, default=20260801)
+    parser.add_argument("--strategy", action="append", choices=sorted(STRATEGIES), dest="strategies")
+    parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
+    args = parser.parse_args()
+    names = args.strategies or list(STRATEGIES)
+    report = run_baseline(args.games, args.seed, names)
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
     main()
