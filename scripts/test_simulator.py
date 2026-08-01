@@ -157,10 +157,23 @@ class SimulatorParityTests(unittest.TestCase):
         if report["recommendation"] is None:
             self.assertEqual(report["confirmations"], [])
             self.assertIsNotNone(report["no_candidate_reason"])
+            self.assertEqual(len(report["near_miss_top"]), 5)
+            for near_miss in report["near_miss_top"]:
+                self.assertTrue(near_miss["failed_checks"])
+                self.assertEqual(near_miss["hard_failure_count"], len(near_miss["failed_checks"]))
         else:
             self.assertEqual(len(report["confirmations"]), 1)
             self.assertIn("checks", report["confirmations"][0])
             self.assertTrue(report["confirmations"][0]["pass"])
+
+    def test_minimal_economy_structures_preserve_multiplier_semantics(self) -> None:
+        self.assertEqual(set(("core", "excess_cost")), {"core", "excess_cost"})
+        with self.assertRaises(ValueError):
+            LeverageEconomy(structure="amplified_earnings")
+        for structure in ("core", "excess_cost"):
+            economy = LeverageEconomy(8, 0.2, ((2, 1.0), (5, 2.0), (8, 3.0), (11, 4.0), (12, 5.0)), structure)
+            self.assertEqual(economy.earning_multiplier(3.0), 3.0)
+            self.assertGreater(economy.qi_charge(3.0), economy.qi_charge(2.0))
 
     def test_v0_evaluation_thresholds_have_pass_warn_fail_and_manual_states(self) -> None:
         self.assertEqual(_evaluate_band({"mean": 100, "ci95": [95, 105]}, 80, 140, "x")["status"], "pass")

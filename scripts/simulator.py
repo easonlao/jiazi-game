@@ -57,6 +57,23 @@ class LeverageEconomy:
     lqc: int = LQC
     qi_cost_per_x: float = LEVERAGE_QI_COST_PER_X
     table: tuple[tuple[int, float], ...] = LEVERAGE_TABLE
+    structure: str = "core"
+
+    def __post_init__(self) -> None:
+        if self.structure not in {"core", "excess_cost"}:
+            raise ValueError(f"未知杠杆经济结构: {self.structure}")
+
+    def earning_multiplier(self, leverage: float) -> float:
+        if leverage <= 1:
+            return leverage
+        return leverage
+
+    def qi_charge(self, leverage: float) -> float:
+        if leverage <= 1:
+            return 0.0
+        # excess_cost：只为超出1x的杠杆倍率付气耗；杠杆越高仍然越贵。
+        basis = leverage - 1.0 if self.structure == "excess_cost" else leverage
+        return basis * self.qi_cost_per_x
 
 
 DEFAULT_LEVERAGE_ECONOMY = LeverageEconomy()
@@ -408,7 +425,7 @@ class GameState:
 
     def hold_qi_cost(self, score: float, leverage: float) -> float:
         base = max(HOLD_QI_MIN, HOLD_QI_BASE + HOLD_QI_SCORE_FACTOR * score)
-        return base + (leverage * self.economy.qi_cost_per_x if leverage > 1 else 0)
+        return base + self.economy.qi_charge(leverage)
 
     def settle(self) -> dict:
         detail = {"round": self.current_round, "season": self.season, "hold_earnings": 0.0,
@@ -418,7 +435,7 @@ class GameState:
                 continue
             leverage = self.leverage_for_round() if slot.use_leverage else 1.0
             score = self.card_score(slot.card)
-            earning = HOLD_BONUS * score * leverage
+            earning = HOLD_BONUS * score * self.economy.earning_multiplier(leverage)
             qi_cost = self.hold_qi_cost(score, leverage)
             self.score += earning
             self.total_hold_earnings += earning
@@ -443,7 +460,7 @@ class GameState:
         assert slot is not None
         leverage = self.leverage_for_round() if slot.use_leverage else 1.0
         current_score = self.card_score(slot.card)
-        sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
+        sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * self.economy.earning_multiplier(leverage)
         final_sell = math.floor(sell_score * FORCED_SCORE_MULTIPLIER) if sell_score > 0 else sell_score
         self.score += final_sell
         self.total_sell_earnings += final_sell
@@ -501,7 +518,7 @@ class GameState:
             return False
         current_score = self.card_score(slot.card)
         leverage = self.leverage_for_round() if slot.use_leverage else 1.0
-        sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
+        sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * self.economy.earning_multiplier(leverage)
         self.hand[slot_index] = None
         self.hold_durations.append(self.current_round - slot.buy_round)
         self.pool.return_cards([slot.card])
@@ -813,6 +830,7 @@ def run_baseline(
                   "lqc": (economy or DEFAULT_LEVERAGE_ECONOMY).lqc,
                   "qi_cost_per_x": (economy or DEFAULT_LEVERAGE_ECONOMY).qi_cost_per_x,
                   "table": (economy or DEFAULT_LEVERAGE_ECONOMY).table,
+                  "structure": (economy or DEFAULT_LEVERAGE_ECONOMY).structure,
               },
               "shadow_accounting": {
                   "discarded_public_cards": "Python-only accounting for public cards overwritten by current core draw; not a TypeScript core state",
@@ -1038,6 +1056,7 @@ def run_baseline_multi_seed(
             "lqc": (economy or DEFAULT_LEVERAGE_ECONOMY).lqc,
             "qi_cost_per_x": (economy or DEFAULT_LEVERAGE_ECONOMY).qi_cost_per_x,
             "table": (economy or DEFAULT_LEVERAGE_ECONOMY).table,
+            "structure": (economy or DEFAULT_LEVERAGE_ECONOMY).structure,
         },
         "score_distribution": card_score_report(cards, score_mode, beta, gamma),
         "strategies": {},
@@ -1071,6 +1090,10 @@ LEVERAGE_SEARCH_CONFIG = {
     "seasonal_strategy": "seasonal",
     "skilled_strategy": "skilled_leverage",
     "blind_strategy": "blind_leverage",
+    "economy_structures": {
+        "core": "倍率是多少，持有收益和气耗都按该倍率动态变化",
+        "excess_cost": "倍率照旧，气只为超出1x的部分增加；倍率越高仍然越费气",
+    },
     "targets": {
         "seasonal_score": [180.0, 240.0],
         "skilled_uplift": [0.15, 0.30],
@@ -1093,7 +1116,7 @@ def _metric_at_most(metric: dict, maximum: float) -> bool:
     return metric["mean"] <= maximum and metric["ci95"][1] <= maximum
 
 
-def _parameter_candidate_summary(report: dict) -> dict:
+def _parameter_candidate_summary(report: dict, require_ci: bool = True) -> dict:
     strategies = report["strategies"]
     seasonal = strategies["seasonal"]
     skilled = strategies["skilled_leverage"]
@@ -1104,16 +1127,23 @@ def _parameter_candidate_summary(report: dict) -> dict:
         (skilled["score"]["ci95"][1] - seasonal["score"]["ci95"][0]) / seasonal["score"]["ci95"][0],
     ]
     targets = LEVERAGE_SEARCH_CONFIG["targets"]
+    def band(metric: dict, minimum: float, maximum: float) -> bool:
+        return _metric_in_band(metric, minimum, maximum) if require_ci else minimum <= metric["mean"] <= maximum
+
+    def at_most(metric: dict, maximum: float) -> bool:
+        return _metric_at_most(metric, maximum) if require_ci else metric["mean"] <= maximum
+
     checks = {
         "pareto": report["score_distribution"]["pareto_dominated_total"] <= targets["pareto_dominated_max"],
-        "seasonal_score": _metric_in_band(seasonal["score"], *targets["seasonal_score"]),
-        "skilled_uplift": uplift >= targets["skilled_uplift"][0] and uplift <= targets["skilled_uplift"][1] and uplift_ci[0] >= targets["skilled_uplift"][0] and uplift_ci[1] <= targets["skilled_uplift"][1],
-        "skilled_margin": _metric_at_most(skilled["margin_call_rate"], targets["skilled_margin_call_rate_max"]),
-        "skilled_buys": _metric_in_band(skilled["buys"], *targets["buys"]),
-        "skilled_sells": _metric_in_band(skilled["sells"], *targets["sells"]),
-        "blind_margin_not_near_certain": _metric_at_most(blind["margin_call_rate"], targets["blind_margin_call_rate_max"]),
-        "skilled_element_concentration": _metric_at_most(skilled["element_selection_concentration"], targets["element_selection_concentration_max"]),
+        "seasonal_score": band(seasonal["score"], *targets["seasonal_score"]),
+        "skilled_uplift": targets["skilled_uplift"][0] <= uplift <= targets["skilled_uplift"][1] and (not require_ci or (uplift_ci[0] >= targets["skilled_uplift"][0] and uplift_ci[1] <= targets["skilled_uplift"][1])),
+        "skilled_margin": at_most(skilled["margin_call_rate"], targets["skilled_margin_call_rate_max"]),
+        "skilled_buys": band(skilled["buys"], *targets["buys"]),
+        "skilled_sells": band(skilled["sells"], *targets["sells"]),
+        "blind_margin_not_near_certain": at_most(blind["margin_call_rate"], targets["blind_margin_call_rate_max"]),
+        "skilled_element_concentration": at_most(skilled["element_selection_concentration"], targets["element_selection_concentration_max"]),
     }
+    failed_checks = [name for name, passed in checks.items() if not passed]
     return {
         "seasonal_score": seasonal["score"],
         "skilled_score": skilled["score"],
@@ -1125,7 +1155,10 @@ def _parameter_candidate_summary(report: dict) -> dict:
         "element_selection_concentration": skilled["element_selection_concentration"],
         "pareto_dominated_total": report["score_distribution"]["pareto_dominated_total"],
         "checks": checks,
+        "failed_checks": failed_checks,
+        "hard_failure_count": len(failed_checks),
         "pass": all(checks.values()),
+        "require_ci": require_ci,
     }
 
 
@@ -1133,68 +1166,101 @@ def run_leverage_parameter_search(
     screen_games_per_seed: int = 200,
     confirm_games_per_seed: int = 5000,
     seeds: list[int] | tuple[int, ...] = (20260801, 20260802),
+    structures: list[str] | tuple[str, ...] = ("core",),
 ) -> dict:
-    """宽搜 LQC/杠杆气耗/倍率表，并对前候选做双 seed 复核。
+    """宽搜杠杆经济参数，并对每种结构的唯一候选做双 seed 复核。
 
     这是数值实验入口，不改变 TypeScript 核心。seasonal 明确是无杠杆对照，
-    skilled_leverage 只把同一顺势决策中的合格买入标记为杠杆。
+    skilled_leverage 只把同一顺势决策中的合格买入标记为杠杆。结构最多只
+    用于研究两种最小结算函数，不得被解释成游戏强制门槛。
     """
     seeds = list(seeds)
-    search_rows = []
-    for lqc in (8, 12, 14, 16):
-        for qi_cost in (0.0, 0.1, 0.2, 0.3, 0.4):
-            for table_name, table in LEVERAGE_SEARCH_TABLES.items():
-                economy = LeverageEconomy(lqc, qi_cost, table)
-                report = run_baseline_multi_seed(
-                    screen_games_per_seed,
-                    seeds,
-                    ["seasonal", "skilled_leverage", "blind_leverage"],
-                    "centered_polarity",
-                    0.0,
-                    LEVERAGE_SEARCH_CONFIG["gamma"],
-                    economy,
-                )
-                summary = _parameter_candidate_summary(report)
-                search_rows.append({"economy": {"lqc": lqc, "qi_cost_per_x": qi_cost, "table": table_name}, **summary})
-    # 先保留满足全部硬约束的候选，再按盲杠杆风险、峰值倍率、LQC 排序。
-    # 搜索阶段只用于筛选；如果没有硬约束全通过者，必须明确报告无候选，
-    # 不得用近似候选冒充推荐。
-    feasible = [row for row in search_rows if row["pass"]]
-    ranked = sorted(
-        feasible,
-        key=lambda row: (
-            row["blind_margin_call_rate"]["mean"],
-            max(value for _maximum, value in LEVERAGE_SEARCH_TABLES[row["economy"]["table"]]),
-            row["economy"]["lqc"],
-            row["economy"]["qi_cost_per_x"],
-        ),
-    )
-    selected = ranked[:1]
-    confirmations = []
-    for row in selected:
-        economy = LeverageEconomy(row["economy"]["lqc"], row["economy"]["qi_cost_per_x"], LEVERAGE_SEARCH_TABLES[row["economy"]["table"]])
-        report = run_baseline_multi_seed(
-            confirm_games_per_seed,
-            seeds,
-            ["seasonal", "skilled_leverage", "blind_leverage"],
-            "centered_polarity",
-            0.0,
-            LEVERAGE_SEARCH_CONFIG["gamma"],
-            economy,
+    structures = list(structures)
+    if not structures or len(structures) > 2:
+        raise ValueError("结构搜索最多比较两种经济结构")
+    structure_reports = {}
+    for structure in structures:
+        LeverageEconomy(structure=structure)  # validate name before running MC
+        search_rows = []
+        for lqc in (8, 12, 14, 16):
+            for qi_cost in (0.0, 0.1, 0.2, 0.3, 0.4):
+                for table_name, table in LEVERAGE_SEARCH_TABLES.items():
+                    economy = LeverageEconomy(lqc, qi_cost, table, structure)
+                    report = run_baseline_multi_seed(
+                        screen_games_per_seed,
+                        seeds,
+                        ["seasonal", "skilled_leverage", "blind_leverage"],
+                        "centered_polarity",
+                        0.0,
+                        LEVERAGE_SEARCH_CONFIG["gamma"],
+                        economy,
+                    )
+                    summary = _parameter_candidate_summary(report, require_ci=False)
+                    search_rows.append({"economy": {"lqc": lqc, "qi_cost_per_x": qi_cost, "table": table_name, "structure": structure}, **summary})
+        feasible = [row for row in search_rows if row["pass"]]
+        ranked = sorted(
+            feasible,
+            key=lambda row: (
+                row["blind_margin_call_rate"]["mean"],
+                max(value for _maximum, value in LEVERAGE_SEARCH_TABLES[row["economy"]["table"]]),
+                row["economy"]["lqc"],
+                row["economy"]["qi_cost_per_x"],
+            ),
         )
-        confirmations.append({"economy": row["economy"], **_parameter_candidate_summary(report)})
-    return {
+        # 近邻不等于候选：先按少失败项，再按风险/峰值排序，供失败归因。
+        near_miss = sorted(
+            search_rows,
+            key=lambda row: (
+                row["hard_failure_count"],
+                row["blind_margin_call_rate"]["mean"],
+                max(value for _maximum, value in LEVERAGE_SEARCH_TABLES[row["economy"]["table"]]),
+                row["economy"]["lqc"],
+            ),
+        )[:5]
+        # 屏幕阶段按点估计筛出最多3个候选，最终推荐必须经过严格 CI 复核。
+        selected = ranked[:3]
+        confirmations = []
+        for row in selected:
+            economy = LeverageEconomy(row["economy"]["lqc"], row["economy"]["qi_cost_per_x"], LEVERAGE_SEARCH_TABLES[row["economy"]["table"]], structure)
+            report = run_baseline_multi_seed(
+                confirm_games_per_seed,
+                seeds,
+                ["seasonal", "skilled_leverage", "blind_leverage"],
+                "centered_polarity",
+                0.0,
+                LEVERAGE_SEARCH_CONFIG["gamma"],
+                economy,
+            )
+            confirmations.append({"economy": row["economy"], **_parameter_candidate_summary(report, require_ci=True)})
+        confirmed_feasible = [row for row in confirmations if row["pass"]]
+        confirmed_ranked = sorted(
+            confirmed_feasible,
+            key=lambda row: (
+                row["blind_margin_call_rate"]["mean"],
+                max(value for _maximum, value in LEVERAGE_SEARCH_TABLES[row["economy"]["table"]]),
+                row["economy"]["lqc"],
+                row["economy"]["qi_cost_per_x"],
+            ),
+        )
+        structure_reports[structure] = {
+            "screened_candidates": len(search_rows),
+            "screen_pass_count": len(feasible),
+            "recommendation": confirmed_ranked[0] if confirmed_ranked else None,
+            "screen_top": ranked[:5],
+            "near_miss_top": near_miss,
+            "confirmations": confirmations,
+            "no_candidate_reason": None if confirmed_ranked else ("屏幕宽搜没有点估计达标候选，未进行5000局确认。" if not selected else "候选在双 seed×5000 局复核时未能让全部95%CI硬约束同时达标；未推荐任何结构。"),
+        }
+    output = {
         "config": LEVERAGE_SEARCH_CONFIG,
         "screen_games_per_seed": screen_games_per_seed,
         "confirm_games_per_seed": confirm_games_per_seed,
         "seeds": seeds,
-        "screened_candidates": len(search_rows),
-        "screen_pass_count": len(feasible),
-        "recommendation": selected[0] if selected else None,
-        "screen_top": ranked[:5],
-        "confirmations": confirmations,
-        "no_candidate_reason": None if selected else "严格递增且峰值不超过5的倍率曲线，在双 seed 宽搜中没有同时满足全部硬约束的候选；未进行5000局确认。",
+        "structures": structure_reports,
     }
+    if len(structures) == 1:
+        output.update(structure_reports[structures[0]])
+    return output
 
 
 def run_evaluation_multi_seed(games_per_seed: int, seeds: list[int], strategy_names: list[str], gamma_values: tuple[float, ...] = (0.10, 0.15)) -> dict:
@@ -1327,6 +1393,7 @@ def main() -> None:
     parser.add_argument("--search-leverage", action="store_true", help="搜索模拟器侧 LQC/杠杆气耗/倍率表候选")
     parser.add_argument("--screen-games", type=int, default=200, help="杠杆宽搜每个 seed 的局数")
     parser.add_argument("--confirm-games", type=int, default=5000, help="杠杆候选复核每个 seed 的局数")
+    parser.add_argument("--economy-structure", action="append", choices=("core", "excess_cost"), help="最多比较两种模拟器侧杠杆结算结构")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     parser.add_argument("--trace-stdin", action="store_true", help="从 stdin 读取固定动作 trace 并输出快照")
     args = parser.parse_args()
@@ -1341,6 +1408,7 @@ def main() -> None:
             screen_games_per_seed=args.screen_games,
             confirm_games_per_seed=args.confirm_games,
             seeds=[int(value) for value in args.seeds.split(",") if value.strip()],
+            structures=args.economy_structure or ["core"],
         )
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
         return
