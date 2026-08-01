@@ -13,7 +13,6 @@ import argparse
 import json
 import math
 import statistics
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -154,6 +153,11 @@ def js_round(value: float) -> int:
     return math.floor(value + 0.5)
 
 
+def js_round_decimal(value: float, digits: int = 2) -> float:
+    factor = 10 ** digits
+    return js_round(value * factor) / factor
+
+
 def calc_score(card: Card, season: str) -> float:
     season_element = SEASON_ELEMENTS[season]
     stem_score = score_element_in_season(card.tian_gan_element, season_element)
@@ -163,7 +167,7 @@ def calc_score(card: Card, season: str) -> float:
         for stem, weight in hidden
     )
     relation = relation_score(card.tian_gan_element, card.di_zhi_element)
-    return round(0.5 * stem_score + 0.3 * branch_score + 0.2 * relation, 2)
+    return js_round_decimal(0.5 * stem_score + 0.3 * branch_score + 0.2 * relation)
 
 
 def generate_season_lengths(random: Mulberry32) -> list[int]:
@@ -536,13 +540,73 @@ def run_baseline(games: int, seed: int, strategy_names: list[str]) -> dict:
     return output
 
 
+def snapshot(game: GameState) -> dict:
+    """只返回可由 TurnManager 公开/可观察状态组成的快照。
+
+    ``discarded`` 不放入快照：它是 Python 为牌数审计保留的 shadow accounting，
+    并非 TypeScript 核心的真实状态。公共牌被下一轮 draw 覆盖的现状会直接体现在
+    deck/public IDs 的对照中。
+    """
+    return {
+        "round": game.current_round,
+        "season": game.season,
+        "seasonRound": game.round_in_season,
+        "qi": game.qi,
+        "score": game.score,
+        "hand": [
+            None if slot is None else {"id": slot.card.id, "lockedQi": slot.locked_qi, "useLeverage": slot.use_leverage}
+            for slot in game.hand
+        ],
+        "deckIds": [card.id for card in game.pool.deck],
+        "publicIds": [card.id for card in game.pool.public],
+        "marginCallCount": game.margin_calls,
+    }
+
+
+def run_trace(payload: dict) -> dict:
+    """运行一个由测试传入的固定动作 trace，供 Vitest 跨语言核对。"""
+    game = GameState(int(payload["seed"]))
+    if payload.get("season_lengths") is not None:
+        lengths = [int(value) for value in payload["season_lengths"]]
+        if sum(lengths) != TOTAL_ROUNDS or not all(3 <= value <= 12 for value in lengths):
+            raise ValueError("trace season_lengths 必须是 3-12 且总和为60")
+        game.season_lengths = lengths
+    game.draw_and_recover()
+    snapshots = [snapshot(game)]
+    for action in payload["actions"]:
+        kind = action["type"]
+        if kind == "set_qi":
+            game.qi = float(action["value"])
+            continue
+        if kind == "buy":
+            ok = game.buy(int(action["cardIndex"]), bool(action.get("leverage", False)))
+        elif kind == "sell":
+            ok = game.sell(int(action["slotIndex"]))
+        elif kind == "wait":
+            game.wait()
+            ok = True
+        else:
+            raise ValueError(f"未知 trace 动作: {kind}")
+        if not ok:
+            raise ValueError(f"trace 动作失败: {action}")
+        game.advance_season()
+        if game.current_round <= TOTAL_ROUNDS:
+            game.draw_and_recover()
+        snapshots.append(snapshot(game))
+    return {"snapshots": snapshots, "shadowDiscardedCount": len(game.pool.discarded)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="甲子纪真实规则 Monte Carlo 基线")
     parser.add_argument("--games", type=int, default=200)
     parser.add_argument("--seed", type=int, default=20260801)
     parser.add_argument("--strategy", action="append", choices=sorted(STRATEGIES), dest="strategies")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
+    parser.add_argument("--trace-stdin", action="store_true", help="从 stdin 读取固定动作 trace 并输出快照")
     args = parser.parse_args()
+    if args.trace_stdin:
+        print(json.dumps(run_trace(json.load(__import__("sys").stdin)), ensure_ascii=False, separators=(",", ":")))
+        return
     names = args.strategies or list(STRATEGIES)
     report = run_baseline(args.games, args.seed, names)
     if args.json:
