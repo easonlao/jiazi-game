@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from simulator import (  # noqa: E402
     CardPool,
     EVALUATION_CONFIG_V0,
+    LEVERAGE_SEARCH_CONFIG,
+    LEVERAGE_SEARCH_TABLES,
     GameState,
     LeverageEconomy,
     Mulberry32,
@@ -146,10 +148,19 @@ class SimulatorParityTests(unittest.TestCase):
         self.assertEqual(report["config"]["skilled_strategy"], "skilled_leverage")
         self.assertEqual(report["confirm_games_per_seed"], 2)
         self.assertGreater(report["screened_candidates"], 0)
-        self.assertTrue(report["confirmations"])
-        for candidate in report["confirmations"]:
-            self.assertIn("checks", candidate)
-            self.assertIn("skilled_uplift", candidate)
+        self.assertLessEqual(LEVERAGE_SEARCH_CONFIG["targets"]["blind_margin_call_rate_max"], 0.70)
+        for table in LEVERAGE_SEARCH_TABLES.values():
+            self.assertEqual(table[0][1], 1.0)
+            values = [multiplier for _maximum, multiplier in table]
+            self.assertTrue(all(left < right for left, right in zip(values, values[1:])), table)
+            self.assertLessEqual(max(values), 5.0)
+        if report["recommendation"] is None:
+            self.assertEqual(report["confirmations"], [])
+            self.assertIsNotNone(report["no_candidate_reason"])
+        else:
+            self.assertEqual(len(report["confirmations"]), 1)
+            self.assertIn("checks", report["confirmations"][0])
+            self.assertTrue(report["confirmations"][0]["pass"])
 
     def test_v0_evaluation_thresholds_have_pass_warn_fail_and_manual_states(self) -> None:
         self.assertEqual(_evaluate_band({"mean": 100, "ci95": [95, 105]}, 80, 140, "x")["status"], "pass")

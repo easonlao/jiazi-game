@@ -1044,7 +1044,9 @@ def run_baseline_multi_seed(
     }
     for name in strategy_names:
         games = [
-            GameState(seed + index, score_mode, beta, gamma, economy=economy).play(STRATEGIES[name])
+            # 为不同 seed 预留独立的百万级区间，避免 seed=20260801 的
+            # index 序列与 seed=20260802 发生几乎完全重叠。
+            GameState(seed * 1_000_000 + index, score_mode, beta, gamma, economy=economy).play(STRATEGIES[name])
             for seed in seeds
             for index in range(games_per_seed)
         ]
@@ -1054,11 +1056,11 @@ def run_baseline_multi_seed(
 
 LEVERAGE_SEARCH_TABLES: dict[str, tuple[tuple[int, float], ...]] = {
     "current": LEVERAGE_TABLE,
-    "flat_3": ((2, 1.0), (5, 3.0), (8, 3.0), (11, 3.0), (12, 3.0)),
-    "flat_4": ((2, 1.0), (5, 4.0), (8, 4.0), (11, 4.0), (12, 4.0)),
-    "flat_5": ((2, 1.0), (5, 5.0), (8, 5.0), (11, 5.0), (12, 5.0)),
-    "step_3_4_5": ((2, 1.0), (5, 3.0), (8, 4.0), (11, 5.0), (12, 5.0)),
-    "step_4_5_6": ((2, 1.0), (5, 4.0), (8, 5.0), (11, 6.0), (12, 6.0)),
+    "step_2_3_4_5": ((2, 1.0), (5, 2.0), (8, 3.0), (11, 4.0), (12, 5.0)),
+    "step_2_3_4_4_5": ((2, 1.0), (5, 2.0), (8, 3.0), (11, 4.0), (12, 4.5)),
+    "step_2_3_4_5_5_5": ((2, 1.0), (5, 2.0), (8, 3.0), (11, 4.5), (12, 5.0)),
+    "step_2_4_4_5": ((2, 1.0), (5, 2.0), (8, 4.0), (11, 4.5), (12, 5.0)),
+    "step_3_4_4_5": ((2, 1.0), (5, 3.0), (8, 4.0), (11, 4.5), (12, 5.0)),
 }
 
 
@@ -1075,7 +1077,7 @@ LEVERAGE_SEARCH_CONFIG = {
         "skilled_margin_call_rate_max": 0.12,
         "buys": [14.0, 22.0],
         "sells": [10.0, 18.0],
-        "blind_margin_call_rate_max": 0.85,
+        "blind_margin_call_rate_max": 0.70,
         "element_selection_concentration_max": 0.70,
         "pareto_dominated_max": 0,
     },
@@ -1154,19 +1156,20 @@ def run_leverage_parameter_search(
                 )
                 summary = _parameter_candidate_summary(report)
                 search_rows.append({"economy": {"lqc": lqc, "qi_cost_per_x": qi_cost, "table": table_name}, **summary})
-    # 先保留满足核心风险/体验硬约束的候选；若屏幕样本尚未稳定，
-    # 也保留按失败数和 uplift 距离排序的前五，避免搜索报告为空。
+    # 先保留满足全部硬约束的候选，再按盲杠杆风险、峰值倍率、LQC 排序。
+    # 搜索阶段只用于筛选；如果没有硬约束全通过者，必须明确报告无候选，
+    # 不得用近似候选冒充推荐。
     feasible = [row for row in search_rows if row["pass"]]
     ranked = sorted(
-        search_rows,
+        feasible,
         key=lambda row: (
-            sum(not value for value in row["checks"].values()),
-            abs(row["skilled_uplift"]["mean"] - 0.225),
+            row["blind_margin_call_rate"]["mean"],
+            max(value for _maximum, value in LEVERAGE_SEARCH_TABLES[row["economy"]["table"]]),
             row["economy"]["lqc"],
             row["economy"]["qi_cost_per_x"],
         ),
     )
-    selected = (feasible or ranked)[:5]
+    selected = ranked[:1]
     confirmations = []
     for row in selected:
         economy = LeverageEconomy(row["economy"]["lqc"], row["economy"]["qi_cost_per_x"], LEVERAGE_SEARCH_TABLES[row["economy"]["table"]])
@@ -1187,8 +1190,10 @@ def run_leverage_parameter_search(
         "seeds": seeds,
         "screened_candidates": len(search_rows),
         "screen_pass_count": len(feasible),
-        "screen_top": selected,
+        "recommendation": selected[0] if selected else None,
+        "screen_top": ranked[:5],
         "confirmations": confirmations,
+        "no_candidate_reason": None if selected else "严格递增且峰值不超过5的倍率曲线，在双 seed 宽搜中没有同时满足全部硬约束的候选；未进行5000局确认。",
     }
 
 
