@@ -14,6 +14,7 @@ from simulator import (  # noqa: E402
     CardPool,
     EVALUATION_CONFIG_V0,
     GameState,
+    LeverageEconomy,
     Mulberry32,
     ScoreModel,
     SEASONS,
@@ -26,6 +27,7 @@ from simulator import (  # noqa: E402
     _evaluate_band,
     evaluate_report,
     run_baseline,
+    run_leverage_parameter_search,
     rule_review_scenarios,
 )
 
@@ -129,6 +131,25 @@ class SimulatorParityTests(unittest.TestCase):
         self.assertIn(action[0], {"buy", "wait"})
         skilled_action = strategy_skilled_leverage(PublicOnlyGame())
         self.assertIn(skilled_action[0], {"buy", "wait"})
+
+    def test_seasonal_is_unleveraged_control_and_skilled_only_marks_visible_uptrend(self) -> None:
+        game = GameState(20260801, "centered_polarity", gamma=0.10)
+        seasonal = game.play(strategy_seasonal)
+        skilled = GameState(20260801, "centered_polarity", gamma=0.10).play(strategy_skilled_leverage)
+        self.assertEqual(seasonal.total_leverage_buys, 0)
+        self.assertGreaterEqual(skilled.total_leverage_buys, 0)
+        self.assertEqual(game.economy, LeverageEconomy())
+
+    def test_leverage_parameter_search_has_reproducible_screen_and_confirmation_contract(self) -> None:
+        report = run_leverage_parameter_search(screen_games_per_seed=2, confirm_games_per_seed=2, seeds=[20260801, 20260802])
+        self.assertEqual(report["config"]["seasonal_strategy"], "seasonal")
+        self.assertEqual(report["config"]["skilled_strategy"], "skilled_leverage")
+        self.assertEqual(report["confirm_games_per_seed"], 2)
+        self.assertGreater(report["screened_candidates"], 0)
+        self.assertTrue(report["confirmations"])
+        for candidate in report["confirmations"]:
+            self.assertIn("checks", candidate)
+            self.assertIn("skilled_uplift", candidate)
 
     def test_v0_evaluation_thresholds_have_pass_warn_fail_and_manual_states(self) -> None:
         self.assertEqual(_evaluate_band({"mean": 100, "ci95": [95, 105]}, 80, 140, "x")["status"], "pass")

@@ -45,6 +45,22 @@ HOLD_QI_SCORE_FACTOR = 0.4
 HOLD_QI_MIN = 0.5
 LEVERAGE_QI_COST_PER_X = 4
 
+
+@dataclass(frozen=True)
+class LeverageEconomy:
+    """模拟器侧杠杆经济参数；默认值与当前核心实现一致。
+
+    该对象只用于参数实验，不能被当作产品配置写回核心。把参数显式化后，
+    宽搜可以比较 LQC、持仓气耗和倍率曲线，而不会通过全局常量污染回归。
+    """
+
+    lqc: int = LQC
+    qi_cost_per_x: float = LEVERAGE_QI_COST_PER_X
+    table: tuple[tuple[int, float], ...] = LEVERAGE_TABLE
+
+
+DEFAULT_LEVERAGE_ECONOMY = LeverageEconomy()
+
 STEM_ELEMENT = {
     "甲": "wood", "乙": "wood", "丙": "fire", "丁": "fire",
     "戊": "earth", "己": "earth", "庚": "metal", "辛": "metal",
@@ -326,7 +342,15 @@ class Holding:
 
 
 class GameState:
-    def __init__(self, seed: int, score_mode: str = "raw", beta: float = 0.0, gamma: float = 0.15, record_history: bool = False):
+    def __init__(
+        self,
+        seed: int,
+        score_mode: str = "raw",
+        beta: float = 0.0,
+        gamma: float = 0.15,
+        record_history: bool = False,
+        economy: LeverageEconomy | None = None,
+    ):
         self.random = Mulberry32(seed)
         self.season_lengths = generate_season_lengths(self.random)
         self.season_index = 0
@@ -334,6 +358,7 @@ class GameState:
         self.current_round = 1
         cards = load_cards()
         self.score_model = get_score_model(cards, score_mode, beta, gamma)
+        self.economy = economy or DEFAULT_LEVERAGE_ECONOMY
         self.pool = CardPool(cards, self.random)
         self.hand: list[Holding | None] = [None] * MAX_HAND_SIZE
         self.qi = float(INITIAL_QI)
@@ -351,6 +376,12 @@ class GameState:
 
     def card_score(self, card: Card, season: str | None = None) -> float:
         return self.score_model.score(card, season or self.season)
+
+    def leverage_for_round(self) -> float:
+        for maximum, multiplier in self.economy.table:
+            if self.round_in_season <= maximum:
+                return multiplier
+        return self.economy.table[-1][1]
 
     @property
     def season(self) -> str:
@@ -372,12 +403,12 @@ class GameState:
     def buy_cost(self, score: float, use_leverage: bool) -> int:
         cost = BASE_BUY_COST * (1 + BUY_COST_FACTOR * score)
         if use_leverage:
-            cost += LQC
+            cost += self.economy.lqc
         return math.ceil(cost)
 
     def hold_qi_cost(self, score: float, leverage: float) -> float:
         base = max(HOLD_QI_MIN, HOLD_QI_BASE + HOLD_QI_SCORE_FACTOR * score)
-        return base + (leverage * LEVERAGE_QI_COST_PER_X if leverage > 1 else 0)
+        return base + (leverage * self.economy.qi_cost_per_x if leverage > 1 else 0)
 
     def settle(self) -> dict:
         detail = {"round": self.current_round, "season": self.season, "hold_earnings": 0.0,
@@ -385,7 +416,7 @@ class GameState:
         for slot in self.hand:
             if slot is None:
                 continue
-            leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
+            leverage = self.leverage_for_round() if slot.use_leverage else 1.0
             score = self.card_score(slot.card)
             earning = HOLD_BONUS * score * leverage
             qi_cost = self.hold_qi_cost(score, leverage)
@@ -410,7 +441,7 @@ class GameState:
         target = leverage_indices[self.random.int(0, len(leverage_indices))]
         slot = self.hand[target]
         assert slot is not None
-        leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
+        leverage = self.leverage_for_round() if slot.use_leverage else 1.0
         current_score = self.card_score(slot.card)
         sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
         final_sell = math.floor(sell_score * FORCED_SCORE_MULTIPLIER) if sell_score > 0 else sell_score
@@ -469,7 +500,7 @@ class GameState:
         if self.qi + slot.locked_qi < SELL_COST:
             return False
         current_score = self.card_score(slot.card)
-        leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
+        leverage = self.leverage_for_round() if slot.use_leverage else 1.0
         sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
         self.hand[slot_index] = None
         self.hold_durations.append(self.current_round - slot.buy_round)
@@ -509,7 +540,7 @@ class GameState:
                 self.wait()
             if self.record_history:
                 self.history.append({**detail, "action": self.last_action, "qi": self.qi, "score": self.score,
-                                     "season_round": self.round_in_season, "leverage": leverage_for_round(self.round_in_season)})
+                                     "season_round": self.round_in_season, "leverage": self.leverage_for_round()})
             self.invariant()
             self.advance_season()
         return self
@@ -565,7 +596,7 @@ def strategy_blind_leverage(game: GameState) -> tuple[str, int | None, bool | No
 
 def strategy_balanced(game: GameState) -> tuple[str, int | None, bool | None]:
     current_hold_cost = sum(
-        game.hold_qi_cost(game.card_score(slot.card), leverage_for_round(game.round_in_season) if slot.use_leverage else 1.0)
+        game.hold_qi_cost(game.card_score(slot.card), game.leverage_for_round() if slot.use_leverage else 1.0)
         for slot in game.hand if slot is not None
     )
     if game.qi - current_hold_cost < 5:
@@ -584,7 +615,7 @@ def strategy_balanced(game: GameState) -> tuple[str, int | None, bool | None]:
     return strategy_always_wait(game)
 
 
-def strategy_seasonal(game: GameState) -> tuple[str, int | None, bool | None]:
+def _strategy_seasonal(game: GameState, allow_leverage: bool = True) -> tuple[str, int | None, bool | None]:
     """只根据当前可见四季曲线做候势布局，不读取季长、牌堆或随机源。
 
     评分权重偏向下一季，避免只追逐当前最高分；持仓在下一季明显转负前
@@ -613,7 +644,7 @@ def strategy_seasonal(game: GameState) -> tuple[str, int | None, bool | None]:
     projected_hold_cost = sum(
         game.hold_qi_cost(
             game.card_score(slot.card, SEASONS[current]),
-            leverage_for_round(game.round_in_season) if slot.use_leverage else 1.0,
+            game.leverage_for_round() if slot.use_leverage else 1.0,
         )
         for slot in game.hand if slot is not None
     )
@@ -634,12 +665,9 @@ def strategy_seasonal(game: GameState) -> tuple[str, int | None, bool | None]:
         utility = 0.25 * now + 0.5 * upcoming + 0.25 * later
         rising = upcoming - now
         if utility >= 0.35 and (upcoming >= 0.25 or rising >= 1.0):
-            use_leverage = (
-                game.qi >= 38
-                and game.round_in_season >= 3
-                and upcoming >= 1.0
-                and later >= 0.5
-            )
+            # 杠杆只放在“下季仍然向上、下下季不转弱”的顺势牌上；
+            # 是否允许杠杆由调用方决定，避免另造一套卡牌技能规则。
+            use_leverage = allow_leverage and game.qi >= 38 and upcoming >= 1.0 and later >= 0.5
             cost = game.buy_cost(now, use_leverage)
             if game.qi >= cost:
                 candidates.append((utility, rising, index, use_leverage))
@@ -647,6 +675,16 @@ def strategy_seasonal(game: GameState) -> tuple[str, int | None, bool | None]:
         _, _, index, use_leverage = max(candidates)
         return "buy", index, use_leverage
     return strategy_always_wait(game)
+
+
+def strategy_seasonal(game: GameState) -> tuple[str, int | None, bool | None]:
+    """新手顺势对照：只用公开曲线交易，明确不使用杠杆。"""
+    return _strategy_seasonal(game, allow_leverage=False)
+
+
+def strategy_seasonal_unleveraged(game: GameState) -> tuple[str, int | None, bool | None]:
+    """与顺势策略完全相同，但作为杠杆收益的非杠杆对照。"""
+    return _strategy_seasonal(game, allow_leverage=False)
 
 
 def strategy_chase_current(game: GameState) -> tuple[str, int | None, bool | None]:
@@ -666,53 +704,12 @@ def strategy_chase_current(game: GameState) -> tuple[str, int | None, bool | Non
 
 
 def strategy_skilled_leverage(game: GameState) -> tuple[str, int | None, bool | None]:
-    """使用公开季节曲线和气量约束的可解释杠杆策略。"""
-    current = game.season_index % len(SEASONS)
-    next_season = SEASONS[(current + 1) % len(SEASONS)]
-    following = SEASONS[(current + 2) % len(SEASONS)]
+    """与新手顺势决策相同，只在满足公开曲线条件时开启杠杆。
 
-    # 先退出下一季明显转负的杠杆仓位，避免把放大风险带入逆风季。
-    for index, slot in enumerate(game.hand):
-        if slot is None or not slot.use_leverage:
-            continue
-        now = game.card_score(slot.card, SEASONS[current])
-        upcoming = game.card_score(slot.card, next_season)
-        if upcoming < 0 and upcoming < now - 0.75 and game.qi + slot.locked_qi >= SELL_COST:
-            return "sell", index, None
-
-    projected_cost = sum(
-        game.hold_qi_cost(
-            game.card_score(slot.card, SEASONS[current]),
-            leverage_for_round(game.round_in_season) if slot.use_leverage else 1.0,
-        )
-        for slot in game.hand if slot is not None
-    )
-    if game.qi - projected_cost < 15 and game.hand:
-        for index, slot in enumerate(game.hand):
-            if slot and game.qi + slot.locked_qi >= SELL_COST:
-                return "sell", index, None
-
-    if game.hand_size() >= MAX_HAND_SIZE or not game.pool.public:
-        return strategy_always_wait(game)
-
-    candidates = []
-    for index, card in enumerate(game.pool.public):
-        now = game.card_score(card, SEASONS[current])
-        upcoming = game.card_score(card, next_season)
-        later = game.card_score(card, following)
-        utility = 0.25 * now + 0.5 * upcoming + 0.25 * later
-        if upcoming < 1.0 or later < 0.5 or utility < 0.75:
-            continue
-        # 只有气量充足、手牌有余量且确实在后续季节有收益时才使用杠杆。
-        leverage = game.qi >= 55 and game.hand_size() <= 1 and game.round_in_season >= 3
-        cost = game.buy_cost(now, leverage)
-        projected_buy_hold = game.hold_qi_cost(now, leverage)
-        if game.qi >= cost and game.qi - cost - projected_buy_hold >= 15:
-            candidates.append((utility, upcoming, index, leverage))
-    if candidates:
-        _, _, index, leverage = max(candidates)
-        return "buy", index, leverage
-    return strategy_seasonal(game)
+    这是模拟器中的策略对照，不是新增的游戏强制门槛；玩家仍可在核心规则
+    允许时自行决定是否开启杠杆。
+    """
+    return _strategy_seasonal(game, allow_leverage=True)
 
 
 STRATEGIES: dict[str, Strategy] = {
@@ -801,9 +798,22 @@ def summarize(games: list[GameState]) -> dict:
     }
 
 
-def run_baseline(games: int, seed: int, strategy_names: list[str], score_mode: str = "raw", beta: float = 0.0, gamma: float = 0.15) -> dict:
+def run_baseline(
+    games: int,
+    seed: int,
+    strategy_names: list[str],
+    score_mode: str = "raw",
+    beta: float = 0.0,
+    gamma: float = 0.15,
+    economy: LeverageEconomy | None = None,
+) -> dict:
     cards = load_cards()
     output = {"rule_source": "src/core mirror", "card_count": len(cards), "total_rounds": TOTAL_ROUNDS,
+              "leverage_economy": {
+                  "lqc": (economy or DEFAULT_LEVERAGE_ECONOMY).lqc,
+                  "qi_cost_per_x": (economy or DEFAULT_LEVERAGE_ECONOMY).qi_cost_per_x,
+                  "table": (economy or DEFAULT_LEVERAGE_ECONOMY).table,
+              },
               "shadow_accounting": {
                   "discarded_public_cards": "Python-only accounting for public cards overwritten by current core draw; not a TypeScript core state",
               },
@@ -812,7 +822,7 @@ def run_baseline(games: int, seed: int, strategy_names: list[str], score_mode: s
         if name not in STRATEGIES:
             raise ValueError(f"未知策略: {name}")
         output["strategies"][name] = summarize([
-            GameState(seed + index, score_mode, beta, gamma).play(STRATEGIES[name])
+            GameState(seed + index, score_mode, beta, gamma, economy=economy).play(STRATEGIES[name])
             for index in range(games)
         ])
     return output
@@ -1006,7 +1016,15 @@ def run_evaluation(games: int, seed: int, strategy_names: list[str], gamma: floa
     return report
 
 
-def run_baseline_multi_seed(games_per_seed: int, seeds: list[int], strategy_names: list[str], score_mode: str, beta: float = 0.0, gamma: float = 0.15) -> dict:
+def run_baseline_multi_seed(
+    games_per_seed: int,
+    seeds: list[int],
+    strategy_names: list[str],
+    score_mode: str,
+    beta: float = 0.0,
+    gamma: float = 0.15,
+    economy: LeverageEconomy | None = None,
+) -> dict:
     cards = load_cards()
     output = {
         "rule_source": "src/core mirror",
@@ -1016,17 +1034,162 @@ def run_baseline_multi_seed(games_per_seed: int, seeds: list[int], strategy_name
         "games_per_seed": games_per_seed,
         "seeds": seeds,
         "shadow_accounting": {"discarded_public_cards": "Python-only; not TypeScript core state"},
+        "leverage_economy": {
+            "lqc": (economy or DEFAULT_LEVERAGE_ECONOMY).lqc,
+            "qi_cost_per_x": (economy or DEFAULT_LEVERAGE_ECONOMY).qi_cost_per_x,
+            "table": (economy or DEFAULT_LEVERAGE_ECONOMY).table,
+        },
         "score_distribution": card_score_report(cards, score_mode, beta, gamma),
         "strategies": {},
     }
     for name in strategy_names:
         games = [
-            GameState(seed + index, score_mode, beta, gamma).play(STRATEGIES[name])
+            GameState(seed + index, score_mode, beta, gamma, economy=economy).play(STRATEGIES[name])
             for seed in seeds
             for index in range(games_per_seed)
         ]
         output["strategies"][name] = summarize(games)
     return output
+
+
+LEVERAGE_SEARCH_TABLES: dict[str, tuple[tuple[int, float], ...]] = {
+    "current": LEVERAGE_TABLE,
+    "flat_3": ((2, 1.0), (5, 3.0), (8, 3.0), (11, 3.0), (12, 3.0)),
+    "flat_4": ((2, 1.0), (5, 4.0), (8, 4.0), (11, 4.0), (12, 4.0)),
+    "flat_5": ((2, 1.0), (5, 5.0), (8, 5.0), (11, 5.0), (12, 5.0)),
+    "step_3_4_5": ((2, 1.0), (5, 3.0), (8, 4.0), (11, 5.0), (12, 5.0)),
+    "step_4_5_6": ((2, 1.0), (5, 4.0), (8, 5.0), (11, 6.0), (12, 6.0)),
+}
+
+
+LEVERAGE_SEARCH_CONFIG = {
+    "version": "0.3-situational-trading-phase-1",
+    "score_mode": "centered_polarity",
+    "gamma": 0.10,
+    "seasonal_strategy": "seasonal",
+    "skilled_strategy": "skilled_leverage",
+    "blind_strategy": "blind_leverage",
+    "targets": {
+        "seasonal_score": [180.0, 240.0],
+        "skilled_uplift": [0.15, 0.30],
+        "skilled_margin_call_rate_max": 0.12,
+        "buys": [14.0, 22.0],
+        "sells": [10.0, 18.0],
+        "blind_margin_call_rate_max": 0.85,
+        "element_selection_concentration_max": 0.70,
+        "pareto_dominated_max": 0,
+    },
+    "interpretation": "策略层的杠杆筛选只用于评估，不构成游戏强制门槛；所有判断仅使用当前、下季、下下季公开评分曲线和气量/手牌状态。",
+}
+
+
+def _metric_in_band(metric: dict, minimum: float, maximum: float) -> bool:
+    return metric["mean"] >= minimum and metric["mean"] <= maximum and metric["ci95"][0] >= minimum and metric["ci95"][1] <= maximum
+
+
+def _metric_at_most(metric: dict, maximum: float) -> bool:
+    return metric["mean"] <= maximum and metric["ci95"][1] <= maximum
+
+
+def _parameter_candidate_summary(report: dict) -> dict:
+    strategies = report["strategies"]
+    seasonal = strategies["seasonal"]
+    skilled = strategies["skilled_leverage"]
+    blind = strategies["blind_leverage"]
+    uplift = (skilled["score"]["mean"] - seasonal["score"]["mean"]) / seasonal["score"]["mean"] if seasonal["score"]["mean"] else 0.0
+    uplift_ci = [
+        (skilled["score"]["ci95"][0] - seasonal["score"]["ci95"][1]) / seasonal["score"]["ci95"][1],
+        (skilled["score"]["ci95"][1] - seasonal["score"]["ci95"][0]) / seasonal["score"]["ci95"][0],
+    ]
+    targets = LEVERAGE_SEARCH_CONFIG["targets"]
+    checks = {
+        "pareto": report["score_distribution"]["pareto_dominated_total"] <= targets["pareto_dominated_max"],
+        "seasonal_score": _metric_in_band(seasonal["score"], *targets["seasonal_score"]),
+        "skilled_uplift": uplift >= targets["skilled_uplift"][0] and uplift <= targets["skilled_uplift"][1] and uplift_ci[0] >= targets["skilled_uplift"][0] and uplift_ci[1] <= targets["skilled_uplift"][1],
+        "skilled_margin": _metric_at_most(skilled["margin_call_rate"], targets["skilled_margin_call_rate_max"]),
+        "skilled_buys": _metric_in_band(skilled["buys"], *targets["buys"]),
+        "skilled_sells": _metric_in_band(skilled["sells"], *targets["sells"]),
+        "blind_margin_not_near_certain": _metric_at_most(blind["margin_call_rate"], targets["blind_margin_call_rate_max"]),
+        "skilled_element_concentration": _metric_at_most(skilled["element_selection_concentration"], targets["element_selection_concentration_max"]),
+    }
+    return {
+        "seasonal_score": seasonal["score"],
+        "skilled_score": skilled["score"],
+        "skilled_uplift": {"mean": uplift, "ci95": uplift_ci},
+        "skilled_margin_call_rate": skilled["margin_call_rate"],
+        "blind_margin_call_rate": blind["margin_call_rate"],
+        "buys": skilled["buys"],
+        "sells": skilled["sells"],
+        "element_selection_concentration": skilled["element_selection_concentration"],
+        "pareto_dominated_total": report["score_distribution"]["pareto_dominated_total"],
+        "checks": checks,
+        "pass": all(checks.values()),
+    }
+
+
+def run_leverage_parameter_search(
+    screen_games_per_seed: int = 200,
+    confirm_games_per_seed: int = 5000,
+    seeds: list[int] | tuple[int, ...] = (20260801, 20260802),
+) -> dict:
+    """宽搜 LQC/杠杆气耗/倍率表，并对前候选做双 seed 复核。
+
+    这是数值实验入口，不改变 TypeScript 核心。seasonal 明确是无杠杆对照，
+    skilled_leverage 只把同一顺势决策中的合格买入标记为杠杆。
+    """
+    seeds = list(seeds)
+    search_rows = []
+    for lqc in (8, 12, 14, 16):
+        for qi_cost in (0.0, 0.1, 0.2, 0.3, 0.4):
+            for table_name, table in LEVERAGE_SEARCH_TABLES.items():
+                economy = LeverageEconomy(lqc, qi_cost, table)
+                report = run_baseline_multi_seed(
+                    screen_games_per_seed,
+                    seeds,
+                    ["seasonal", "skilled_leverage", "blind_leverage"],
+                    "centered_polarity",
+                    0.0,
+                    LEVERAGE_SEARCH_CONFIG["gamma"],
+                    economy,
+                )
+                summary = _parameter_candidate_summary(report)
+                search_rows.append({"economy": {"lqc": lqc, "qi_cost_per_x": qi_cost, "table": table_name}, **summary})
+    # 先保留满足核心风险/体验硬约束的候选；若屏幕样本尚未稳定，
+    # 也保留按失败数和 uplift 距离排序的前五，避免搜索报告为空。
+    feasible = [row for row in search_rows if row["pass"]]
+    ranked = sorted(
+        search_rows,
+        key=lambda row: (
+            sum(not value for value in row["checks"].values()),
+            abs(row["skilled_uplift"]["mean"] - 0.225),
+            row["economy"]["lqc"],
+            row["economy"]["qi_cost_per_x"],
+        ),
+    )
+    selected = (feasible or ranked)[:5]
+    confirmations = []
+    for row in selected:
+        economy = LeverageEconomy(row["economy"]["lqc"], row["economy"]["qi_cost_per_x"], LEVERAGE_SEARCH_TABLES[row["economy"]["table"]])
+        report = run_baseline_multi_seed(
+            confirm_games_per_seed,
+            seeds,
+            ["seasonal", "skilled_leverage", "blind_leverage"],
+            "centered_polarity",
+            0.0,
+            LEVERAGE_SEARCH_CONFIG["gamma"],
+            economy,
+        )
+        confirmations.append({"economy": row["economy"], **_parameter_candidate_summary(report)})
+    return {
+        "config": LEVERAGE_SEARCH_CONFIG,
+        "screen_games_per_seed": screen_games_per_seed,
+        "confirm_games_per_seed": confirm_games_per_seed,
+        "seeds": seeds,
+        "screened_candidates": len(search_rows),
+        "screen_pass_count": len(feasible),
+        "screen_top": selected,
+        "confirmations": confirmations,
+    }
 
 
 def run_evaluation_multi_seed(games_per_seed: int, seeds: list[int], strategy_names: list[str], gamma_values: tuple[float, ...] = (0.10, 0.15)) -> dict:
@@ -1156,6 +1319,9 @@ def main() -> None:
     parser.add_argument("--multi-seed", action="store_true", help="评价模式使用多组固定 seed")
     parser.add_argument("--seeds", default="20260801,20260802", help="逗号分隔的固定 seed")
     parser.add_argument("--rule-review", action="store_true", help="输出12条公开信息规则审查情景")
+    parser.add_argument("--search-leverage", action="store_true", help="搜索模拟器侧 LQC/杠杆气耗/倍率表候选")
+    parser.add_argument("--screen-games", type=int, default=200, help="杠杆宽搜每个 seed 的局数")
+    parser.add_argument("--confirm-games", type=int, default=5000, help="杠杆候选复核每个 seed 的局数")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     parser.add_argument("--trace-stdin", action="store_true", help="从 stdin 读取固定动作 trace 并输出快照")
     args = parser.parse_args()
@@ -1164,6 +1330,14 @@ def main() -> None:
         return
     if args.rule_review:
         print(json.dumps({"version": "v1-candidate", "scenarios": rule_review_scenarios(args.gamma)}, ensure_ascii=False, indent=2))
+        return
+    if args.search_leverage:
+        report = run_leverage_parameter_search(
+            screen_games_per_seed=args.screen_games,
+            confirm_games_per_seed=args.confirm_games,
+            seeds=[int(value) for value in args.seeds.split(",") if value.strip()],
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
         return
     names = args.strategies or list(STRATEGIES)
     if args.evaluate:
