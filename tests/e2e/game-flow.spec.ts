@@ -65,6 +65,21 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByRole('button', { name: /等待/ })).toBeVisible();
   });
 
+  test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {
+    await startGameAndDismiss(page);
+
+    const cards = page.locator('.card-in');
+    await expect(cards.first()).toBeVisible();
+    const texts = await cards.allInnerTexts();
+    const pairs = texts
+      .map((text) => text.match(/([+-]?\d+\.\d)\s*→\s*([+-]?\d+\.\d)/))
+      .filter((match): match is RegExpMatchArray => match !== null);
+    expect(pairs.length).toBeGreaterThan(0);
+    // 若错误使用“下一回合结算季”，春季非季末会普遍出现同分箭头；
+    // 至少一张公开卡应能观察到春→夏的评分变化。
+    expect(pairs.some((match) => match[1] !== match[2])).toBe(true);
+  });
+
   test('买入一张卡牌流程', async ({ page }) => {
     await startGameAndDismiss(page);
 

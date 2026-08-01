@@ -20,6 +20,17 @@ function visibleState(manager: TurnManager) {
 }
 
 describe('TurnManager 行动前结算预览', () => {
+  it('卡面趋势季固定取下一季，结算预览仍取下一回合季节', async () => {
+    const manager = await startedGame(100);
+    (manager as any).seasonCycle.loadState(0, 1, [12, 12, 12, 12]);
+    expect(manager.getFollowingSeason()).toBe('summer');
+    expect(manager.getSettlementSeason()).toBe('spring');
+
+    (manager as any).seasonCycle.loadState(3, 1, [12, 12, 12, 12]);
+    expect(manager.getFollowingSeason()).toBe('spring');
+    expect(manager.getSettlementSeason()).toBe('winter');
+  });
+
   it('等待预览不改变状态或消耗随机源，普通结算与实际逐项一致', async () => {
     const previewed = await startedGame(101);
     const baseline = await startedGame(101);

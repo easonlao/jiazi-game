@@ -88,7 +88,7 @@ function PublicCardItem({
   const season = useGameStore((s) => s.season);
   const turnManager = useGameStore((s) => s.turnManager);
   const score = turnManager ? turnManager.getCardScore(card, season) : card.getSeasonScore(season);
-  const nextScore = turnManager ? turnManager.getCardScore(card, turnManager.getSettlementSeason()) : score;
+  const nextScore = turnManager ? turnManager.getCardScore(card, turnManager.getFollowingSeason()) : score;
 
   const cost = previewBuyCost(index);
   const canAfford = cost <= qi;

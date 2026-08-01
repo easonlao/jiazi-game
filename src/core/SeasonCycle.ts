@@ -65,6 +65,11 @@ export class SeasonCycle {
     return this.seasonOrder[this.currentSeasonIndex % 4];
   }
 
+  /** 获取季节顺序中的下一季（与回合边界无关，供卡面趋势展示）。 */
+  getFollowingSeason(): Season {
+    return this.seasonOrder[(this.currentSeasonIndex + 1) % 4];
+  }
+
   /**
    * 获取当前处于第几个季节段
    * @returns 季节段索引

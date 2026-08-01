@@ -6,6 +6,22 @@ describe('SeasonCycle', () => {
     const cycle = new SeasonCycle();
     expect(cycle.getCurrentSeason()).toBe('spring');
     expect(cycle.getCurrentRoundInSeason()).toBe(1);
+    expect(cycle.getFollowingSeason()).toBe('summer');
+    // 非季末时，结算季仍是春；卡面趋势季固定指向夏。
+    expect(cycle.getNextSeason()).toBe('spring');
+  });
+
+  it('下一季展示语义不依赖回合边界，并覆盖冬到春', () => {
+    const cycle = new SeasonCycle();
+    cycle.loadState(0, 1, [12, 12, 12, 12]);
+    expect(cycle.getCurrentSeason()).toBe('spring');
+    expect(cycle.getFollowingSeason()).toBe('summer');
+    expect(cycle.getNextSeason()).toBe('spring');
+
+    cycle.loadState(3, 1, [12, 12, 12, 12]);
+    expect(cycle.getCurrentSeason()).toBe('winter');
+    expect(cycle.getFollowingSeason()).toBe('spring');
+    expect(cycle.getNextSeason()).toBe('winter');
   });
 
   it('随机季节长度应在3-12之间', () => {

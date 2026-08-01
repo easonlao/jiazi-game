@@ -30,7 +30,7 @@ export function HandCards() {
           {hand.map((slot: HandSlot | null, i: number) => {
             if (!slot) return <EmptySlot key={i} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
-            const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getSettlementSeason()) : score;
+            const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getFollowingSeason()) : score;
             const profit = slot.getProfit(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;

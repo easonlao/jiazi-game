@@ -829,6 +829,11 @@ export class TurnManager {
     return this.seasonCycle.getNextSeason();
   }
 
+  /** 获取季节顺序中的下一季，供卡面“当季 → 下一季”趋势展示。 */
+  getFollowingSeason(): Season {
+    return this.seasonCycle.getFollowingSeason();
+  }
+
   /**
    * 获取下回合结算时会实际使用的杠杆倍数（预测用）。
    * 玩家行动后结算发生在下一回合；若行动跨季，下一回合季内进度为 1，倍率随之重置。
