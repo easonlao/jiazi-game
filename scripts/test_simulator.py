@@ -14,7 +14,9 @@ from simulator import (  # noqa: E402
     CardPool,
     EVALUATION_CONFIG_V0,
     LEVERAGE_SEARCH_CONFIG,
+    FINAL_LEVERAGE_CANDIDATE,
     LEVERAGE_SEARCH_TABLES,
+    LEVERAGE_SEARCH_TABLES_PHASE4,
     GameState,
     LeverageEconomy,
     Mulberry32,
@@ -26,10 +28,16 @@ from simulator import (  # noqa: E402
     load_cards,
     strategy_seasonal,
     strategy_skilled_leverage,
+    strategy_skilled_leverage_existing,
+    strategy_skilled_leverage_positive_rise,
+    strategy_skilled_leverage_strict_rise,
     _evaluate_band,
     evaluate_report,
     run_baseline,
     run_leverage_parameter_search,
+    run_final_leverage_candidate,
+    run_final_beta_search,
+    _strategy_seasonal,
     rule_review_scenarios,
 )
 
@@ -133,6 +141,8 @@ class SimulatorParityTests(unittest.TestCase):
         self.assertIn(action[0], {"buy", "wait"})
         skilled_action = strategy_skilled_leverage(PublicOnlyGame())
         self.assertIn(skilled_action[0], {"buy", "wait"})
+        for skilled_strategy in (strategy_skilled_leverage_strict_rise, strategy_skilled_leverage_positive_rise, strategy_skilled_leverage_existing):
+            self.assertIn(skilled_strategy(PublicOnlyGame())[0], {"buy", "wait"})
 
     def test_seasonal_is_unleveraged_control_and_skilled_only_marks_visible_uptrend(self) -> None:
         game = GameState(20260801, "centered_polarity", gamma=0.10)
@@ -154,6 +164,10 @@ class SimulatorParityTests(unittest.TestCase):
             values = [multiplier for _maximum, multiplier in table]
             self.assertTrue(all(left < right for left, right in zip(values, values[1:])), table)
             self.assertLessEqual(max(values), 5.0)
+        for table in LEVERAGE_SEARCH_TABLES_PHASE4.values():
+            values = [multiplier for _maximum, multiplier in table]
+            self.assertTrue(all(left < right for left, right in zip(values, values[1:])), table)
+            self.assertLessEqual(max(values), 4.0)
         if report["recommendation"] is None:
             self.assertEqual(report["confirmations"], [])
             self.assertIsNotNone(report["no_candidate_reason"])
@@ -161,6 +175,7 @@ class SimulatorParityTests(unittest.TestCase):
             for near_miss in report["near_miss_top"]:
                 self.assertTrue(near_miss["failed_checks"])
                 self.assertEqual(near_miss["hard_failure_count"], len(near_miss["failed_checks"]))
+            self.assertIn("best_except_sells", report["diagnostics"])
         else:
             self.assertEqual(len(report["confirmations"]), 1)
             self.assertIn("checks", report["confirmations"][0])
@@ -174,6 +189,41 @@ class SimulatorParityTests(unittest.TestCase):
             economy = LeverageEconomy(8, 0.2, ((2, 1.0), (5, 2.0), (8, 3.0), (11, 4.0), (12, 5.0)), structure)
             self.assertEqual(economy.earning_multiplier(3.0), 3.0)
             self.assertGreater(economy.qi_charge(3.0), economy.qi_charge(2.0))
+
+    def test_final_candidate_contract_keeps_optional_leverage_and_visible_boundary(self) -> None:
+        self.assertEqual(LEVERAGE_SEARCH_CONFIG["targets"]["sells"], [10.0, 20.0])
+        self.assertEqual(FINAL_LEVERAGE_CANDIDATE["skilled_strategy"], "skilled_leverage_positive_rise")
+        self.assertEqual(FINAL_LEVERAGE_CANDIDATE["beta"], 0.02)
+        report = run_final_leverage_candidate(games_per_seed=2, seeds=[20260801, 20260802])
+        self.assertTrue(report["leverage_is_optional"])
+        self.assertEqual(report["hidden_inputs_used"], [])
+        self.assertEqual(report["visible_information"], ["current_card_score", "next_season_card_score", "qi", "hand_state", "round_in_season"])
+        self.assertIn("score_distribution", report["report"])
+        self.assertIn("checks", report["acceptance"])
+        self.assertEqual(report["candidate"]["beta"], 0.02)
+
+    def test_skilled_and_seasonal_share_current_next_decision_rule(self) -> None:
+        no_leverage = GameState(20260801, "centered_polarity", gamma=0.10, record_history=True)
+        policy_disabled = GameState(20260801, "centered_polarity", gamma=0.10, record_history=True)
+
+        def disabled_leverage(game):
+            return _strategy_seasonal(game, allow_leverage=True, leverage_policy=lambda _game, _now, _upcoming: False)
+
+        no_leverage.play(strategy_seasonal)
+        policy_disabled.play(disabled_leverage)
+        self.assertEqual(
+            [item["action"] for item in no_leverage.history],
+            [item["action"] for item in policy_disabled.history],
+        )
+        self.assertEqual(no_leverage.score, policy_disabled.score)
+        self.assertEqual(no_leverage.qi, policy_disabled.qi)
+
+    def test_beta_search_is_common_neutral_baseline_only(self) -> None:
+        report = run_final_beta_search(screen_games_per_seed=2, confirm_games_per_seed=2, seeds=[20260801, 20260802])
+        self.assertIn("所有卡共同的中性基线", report["beta_definition"])
+        self.assertEqual(report["hidden_inputs_used"], [])
+        self.assertEqual(report["beta_values"], [0.0, 0.02, 0.04, 0.06, 0.08, 0.10])
+        self.assertEqual(report["candidate_without_beta"]["skilled_strategy"], "skilled_leverage_positive_rise")
 
     def test_v0_evaluation_thresholds_have_pass_warn_fail_and_manual_states(self) -> None:
         self.assertEqual(_evaluate_band({"mean": 100, "ci95": [95, 105]}, 80, 140, "x")["status"], "pass")
