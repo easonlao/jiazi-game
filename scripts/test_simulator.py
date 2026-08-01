@@ -190,6 +190,14 @@ class SimulatorParityTests(unittest.TestCase):
             self.assertEqual(economy.earning_multiplier(3.0), 3.0)
             self.assertGreater(economy.qi_charge(3.0), economy.qi_charge(2.0))
 
+    def test_core_hold_qi_uses_actual_multiplier(self) -> None:
+        economy = LeverageEconomy()
+        self.assertEqual(economy.qi_charge(2.0), 2.0)
+        self.assertEqual(economy.qi_charge(3.5), 3.5)
+        game = GameState(20260801, economy=economy)
+        self.assertAlmostEqual(game.hold_qi_cost(0.0, 2.0), 1.5 + 2.0)
+        self.assertAlmostEqual(game.hold_qi_cost(0.0, 3.5), 1.5 + 3.5)
+
     def test_final_candidate_contract_keeps_optional_leverage_and_visible_boundary(self) -> None:
         self.assertEqual(LEVERAGE_SEARCH_CONFIG["targets"]["sells"], [10.0, 20.0])
         self.assertEqual(FINAL_LEVERAGE_CANDIDATE["skilled_strategy"], "skilled_leverage_positive_rise")
