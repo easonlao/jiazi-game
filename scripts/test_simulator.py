@@ -22,6 +22,7 @@ from simulator import (  # noqa: E402
     leverage_for_round,
     load_cards,
     strategy_seasonal,
+    strategy_skilled_leverage,
     _evaluate_band,
     evaluate_report,
     run_baseline,
@@ -125,6 +126,8 @@ class SimulatorParityTests(unittest.TestCase):
 
         action = strategy_seasonal(PublicOnlyGame())
         self.assertIn(action[0], {"buy", "wait"})
+        skilled_action = strategy_skilled_leverage(PublicOnlyGame())
+        self.assertIn(skilled_action[0], {"buy", "wait"})
 
     def test_v0_evaluation_thresholds_have_pass_warn_fail_and_manual_states(self) -> None:
         self.assertEqual(_evaluate_band({"mean": 100, "ci95": [95, 105]}, 80, 140, "x")["status"], "pass")
