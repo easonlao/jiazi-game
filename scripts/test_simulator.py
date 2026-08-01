@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from simulator import (  # noqa: E402
     CardPool,
+    EVALUATION_CONFIG_V0,
     GameState,
     Mulberry32,
     ScoreModel,
@@ -21,6 +22,9 @@ from simulator import (  # noqa: E402
     leverage_for_round,
     load_cards,
     strategy_seasonal,
+    _evaluate_band,
+    evaluate_report,
+    run_baseline,
 )
 
 
@@ -121,6 +125,17 @@ class SimulatorParityTests(unittest.TestCase):
 
         action = strategy_seasonal(PublicOnlyGame())
         self.assertIn(action[0], {"buy", "wait"})
+
+    def test_v0_evaluation_thresholds_have_pass_warn_fail_and_manual_states(self) -> None:
+        self.assertEqual(_evaluate_band({"mean": 100, "ci95": [95, 105]}, 80, 140, "x")["status"], "pass")
+        self.assertEqual(_evaluate_band({"mean": 100, "ci95": [70, 150]}, 80, 140, "x")["status"], "warn")
+        self.assertEqual(_evaluate_band({"mean": 160, "ci95": [150, 170]}, 80, 140, "x")["status"], "fail")
+        baseline = run_baseline(2, 20260801, ["wait", "random", "conservative", "aggressive", "seasonal", "chase_current"])
+        evaluated = evaluate_report({"modes": {"baseline": baseline}})
+        checks = evaluated["modes"]["baseline"]["checks"]
+        self.assertEqual(evaluated["config"]["version"], EVALUATION_CONFIG_V0["version"])
+        self.assertEqual(checks["manual_playtest"]["status"], "manual")
+        self.assertEqual(checks["pareto_dominated"]["status"], "fail")
 
     def test_season_lengths_match_core_constraints(self) -> None:
         lengths = generate_season_lengths(Mulberry32(20260801))

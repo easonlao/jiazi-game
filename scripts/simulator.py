@@ -628,6 +628,22 @@ def strategy_seasonal(game: GameState) -> tuple[str, int | None, bool | None]:
     return strategy_always_wait(game)
 
 
+def strategy_chase_current(game: GameState) -> tuple[str, int | None, bool | None]:
+    """只追逐当前季最高分的对照策略，不使用下季曲线。"""
+    for index, slot in enumerate(game.hand):
+        if slot and game.card_score(slot.card) < 0 and game.qi + slot.locked_qi >= SELL_COST:
+            return "sell", index, None
+    candidates = []
+    for index, card in enumerate(game.pool.public):
+        score = game.card_score(card)
+        if score > 0 and game.qi >= game.buy_cost(score, False) and game.hand_size() < MAX_HAND_SIZE:
+            candidates.append((score, index))
+    if candidates:
+        _, index = max(candidates)
+        return "buy", index, False
+    return strategy_always_wait(game)
+
+
 STRATEGIES: dict[str, Strategy] = {
     "wait": strategy_always_wait,
     "random": strategy_random,
@@ -635,6 +651,7 @@ STRATEGIES: dict[str, Strategy] = {
     "aggressive": strategy_aggressive,
     "balanced": strategy_balanced,
     "seasonal": strategy_seasonal,
+    "chase_current": strategy_chase_current,
 }
 
 
@@ -743,6 +760,128 @@ def run_comparison(games: int, seed: int, strategy_names: list[str], beta: float
     }
 
 
+EVALUATION_CONFIG_V0 = {
+    "version": "v0-candidate",
+    "score_bands": {
+        "random": {"min": 80, "max": 140},
+        "seasonal": {"min": 180, "max": 240},
+        "aggressive": {"min": 260, "max": None},
+    },
+    "seasonal_advantage_vs_chase_current": {"min": 0.20, "max": 0.40},
+    "conservative_margin_call_rate_max": 0.05,
+    "aggressive_margin_call_rate": {"min": 0.20, "max": 0.70},
+    "pareto_dominated_max": 0,
+    "confidence": "normal_95_percent_ci",
+    "manual_metrics": ["understandability", "兑现感"],
+}
+
+
+def _ci_overlaps(ci: list[float], minimum: float | None, maximum: float | None) -> bool:
+    return (minimum is None or ci[1] >= minimum) and (maximum is None or ci[0] <= maximum)
+
+
+def _evaluate_band(metric: dict, minimum: float | None, maximum: float | None, label: str) -> dict:
+    mean = metric["mean"]
+    ci = metric["ci95"]
+    inside = (minimum is None or mean >= minimum) and (maximum is None or mean <= maximum)
+    ci_inside = (minimum is None or ci[0] >= minimum) and (maximum is None or ci[1] <= maximum)
+    overlap = _ci_overlaps(ci, minimum, maximum)
+    if inside and ci_inside:
+        status = "pass"
+        reason = f"{label} 均值和95%CI均在目标内"
+    elif inside or overlap:
+        status = "warn"
+        reason = f"{label} 点估计达标但95%CI跨越目标边界"
+    else:
+        status = "fail"
+        reason = f"{label} 均值与95%CI均未达到目标"
+    return {"status": status, "reason": reason, "mean": mean, "ci95": ci, "target": {"min": minimum, "max": maximum}}
+
+
+def evaluate_report(report: dict, config: dict = EVALUATION_CONFIG_V0) -> dict:
+    """将 Monte Carlo 报告转换为可执行的 v0 pass/warn/fail 评价。"""
+    evaluations = {}
+    for mode_name, mode_report in report["modes"].items():
+        strategies = mode_report["strategies"]
+        checks = {}
+        for strategy_name, band in config["score_bands"].items():
+            checks[f"score_band:{strategy_name}"] = _evaluate_band(
+                strategies[strategy_name]["score"], band["min"], band["max"], f"{strategy_name} 分数段"
+            )
+
+        seasonal_score = strategies["seasonal"]["score"]
+        chase_score = strategies["chase_current"]["score"]
+        if chase_score["mean"] <= 0:
+            checks["seasonal_advantage"] = {"status": "fail", "reason": "chase_current 均值≤0，无法定义相对优势"}
+        else:
+            advantage = (seasonal_score["mean"] - chase_score["mean"]) / chase_score["mean"]
+            chase_low = chase_score["ci95"][0]
+            chase_high = chase_score["ci95"][1]
+            if chase_low > 0:
+                advantage_ci = [
+                    (seasonal_score["ci95"][0] - chase_high) / chase_high,
+                    (seasonal_score["ci95"][1] - chase_low) / chase_low,
+                ]
+            else:
+                advantage_ci = [float("-inf"), float("inf")]
+            target = config["seasonal_advantage_vs_chase_current"]
+            point_inside = target["min"] <= advantage <= target["max"]
+            overlap = advantage_ci[1] >= target["min"] and advantage_ci[0] <= target["max"]
+            checks["seasonal_advantage"] = {
+                "status": "pass" if point_inside and advantage_ci[0] >= target["min"] and advantage_ci[1] <= target["max"] else ("warn" if point_inside or overlap else "fail"),
+                "reason": "seasonal 相对 chase_current 优势及CI" if overlap else "seasonal 优势未落入目标区间",
+                "mean": advantage,
+                "ci95": advantage_ci,
+                "target": target,
+            }
+
+        checks["conservative_margin_call_rate"] = _evaluate_band(
+            strategies["conservative"]["margin_call_rate"], None, config["conservative_margin_call_rate_max"], "保守策略强平率"
+        )
+        checks["aggressive_risk"] = _evaluate_band(
+            strategies["aggressive"]["margin_call_rate"],
+            config["aggressive_margin_call_rate"]["min"],
+            config["aggressive_margin_call_rate"]["max"],
+            "激进策略风险强平率",
+        )
+        pareto = mode_report["score_distribution"]["pareto_dominated_total"]
+        checks["pareto_dominated"] = {
+            "status": "pass" if pareto <= config["pareto_dominated_max"] else "fail",
+            "reason": f"严格Pareto支配牌 {pareto} 张",
+            "value": pareto,
+            "target_max": config["pareto_dominated_max"],
+        }
+        checks["manual_playtest"] = {
+            "status": "manual",
+            "reason": "看懂性与收益兑现感不能由模拟自动判定",
+            "metrics": config["manual_metrics"],
+        }
+        statuses = [check["status"] for check in checks.values() if check["status"] != "manual"]
+        overall = "fail" if "fail" in statuses else ("warn" if "warn" in statuses else "pass")
+        evaluations[mode_name] = {"overall": overall, "checks": checks}
+    return {"config": config, "modes": evaluations}
+
+
+def run_evaluation(games: int, seed: int, strategy_names: list[str], gamma: float = 0.10) -> dict:
+    modes = {
+        "baseline": ("raw", 0.0),
+        "candidate_a": ("centered", 0.0),
+        "candidate_centered_polarity": ("centered_polarity", 0.0),
+    }
+    report = {
+        "rule_source": "src/core mirror",
+        "games_per_strategy": games,
+        "seed": seed,
+        "candidate_gamma": gamma,
+        "modes": {
+            name: run_baseline(games, seed, strategy_names, mode, beta, gamma)
+            for name, (mode, beta) in modes.items()
+        },
+    }
+    report["evaluation"] = evaluate_report(report)
+    return report
+
+
 def snapshot(game: GameState) -> dict:
     """只返回可由 TurnManager 公开/可观察状态组成的快照。
 
@@ -808,6 +947,7 @@ def main() -> None:
     parser.add_argument("--beta", type=float, default=0.0, help="candidate_b 的统一 beta 偏置，默认0")
     parser.add_argument("--gamma", type=float, default=0.15, help="candidate_polarity 的阴阳波动系数，默认0.15")
     parser.add_argument("--compare", action="store_true", help="一次输出 baseline/candidate_a/candidate_b")
+    parser.add_argument("--evaluate", action="store_true", help="输出 v0 pass/warn/fail 评价")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     parser.add_argument("--trace-stdin", action="store_true", help="从 stdin 读取固定动作 trace 并输出快照")
     args = parser.parse_args()
@@ -815,9 +955,12 @@ def main() -> None:
         print(json.dumps(run_trace(json.load(__import__("sys").stdin)), ensure_ascii=False, separators=(",", ":")))
         return
     names = args.strategies or list(STRATEGIES)
-    report = run_comparison(args.games, args.seed, names, args.beta, args.gamma) if args.compare else run_baseline(
-        args.games, args.seed, names, args.score_mode, args.beta, args.gamma
-    )
+    if args.evaluate:
+        report = run_evaluation(args.games, args.seed, names, args.gamma)
+    else:
+        report = run_comparison(args.games, args.seed, names, args.beta, args.gamma) if args.compare else run_baseline(
+            args.games, args.seed, names, args.score_mode, args.beta, args.gamma
+        )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
