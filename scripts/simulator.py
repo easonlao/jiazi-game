@@ -173,13 +173,16 @@ def calc_score(card: Card, season: str) -> float:
 class ScoreModel:
     """Raw 规则与逐牌四季均值校正候选的同源评分模型。"""
 
-    MODES = ("raw", "centered", "centered_beta")
+    MODES = ("raw", "centered", "centered_beta", "polarity_volatility")
 
-    def __init__(self, cards: Iterable[Card], mode: str = "raw", beta: float = 0.0):
+    def __init__(self, cards: Iterable[Card], mode: str = "raw", beta: float = 0.0, gamma: float = 0.15):
         if mode not in self.MODES:
             raise ValueError(f"未知 score_mode: {mode}")
         self.mode = mode
         self.beta = float(beta)
+        self.gamma = float(gamma)
+        if mode == "polarity_volatility" and not 0 <= self.gamma < 1:
+            raise ValueError("polarity_volatility 的 gamma 必须在 [0,1) 内")
         cards = list(cards)
         self.raw_values = {
             (card.id, season): calc_score(card, season)
@@ -197,7 +200,12 @@ class ScoreModel:
                 if mode == "raw":
                     value = raw
                 else:
-                    value = raw - self.card_means[card.id]
+                    if mode == "polarity_volatility":
+                        deviation = raw - self.card_means[card.id]
+                        factor = 1 + self.gamma if card.yin_yang == "yang" else 1 - self.gamma
+                        value = self.card_means[card.id] + factor * deviation
+                    else:
+                        value = raw - self.card_means[card.id]
                     if mode == "centered_beta":
                         value += self.beta
                 self.values[(card.id, season)] = js_round_decimal(value)
@@ -296,18 +304,19 @@ class Holding:
     buy_score: float
     use_leverage: bool
     locked_qi: int
+    buy_round: int
     hold_earnings: float = 0.0
 
 
 class GameState:
-    def __init__(self, seed: int, score_mode: str = "raw", beta: float = 0.0):
+    def __init__(self, seed: int, score_mode: str = "raw", beta: float = 0.0, gamma: float = 0.15):
         self.random = Mulberry32(seed)
         self.season_lengths = generate_season_lengths(self.random)
         self.season_index = 0
         self.round_in_season = 1
         self.current_round = 1
         cards = load_cards()
-        self.score_model = ScoreModel(cards, score_mode, beta)
+        self.score_model = ScoreModel(cards, score_mode, beta, gamma)
         self.pool = CardPool(cards, self.random)
         self.hand: list[Holding | None] = [None] * MAX_HAND_SIZE
         self.qi = float(INITIAL_QI)
@@ -318,6 +327,7 @@ class GameState:
         self.total_qi_spent = self.total_qi_recovered = 0.0
         self.total_hold_earnings = self.total_sell_earnings = 0.0
         self.forced_waits = 0
+        self.hold_durations: list[int] = []
         self.history: list[dict] = []
 
     def card_score(self, card: Card, season: str | None = None) -> float:
@@ -389,6 +399,7 @@ class GameState:
         self.total_sell_earnings += final_sell
         penalty = js_round(leverage * abs(current_score) * MARGIN_CALL_PENALTY_PER_SCORE)
         self.score = max(0.0, self.score - penalty)
+        self.hold_durations.append(self.current_round - slot.buy_round)
         self.hand[target] = None
         self.pool.return_cards([slot.card])
         self.qi = min(MAX_QI, self.qi + math.floor(slot.locked_qi * FORCED_QI_RETURN_FACTOR))
@@ -421,7 +432,7 @@ class GameState:
         self.qi -= cost
         self.total_qi_spent += cost
         slot_index = self.hand.index(None)
-        self.hand[slot_index] = Holding(card, score, use_leverage, cost - BUY_ENTRY_FEE)
+        self.hand[slot_index] = Holding(card, score, use_leverage, cost - BUY_ENTRY_FEE, self.current_round)
         if use_leverage:
             self.total_leverage_buys += 1
         self.total_buys += 1
@@ -441,6 +452,7 @@ class GameState:
         leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
         sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
         self.hand[slot_index] = None
+        self.hold_durations.append(self.current_round - slot.buy_round)
         self.pool.return_cards([slot.card])
         self.qi = min(MAX_QI, self.qi + slot.locked_qi)
         self.qi -= SELL_COST
@@ -550,17 +562,83 @@ def strategy_balanced(game: GameState) -> tuple[str, int | None, bool | None]:
     return strategy_always_wait(game)
 
 
+def strategy_seasonal(game: GameState) -> tuple[str, int | None, bool | None]:
+    """只根据当前可见四季曲线做候势布局，不读取季长、牌堆或随机源。
+
+    评分权重偏向下一季，避免只追逐当前最高分；持仓在下一季明显转负前
+    卖出，并在气量/手牌接近上限时收缩。季节顺序是公开规则（春→夏→秋→冬）。
+    """
+    current = game.season_index % len(SEASONS)
+    next_season = SEASONS[(current + 1) % len(SEASONS)]
+    following_season = SEASONS[(current + 2) % len(SEASONS)]
+
+    # 先处理即将跨季且走势明显恶化的持仓。
+    sell_candidates = []
+    for index, slot in enumerate(game.hand):
+        if slot is None:
+            continue
+        now = game.card_score(slot.card, SEASONS[current])
+        upcoming = game.card_score(slot.card, next_season)
+        later = game.card_score(slot.card, following_season)
+        drop = upcoming - now
+        if game.qi + slot.locked_qi >= SELL_COST and (drop <= -1.0 or (upcoming < 0 and later < upcoming)):
+            sell_candidates.append((drop, upcoming, index))
+    if sell_candidates:
+        _, _, index = min(sell_candidates)
+        return "sell", index, None
+
+    # 气压/手牌压力优先于继续加仓。
+    projected_hold_cost = sum(
+        game.hold_qi_cost(
+            game.card_score(slot.card, SEASONS[current]),
+            leverage_for_round(game.round_in_season) if slot.use_leverage else 1.0,
+        )
+        for slot in game.hand if slot is not None
+    )
+    if game.qi - projected_hold_cost < 8 and game.hand:
+        for index, slot in enumerate(game.hand):
+            if slot and game.qi + slot.locked_qi >= SELL_COST:
+                return "sell", index, None
+
+    if game.hand_size() >= MAX_HAND_SIZE or not game.pool.public:
+        return strategy_always_wait(game)
+
+    candidates = []
+    for index, card in enumerate(game.pool.public):
+        now = game.card_score(card, SEASONS[current])
+        upcoming = game.card_score(card, next_season)
+        later = game.card_score(card, following_season)
+        # 下一季占主权重，第三季只作趋势确认；当前分不能太差，避免盲目抄底。
+        utility = 0.25 * now + 0.5 * upcoming + 0.25 * later
+        rising = upcoming - now
+        if utility >= 0.35 and (upcoming >= 0.25 or rising >= 1.0):
+            use_leverage = (
+                game.qi >= 38
+                and game.round_in_season >= 3
+                and upcoming >= 1.0
+                and later >= 0.5
+            )
+            cost = game.buy_cost(now, use_leverage)
+            if game.qi >= cost:
+                candidates.append((utility, rising, index, use_leverage))
+    if candidates:
+        _, _, index, use_leverage = max(candidates)
+        return "buy", index, use_leverage
+    return strategy_always_wait(game)
+
+
 STRATEGIES: dict[str, Strategy] = {
     "wait": strategy_always_wait,
     "random": strategy_random,
     "conservative": strategy_conservative,
     "aggressive": strategy_aggressive,
     "balanced": strategy_balanced,
+    "seasonal": strategy_seasonal,
 }
 
 
-def card_score_report(cards: list[Card], score_mode: str = "raw", beta: float = 0.0) -> dict:
-    model = ScoreModel(cards, score_mode, beta)
+def card_score_report(cards: list[Card], score_mode: str = "raw", beta: float = 0.0, gamma: float = 0.15) -> dict:
+    model = ScoreModel(cards, score_mode, beta, gamma)
     seasonal = {
         season: [model.score(card, season) for card in cards]
         for season in SEASONS
@@ -568,6 +646,7 @@ def card_score_report(cards: list[Card], score_mode: str = "raw", beta: float = 
     return {
         "score_mode": score_mode,
         "beta": beta,
+        "gamma": gamma,
         "seasons": {
             season: {
                 "mean": statistics.mean(scores),
@@ -597,6 +676,10 @@ def metric_summary(values: Iterable[float], binary: bool = False) -> dict:
 def summarize(games: list[GameState]) -> dict:
     scores = [game.score for game in games]
     margin = [game.margin_calls for game in games]
+    durations = []
+    for game in games:
+        durations.extend(game.hold_durations)
+        durations.extend(TOTAL_ROUNDS + 1 - slot.buy_round for slot in game.hand if slot is not None)
     return {
         "games": len(games),
         "score": {**metric_summary(scores), "median": statistics.median(scores), "min": min(scores), "max": max(scores)},
@@ -611,31 +694,33 @@ def summarize(games: list[GameState]) -> dict:
         "hold_earnings": metric_summary([game.total_hold_earnings for game in games]),
         "sell_earnings": metric_summary([game.total_sell_earnings for game in games]),
         "discarded_public_cards": metric_summary([len(game.pool.discarded) for game in games]),
+        "holding_duration": metric_summary(durations) if durations else {"mean": 0.0, "ci95": [0.0, 0.0]},
     }
 
 
-def run_baseline(games: int, seed: int, strategy_names: list[str], score_mode: str = "raw", beta: float = 0.0) -> dict:
+def run_baseline(games: int, seed: int, strategy_names: list[str], score_mode: str = "raw", beta: float = 0.0, gamma: float = 0.15) -> dict:
     cards = load_cards()
     output = {"rule_source": "src/core mirror", "card_count": len(cards), "total_rounds": TOTAL_ROUNDS,
               "shadow_accounting": {
                   "discarded_public_cards": "Python-only accounting for public cards overwritten by current core draw; not a TypeScript core state",
               },
-              "score_distribution": card_score_report(cards, score_mode, beta), "strategies": {}}
+              "score_distribution": card_score_report(cards, score_mode, beta, gamma), "strategies": {}}
     for name in strategy_names:
         if name not in STRATEGIES:
             raise ValueError(f"未知策略: {name}")
         output["strategies"][name] = summarize([
-            GameState(seed + index, score_mode, beta).play(STRATEGIES[name])
+            GameState(seed + index, score_mode, beta, gamma).play(STRATEGIES[name])
             for index in range(games)
         ])
     return output
 
 
-def run_comparison(games: int, seed: int, strategy_names: list[str], beta: float = 0.0) -> dict:
+def run_comparison(games: int, seed: int, strategy_names: list[str], beta: float = 0.0, gamma: float = 0.15) -> dict:
     modes = {
         "baseline": ("raw", 0.0),
         "candidate_a": ("centered", 0.0),
         "candidate_b": ("centered_beta", beta),
+        "candidate_polarity": ("polarity_volatility", 0.0),
     }
     return {
         "rule_source": "src/core mirror",
@@ -644,11 +729,12 @@ def run_comparison(games: int, seed: int, strategy_names: list[str], beta: float
         "games_per_strategy": games,
         "seed": seed,
         "candidate_b_beta": beta,
+        "candidate_polarity_gamma": gamma,
         "shadow_accounting": {
             "discarded_public_cards": "Python-only accounting; not included in cross-language core snapshots",
         },
         "modes": {
-            name: run_baseline(games, seed, strategy_names, mode, mode_beta)
+            name: run_baseline(games, seed, strategy_names, mode, mode_beta, gamma)
             for name, (mode, mode_beta) in modes.items()
         },
     }
@@ -717,6 +803,7 @@ def main() -> None:
     parser.add_argument("--strategy", action="append", choices=sorted(STRATEGIES), dest="strategies")
     parser.add_argument("--score-mode", choices=ScoreModel.MODES, default="raw")
     parser.add_argument("--beta", type=float, default=0.0, help="candidate_b 的统一 beta 偏置，默认0")
+    parser.add_argument("--gamma", type=float, default=0.15, help="candidate_polarity 的阴阳波动系数，默认0.15")
     parser.add_argument("--compare", action="store_true", help="一次输出 baseline/candidate_a/candidate_b")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     parser.add_argument("--trace-stdin", action="store_true", help="从 stdin 读取固定动作 trace 并输出快照")
@@ -725,8 +812,8 @@ def main() -> None:
         print(json.dumps(run_trace(json.load(__import__("sys").stdin)), ensure_ascii=False, separators=(",", ":")))
         return
     names = args.strategies or list(STRATEGIES)
-    report = run_comparison(args.games, args.seed, names, args.beta) if args.compare else run_baseline(
-        args.games, args.seed, names, args.score_mode, args.beta
+    report = run_comparison(args.games, args.seed, names, args.beta, args.gamma) if args.compare else run_baseline(
+        args.games, args.seed, names, args.score_mode, args.beta, args.gamma
     )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))

@@ -20,6 +20,7 @@ from simulator import (  # noqa: E402
     generate_season_lengths,
     leverage_for_round,
     load_cards,
+    strategy_seasonal,
 )
 
 
@@ -53,6 +54,61 @@ class SimulatorParityTests(unittest.TestCase):
             [centered.score(card, season) for card in cards for season in SEASONS],
             [candidate_b.score(card, season) for card in cards for season in SEASONS],
         )
+
+    def test_polarity_volatility_keeps_card_mean_and_changes_only_amplitude(self) -> None:
+        cards = load_cards()
+        raw = ScoreModel(cards, "raw")
+        polarity = ScoreModel(cards, "polarity_volatility", gamma=0.15)
+        for card in cards:
+            raw_mean = statistics.mean(raw.score(card, season) for season in SEASONS)
+            polarity_mean = statistics.mean(polarity.score(card, season) for season in SEASONS)
+            self.assertAlmostEqual(polarity_mean, raw_mean, delta=0.005)
+            raw_sd = statistics.pstdev(raw.score(card, season) for season in SEASONS)
+            polarity_sd = statistics.pstdev(polarity.score(card, season) for season in SEASONS)
+            expected_factor = 1.15 if card.yin_yang == "yang" else 0.85
+            self.assertAlmostEqual(polarity_sd, raw_sd * expected_factor, delta=0.03)
+
+    def test_seasonal_strategy_uses_public_information_only(self) -> None:
+        cards = load_cards()
+
+        class PublicOnlyPool:
+            public = cards[:2]
+
+            @property
+            def deck(self):
+                raise AssertionError("seasonal strategy must not inspect future deck")
+
+        class PublicOnlyRandom:
+            def int(self, *_args):
+                raise AssertionError("seasonal strategy must not inspect future randomness")
+
+        class PublicOnlyGame:
+            season_index = 0
+            season = "spring"
+            round_in_season = 2
+            qi = 50
+            hand = []
+            pool = PublicOnlyPool()
+            random = PublicOnlyRandom()
+
+            @staticmethod
+            def card_score(card, season):
+                return calc_score(card, season)
+
+            @staticmethod
+            def hand_size():
+                return 0
+
+            @staticmethod
+            def buy_cost(_score, _leverage):
+                return 11
+
+            @staticmethod
+            def hold_qi_cost(_score, _leverage):
+                return 2
+
+        action = strategy_seasonal(PublicOnlyGame())
+        self.assertIn(action[0], {"buy", "wait"})
 
     def test_season_lengths_match_core_constraints(self) -> None:
         lengths = generate_season_lengths(Mulberry32(20260801))
