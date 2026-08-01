@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+/* 回合切换过渡动画 */
+@keyframes roundPop {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 回合横幅：弹出 → 停留 → 淡出 */
+@keyframes bannerPop {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.9);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.round-banner {
+  animation: bannerPop 1.2s ease-out forwards;
+}
+
+/* 爆仓弹窗震动 */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-6px); }
+  20%, 40%, 60%, 80% { transform: translateX(6px); }
+}
+.animate-shake {
+  animation: shake 0.6s ease-in-out;
+}
+
+/* 爆仓红色闪光（一次性，铺满屏幕） */
+@keyframes redFlash {
+  0% { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+.margin-call-flash {
+  animation: redFlash 0.9s ease-out forwards;
+}
+
+/* ═══ 季节转换：仅保留中央季节文字 ═══ */
+@keyframes seasonWord {
+  0% { opacity: 0; transform: translateY(26px) scale(1.25); letter-spacing: 0.35em; }
+  22% { opacity: 1; transform: translateY(0) scale(1); letter-spacing: 0.12em; }
+  58% { opacity: 1; }
+  85% { opacity: 0; transform: translateY(-8px) scale(1.08); }
+  100% { opacity: 0; }
+}
+.season-word { animation: seasonWord 2.2s ease-out backwards; }
+
+/* ═══ 爆仓强化：警报脉冲 + 强平卡碎裂 ═══ */
+@keyframes alarmPulse {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.42; }
+}
+.alarm-pulse { animation: alarmPulse 0.9s ease-in-out 3; }
+
+@keyframes shatter {
+  0% { transform: translateX(0) rotate(0); opacity: 1; }
+  12% { transform: translateX(-4px) rotate(-1.5deg); }
+  24% { transform: translateX(4px) rotate(1.5deg); }
+  36% { transform: translateX(-3px) rotate(-1deg); }
+  48% { transform: translateX(3px) rotate(1deg); background: rgba(229, 57, 53, 0.12); }
+  70% { transform: translateX(0) rotate(0) scale(1.02); opacity: 1; }
+  100% { transform: translateY(6px) scale(0.96); opacity: 0.55; }
+}
+.shatter-line { animation: shatter 1.2s ease-in-out forwards; }
+
+/* ═══ 数值飘字（分数 / 气量） ═══ */
+@keyframes floatUp {
+  0% { opacity: 0; transform: translateY(6px) scale(0.9); }
+  18% { opacity: 1; transform: translateY(0) scale(1.08); }
+  30% { transform: translateY(-2px) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-22px) scale(1); }
+}
+.float-up { animation: floatUp 1.3s ease-out forwards; }
+
+/* 气条低气警告呼吸 */
+@keyframes qiBreath {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.45); }
+}
+.qi-breath { animation: qiBreath 0.8s ease-in-out infinite; }
+
+/* 结算弹窗淡入 + 轻微上浮 */
+@keyframes settleIn {
+  0% { opacity: 0; transform: translateY(18px) scale(0.94); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.settlement-in { animation: settleIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+/* ═══ 爆仓独立全屏动画（MarginCallOverlay，z-80 最高层）═══ */
+/* 全屏红色闪光（一次） */
+@keyframes mcFlash {
+  0% { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+.mc-flash { animation: mcFlash 0.45s ease-out forwards; }
+
+/* 红色警报脉冲（两次呼吸） */
+@keyframes mcPulse {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.38; }
+}
+.mc-pulse { animation: mcPulse 0.9s ease-in-out 2; }
+
+/* 爆仓印章大字：砸下 → 回弹 → 停留 → 上浮淡出 */
+@keyframes mcStamp {
+  0% { opacity: 0; transform: scale(2.6) rotate(-10deg); }
+  16% { opacity: 1; transform: scale(0.9) rotate(0deg); }
+  24% { transform: scale(1.08); }
+  32% { transform: scale(1); }
+  76% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.1) translateY(-10px); }
+}
+.mc-stamp { animation: mcStamp 2.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+/* 爆仓大字下方的标题条淡入 */
+@keyframes mcSub {
+  0% { opacity: 0; transform: translateY(10px); }
+  26% { opacity: 1; transform: translateY(0); }
+  72% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.mc-sub { animation: mcSub 2.3s ease-out forwards; }
+
+/* 被强平卡名单条滑入 */
+@keyframes mcCardIn {
+  0% { opacity: 0; transform: translateX(-18px) scale(0.92); }
+  100% { opacity: 1; transform: none; }
+}
+.mc-card { animation: mcCardIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+
+/* 屏幕级震动（爆仓瞬间整个游戏画面抖动） */
+@keyframes screenShake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-5px, 2px); }
+  30% { transform: translate(4px, -3px); }
+  45% { transform: translate(-3px, -2px); }
+  60% { transform: translate(3px, 2px); }
+  75% { transform: translate(-2px, 1px); }
+  90% { transform: translate(1px, -1px); }
+}
+.screen-shake { animation: screenShake 0.7s ease-in-out; }
+
+/* ═══ 细腻化小件 ═══ */
+/* 弹窗 backdrop 淡入 */
+@keyframes backdropIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.modal-backdrop { animation: backdropIn 0.3s ease-out forwards; }
+
+/* Toast 顶部落入（fade + slide + 轻微回弹） */
+@keyframes toastIn {
+  0% { opacity: 0; transform: translate(-50%, -14px) scale(0.94); }
+  55% { opacity: 1; transform: translate(-50%, 2px) scale(1.02); }
+  72% { transform: translate(-50%, -1px) scale(1); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+.toast-in { animation: toastIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+/* 卡牌入场：买入进手牌/开局牌池时从顶部轻落 + 弹性 */
+@keyframes cardIn {
+  0% { opacity: 0; transform: translateY(-16px) scale(0.92); }
+  60% { opacity: 1; transform: translateY(3px) scale(1.03); }
+  80% { transform: translateY(-1px) scale(0.99); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.card-in { animation: cardIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+/* 手牌区空槽位轻呼吸提示可买 */
+@keyframes slotBreathe {
+  0%, 100% { border-color: rgba(196, 181, 160, 0.7); }
+  50% { border-color: rgba(196, 181, 160, 0.25); }
+}
+.slot-breathe { animation: slotBreathe 2.4s ease-in-out infinite; }
