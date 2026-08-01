@@ -45,7 +45,7 @@ describe('LeverageCalculator - 杠杆策略边界测试', () => {
   it('应该正确计算反季（-3评分）高杠杆持仓气耗的精确断言', () => {
     const calculator = new LeverageCalculator();
     // 期望公式：base = max(0.5, 1.5 + 0.4 * -3) = max(0.5, 0.3) = 0.5
-    // cost = base + (2.0 - 1.0) * 1 = 0.5 + 1 = 1.5
-    expect(calculator.calculateHoldQiCost(-3, 2.0)).toBe(1.5);
+    // cost = base + 2.0 * 1 = 0.5 + 2 = 2.5
+    expect(calculator.calculateHoldQiCost(-3, 2.0)).toBe(2.5);
   });
 });

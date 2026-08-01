@@ -128,7 +128,7 @@ describe('TurnManager 行动前结算预览', () => {
     const upgraded = manager.getLastSettlementDetail()!.holdItems[0]!;
     expect(upgraded.leverage).toBe(2.0);
     expect(upgraded.earning).toBeCloseTo(1.2 * cardScore * 2.0);
-    expect(upgraded.qiCost).toBeCloseTo(baseQiCost + (2.0 - 1.0) * 1);
+    expect(upgraded.qiCost).toBeCloseTo(baseQiCost + 2.0 * 1);
 
     // 换季后重新从季内第 1 回合开始，杠杆回到 1.0x。
     expect(manager.executeWait()).toBe(true); // next season round 1

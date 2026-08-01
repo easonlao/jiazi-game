@@ -50,7 +50,7 @@ export interface BalanceConfig {
   holdQiBase: number;
   holdQiScoreFactor: number;
   holdQiMin: number;
-  /** 杠杆每倍额外气耗（仅当倍率大于 1 时）：extra = (leverage - 1) * leverageQiCostPerX */
+  /** 杠杆每倍额外气耗（仅当倍率大于 1 时）：extra = leverage * leverageQiCostPerX */
   leverageQiCostPerX: number;
 }
 
@@ -84,11 +84,5 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   leverageQiCostPerX: 1,
 };
 
-/** 兼容旧调用方的候选配置别名；默认经济参数已采用同一模型。 */
-export const CANDIDATE_BALANCE_CONFIG: BalanceConfig = {
-  ...DEFAULT_BALANCE_CONFIG,
-  baseRecovery: 4,
-  waitBonus: 8,
-  buyEntryFee: 3,
-  sellCost: 5,
-};
+/** 兼容旧调用方的候选配置别名；生产入口与默认配置完全一致。 */
+export const CANDIDATE_BALANCE_CONFIG: BalanceConfig = DEFAULT_BALANCE_CONFIG;

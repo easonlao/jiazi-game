@@ -71,8 +71,8 @@ class LeverageEconomy:
     def qi_charge(self, leverage: float) -> float:
         if leverage <= 1:
             return 0.0
-        # 核心默认结构统一按超出1x的部分计费；保留 excess_cost 名称仅兼容历史实验。
-        basis = leverage - 1.0
+        # core：按实际杠杆倍率计费；excess_cost 仅用于实验比较超出1x部分。
+        basis = leverage if self.structure == "core" else leverage - 1.0
         return basis * self.qi_cost_per_x
 
 

@@ -79,7 +79,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     expect(tm.getQi()).toBe(3);
 
     // 动态拦截卡牌的 getSeasonScore，使其返回 4.0
-    // 动态杠杆：roundInSeason=7 → multiplier=2.5，持仓气耗 = 3.1 + (2.5-1)*1 = 4.6
+    // 动态杠杆：roundInSeason=7 → multiplier=2.5，持仓气耗 = 3.1 + 2.5*1 = 5.6
     const hand = tm.getHand();
     expect(hand[0]).not.toBeNull();
     hand[0]!.card.getSeasonScore = () => 4.0;
@@ -341,8 +341,8 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     // 设定持仓评分，使其产生扣气导致爆仓
     const hand = tm.getHand();
     hand[0]!.card.getSeasonScore = () => 4.0;
-    // 持仓气耗 = 3.1 + (2.0 - 1.0) * 1 = 4.1
-    // 3 - 4.1 = -1.1 <= 0 -> 触发强平
+    // 持仓气耗 = 3.1 + 2.5 * 1 = 5.6
+    // 3 - 5.6 = -2.6 <= 0 -> 触发强平
 
     // 执行等待以触发结算强平
     tm.executeWait();

@@ -32,8 +32,10 @@ describe('LeverageCalculator', () => {
   it('计算持仓气耗', () => {
     // cardScore = 3, leverage = 2.0
     // base = max(0.5, 1.5 + 0.4 * 3) = max(0.5, 2.7) = 2.7
-    // cost = base + (2.0 - 1.0) * 1 = 2.7 + 1 = 3.7
-    expect(lc.calculateHoldQiCost(3, 2.0)).toBeCloseTo(3.7, 1);
+    // cost = base + 2.0 * 1 = 2.7 + 2 = 4.7
+    expect(lc.calculateHoldQiCost(3, 2.0)).toBeCloseTo(4.7, 1);
+    // 3.5x 的额外持气耗直接为 3.5
+    expect(lc.calculateHoldQiCost(0, 3.5)).toBeCloseTo(5.0, 1);
 
     // cardScore = -5, leverage = 1.0（无杠杆）
     // base = max(0.5, 1.5 + 0.4 * -5) = max(0.5, -0.5) = 0.5
@@ -41,8 +43,8 @@ describe('LeverageCalculator', () => {
     expect(lc.calculateHoldQiCost(-5, 1.0)).toBeCloseTo(0.5, 1);
 
     // cardScore = 0, leverage = 1.5
-    // base = 1.5, cost = 1.5 + (1.5 - 1.0) * 1 = 2.0
-    expect(lc.calculateHoldQiCost(0, 1.5)).toBeCloseTo(2.0, 1);
+    // base = 1.5, cost = 1.5 + 1.5 * 1 = 3.0
+    expect(lc.calculateHoldQiCost(0, 1.5)).toBeCloseTo(3.0, 1);
   });
 
   it('爆仓强平判定', () => {

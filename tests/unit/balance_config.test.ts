@@ -69,13 +69,7 @@ describe('BalanceConfig', () => {
     ]);
   });
 
-  it('候选配置：套利修复参数', () => {
-    expect(CANDIDATE_BALANCE_CONFIG.baseRecovery).toBe(4);
-    expect(CANDIDATE_BALANCE_CONFIG.waitBonus).toBe(8);
-    expect(CANDIDATE_BALANCE_CONFIG.buyEntryFee).toBe(3);
-    expect(CANDIDATE_BALANCE_CONFIG.sellCost).toBe(5);
-    // 其他参数继承默认
-    expect(CANDIDATE_BALANCE_CONFIG.baseBuyCost).toBe(DEFAULT_BALANCE_CONFIG.baseBuyCost);
-    expect(CANDIDATE_BALANCE_CONFIG.lqc).toBe(DEFAULT_BALANCE_CONFIG.lqc);
+  it('候选配置与默认生产配置完全同构', () => {
+    expect(CANDIDATE_BALANCE_CONFIG).toEqual(DEFAULT_BALANCE_CONFIG);
   });
 });
