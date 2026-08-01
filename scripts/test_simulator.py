@@ -130,7 +130,7 @@ class SimulatorParityTests(unittest.TestCase):
         self.assertEqual(_evaluate_band({"mean": 100, "ci95": [95, 105]}, 80, 140, "x")["status"], "pass")
         self.assertEqual(_evaluate_band({"mean": 100, "ci95": [70, 150]}, 80, 140, "x")["status"], "warn")
         self.assertEqual(_evaluate_band({"mean": 160, "ci95": [150, 170]}, 80, 140, "x")["status"], "fail")
-        baseline = run_baseline(2, 20260801, ["wait", "random", "conservative", "aggressive", "seasonal", "chase_current"])
+        baseline = run_baseline(2, 20260801, ["wait", "random", "conservative", "blind_leverage", "seasonal", "chase_current", "skilled_leverage"])
         evaluated = evaluate_report({"modes": {"baseline": baseline}})
         checks = evaluated["modes"]["baseline"]["checks"]
         self.assertEqual(evaluated["config"]["version"], EVALUATION_CONFIG_V0["version"])

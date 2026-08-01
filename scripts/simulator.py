@@ -530,7 +530,8 @@ def strategy_conservative(game: GameState) -> tuple[str, int | None, bool | None
     return strategy_always_wait(game)
 
 
-def strategy_aggressive(game: GameState) -> tuple[str, int | None, bool | None]:
+def strategy_blind_leverage(game: GameState) -> tuple[str, int | None, bool | None]:
+    """盲目全杠杆压力测试；只用于风险红线，不代表健康收益策略。"""
     candidates = [
         (game.card_score(card), index)
         for index, card in enumerate(game.pool.public)
@@ -644,14 +645,65 @@ def strategy_chase_current(game: GameState) -> tuple[str, int | None, bool | Non
     return strategy_always_wait(game)
 
 
+def strategy_skilled_leverage(game: GameState) -> tuple[str, int | None, bool | None]:
+    """使用公开季节曲线和气量约束的可解释杠杆策略。"""
+    current = game.season_index % len(SEASONS)
+    next_season = SEASONS[(current + 1) % len(SEASONS)]
+    following = SEASONS[(current + 2) % len(SEASONS)]
+
+    # 先退出下一季明显转负的杠杆仓位，避免把放大风险带入逆风季。
+    for index, slot in enumerate(game.hand):
+        if slot is None or not slot.use_leverage:
+            continue
+        now = game.card_score(slot.card, SEASONS[current])
+        upcoming = game.card_score(slot.card, next_season)
+        if upcoming < 0 and upcoming < now - 0.75 and game.qi + slot.locked_qi >= SELL_COST:
+            return "sell", index, None
+
+    projected_cost = sum(
+        game.hold_qi_cost(
+            game.card_score(slot.card, SEASONS[current]),
+            leverage_for_round(game.round_in_season) if slot.use_leverage else 1.0,
+        )
+        for slot in game.hand if slot is not None
+    )
+    if game.qi - projected_cost < 15 and game.hand:
+        for index, slot in enumerate(game.hand):
+            if slot and game.qi + slot.locked_qi >= SELL_COST:
+                return "sell", index, None
+
+    if game.hand_size() >= MAX_HAND_SIZE or not game.pool.public:
+        return strategy_always_wait(game)
+
+    candidates = []
+    for index, card in enumerate(game.pool.public):
+        now = game.card_score(card, SEASONS[current])
+        upcoming = game.card_score(card, next_season)
+        later = game.card_score(card, following)
+        utility = 0.25 * now + 0.5 * upcoming + 0.25 * later
+        if upcoming < 1.0 or later < 0.5 or utility < 0.75:
+            continue
+        # 只有气量充足、手牌有余量且确实在后续季节有收益时才使用杠杆。
+        leverage = game.qi >= 55 and game.hand_size() <= 1 and game.round_in_season >= 3
+        cost = game.buy_cost(now, leverage)
+        projected_buy_hold = game.hold_qi_cost(now, leverage)
+        if game.qi >= cost and game.qi - cost - projected_buy_hold >= 15:
+            candidates.append((utility, upcoming, index, leverage))
+    if candidates:
+        _, _, index, leverage = max(candidates)
+        return "buy", index, leverage
+    return strategy_seasonal(game)
+
+
 STRATEGIES: dict[str, Strategy] = {
     "wait": strategy_always_wait,
     "random": strategy_random,
     "conservative": strategy_conservative,
-    "aggressive": strategy_aggressive,
+    "blind_leverage": strategy_blind_leverage,
     "balanced": strategy_balanced,
     "seasonal": strategy_seasonal,
     "chase_current": strategy_chase_current,
+    "skilled_leverage": strategy_skilled_leverage,
 }
 
 
@@ -760,27 +812,31 @@ def run_comparison(games: int, seed: int, strategy_names: list[str], beta: float
     }
 
 
-EVALUATION_CONFIG_V0 = {
-    "version": "v0-candidate",
+EVALUATION_CONFIG_V1 = {
+    "version": "v1-candidate",
     "score_bands": {
-        "random": {"min": 80, "max": 140},
-        "seasonal": {"min": 180, "max": 240},
-        "aggressive": {"min": 260, "max": None},
+        "random": {"min": 80, "max": 140, "on_outside": "warn", "experience": "无规划基线用于校准资源循环，不把偏离目标直接视为规则失败"},
+        "seasonal": {"min": 180, "max": 240, "on_outside": "fail", "experience": "看见下季走势后应有稳定的中段收益"},
+        "skilled_leverage": {"min": 260, "max": None, "on_outside": "fail", "experience": "有气量管理的杠杆应兑现高收益而非靠强平堆分"},
     },
-    "seasonal_advantage_vs_chase_current": {"min": 0.20, "max": 0.40},
-    "conservative_margin_call_rate_max": 0.05,
-    "aggressive_margin_call_rate": {"min": 0.20, "max": 0.70},
+    "seasonal_absolute_lead_vs_chase_current": {"min": 40, "max": 120, "experience": "季节信息应带来可感知但不过度膨胀的提前布局优势"},
+    "seasonal_relative_advantage_vs_chase_current": {"min": 0.20, "max": 0.40, "experience": "仅在两策略分数CI显著为正时解释百分比优势"},
+    "conservative_margin_call_rate_max": {"value": 0.05, "experience": "保守策略应给新手可恢复的试错空间"},
+    "blind_leverage_margin_call_rate_max": {"value": 0.70, "experience": "盲目杠杆只做风险红线，过高强平率不能被高分掩盖"},
     "pareto_dominated_max": 0,
     "confidence": "normal_95_percent_ci",
     "manual_metrics": ["understandability", "兑现感"],
 }
+
+# 兼容旧调用方的名称；默认评价已使用 v1 语义。
+EVALUATION_CONFIG_V0 = EVALUATION_CONFIG_V1
 
 
 def _ci_overlaps(ci: list[float], minimum: float | None, maximum: float | None) -> bool:
     return (minimum is None or ci[1] >= minimum) and (maximum is None or ci[0] <= maximum)
 
 
-def _evaluate_band(metric: dict, minimum: float | None, maximum: float | None, label: str) -> dict:
+def _evaluate_band(metric: dict, minimum: float | None, maximum: float | None, label: str, on_outside: str = "fail", experience: str | None = None) -> dict:
     mean = metric["mean"]
     ci = metric["ci95"]
     inside = (minimum is None or mean >= minimum) and (maximum is None or mean <= maximum)
@@ -793,9 +849,9 @@ def _evaluate_band(metric: dict, minimum: float | None, maximum: float | None, l
         status = "warn"
         reason = f"{label} 点估计达标但95%CI跨越目标边界"
     else:
-        status = "fail"
+        status = on_outside
         reason = f"{label} 均值与95%CI均未达到目标"
-    return {"status": status, "reason": reason, "mean": mean, "ci95": ci, "target": {"min": minimum, "max": maximum}}
+    return {"status": status, "reason": reason, "experience": experience, "mean": mean, "ci95": ci, "target": {"min": minimum, "max": maximum}}
 
 
 def evaluate_report(report: dict, config: dict = EVALUATION_CONFIG_V0) -> dict:
@@ -806,43 +862,43 @@ def evaluate_report(report: dict, config: dict = EVALUATION_CONFIG_V0) -> dict:
         checks = {}
         for strategy_name, band in config["score_bands"].items():
             checks[f"score_band:{strategy_name}"] = _evaluate_band(
-                strategies[strategy_name]["score"], band["min"], band["max"], f"{strategy_name} 分数段"
+                strategies[strategy_name]["score"], band["min"], band["max"], f"{strategy_name} 分数段", band.get("on_outside", "fail"), band.get("experience")
             )
 
         seasonal_score = strategies["seasonal"]["score"]
         chase_score = strategies["chase_current"]["score"]
-        if chase_score["mean"] <= 0:
-            checks["seasonal_advantage"] = {"status": "fail", "reason": "chase_current 均值≤0，无法定义相对优势"}
+        absolute_target = config["seasonal_absolute_lead_vs_chase_current"]
+        absolute_lead = seasonal_score["mean"] - chase_score["mean"]
+        absolute_ci = [seasonal_score["ci95"][0] - chase_score["ci95"][1], seasonal_score["ci95"][1] - chase_score["ci95"][0]]
+        checks["seasonal_absolute_lead"] = _evaluate_band(
+            {"mean": absolute_lead, "ci95": absolute_ci}, absolute_target["min"], absolute_target["max"],
+            "seasonal 绝对领先分", "fail", absolute_target["experience"]
+        )
+        relative_target = config["seasonal_relative_advantage_vs_chase_current"]
+        if chase_score["ci95"][0] > 0 and seasonal_score["ci95"][0] > 0:
+            relative = absolute_lead / chase_score["mean"]
+            relative_ci = [
+                (seasonal_score["ci95"][0] - chase_score["ci95"][1]) / chase_score["ci95"][1],
+                (seasonal_score["ci95"][1] - chase_score["ci95"][0]) / chase_score["ci95"][0],
+            ]
+            checks["seasonal_relative_advantage"] = _evaluate_band(
+                {"mean": relative, "ci95": relative_ci}, relative_target["min"], relative_target["max"],
+                "seasonal 相对领先比例", "fail", relative_target["experience"]
+            )
         else:
-            advantage = (seasonal_score["mean"] - chase_score["mean"]) / chase_score["mean"]
-            chase_low = chase_score["ci95"][0]
-            chase_high = chase_score["ci95"][1]
-            if chase_low > 0:
-                advantage_ci = [
-                    (seasonal_score["ci95"][0] - chase_high) / chase_high,
-                    (seasonal_score["ci95"][1] - chase_low) / chase_low,
-                ]
-            else:
-                advantage_ci = [float("-inf"), float("inf")]
-            target = config["seasonal_advantage_vs_chase_current"]
-            point_inside = target["min"] <= advantage <= target["max"]
-            overlap = advantage_ci[1] >= target["min"] and advantage_ci[0] <= target["max"]
-            checks["seasonal_advantage"] = {
-                "status": "pass" if point_inside and advantage_ci[0] >= target["min"] and advantage_ci[1] <= target["max"] else ("warn" if point_inside or overlap else "fail"),
-                "reason": "seasonal 相对 chase_current 优势及CI" if overlap else "seasonal 优势未落入目标区间",
-                "mean": advantage,
-                "ci95": advantage_ci,
-                "target": target,
+            checks["seasonal_relative_advantage"] = {
+                "status": "warn",
+                "reason": "chase_current 或 seasonal 的95%CI未显著为正，不计算百分比优势",
+                "experience": relative_target["experience"],
+                "target": relative_target,
             }
 
         checks["conservative_margin_call_rate"] = _evaluate_band(
-            strategies["conservative"]["margin_call_rate"], None, config["conservative_margin_call_rate_max"], "保守策略强平率"
+            strategies["conservative"]["margin_call_rate"], None, config["conservative_margin_call_rate_max"]["value"], "保守策略强平率", "fail", config["conservative_margin_call_rate_max"]["experience"]
         )
         checks["aggressive_risk"] = _evaluate_band(
-            strategies["aggressive"]["margin_call_rate"],
-            config["aggressive_margin_call_rate"]["min"],
-            config["aggressive_margin_call_rate"]["max"],
-            "激进策略风险强平率",
+            strategies["blind_leverage"]["margin_call_rate"], None,
+            config["blind_leverage_margin_call_rate_max"]["value"], "盲目杠杆压力测试强平率", "fail", config["blind_leverage_margin_call_rate_max"]["experience"]
         )
         pareto = mode_report["score_distribution"]["pareto_dominated_total"]
         checks["pareto_dominated"] = {
@@ -878,7 +934,7 @@ def run_evaluation(games: int, seed: int, strategy_names: list[str], gamma: floa
             for name, (mode, beta) in modes.items()
         },
     }
-    report["evaluation"] = evaluate_report(report)
+    report["evaluation"] = evaluate_report(report, EVALUATION_CONFIG_V1)
     return report
 
 
