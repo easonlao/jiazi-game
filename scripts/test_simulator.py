@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import statistics
 import sys
 import unittest
 from pathlib import Path
@@ -13,6 +14,7 @@ from simulator import (  # noqa: E402
     CardPool,
     GameState,
     Mulberry32,
+    ScoreModel,
     SEASONS,
     calc_score,
     generate_season_lengths,
@@ -31,6 +33,26 @@ class SimulatorParityTests(unittest.TestCase):
         self.assertEqual(len(cards), 60)
         self.assertEqual([calc_score(next(card for card in cards if card.name == "甲子"), season) for season in SEASONS], [1.4, -0.2, -1.4, 0.2])
         self.assertEqual([calc_score(next(card for card in cards if card.name == "戊辰"), season) for season in SEASONS], [1.38, 1.14, 0.78, 1.02])
+
+    def test_candidate_a_centers_each_card_without_changing_baseline(self) -> None:
+        cards = load_cards()
+        baseline = ScoreModel(cards, "raw")
+        centered = ScoreModel(cards, "centered")
+        for card in cards:
+            raw_values = [baseline.score(card, season) for season in SEASONS]
+            centered_values = [centered.score(card, season) for season in SEASONS]
+            self.assertAlmostEqual(statistics.mean(centered_values), 0.0, delta=0.005)
+            self.assertEqual(raw_values, [calc_score(card, season) for season in SEASONS])
+        self.assertLessEqual(max(abs(centered.score(card, season)) for card in cards for season in SEASONS), 4.0)
+
+    def test_candidate_b_beta_is_explicit_and_zero_matches_candidate_a(self) -> None:
+        cards = load_cards()
+        centered = ScoreModel(cards, "centered")
+        candidate_b = ScoreModel(cards, "centered_beta", beta=0.0)
+        self.assertEqual(
+            [centered.score(card, season) for card in cards for season in SEASONS],
+            [candidate_b.score(card, season) for card in cards for season in SEASONS],
+        )
 
     def test_season_lengths_match_core_constraints(self) -> None:
         lengths = generate_season_lengths(Mulberry32(20260801))

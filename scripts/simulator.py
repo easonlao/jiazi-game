@@ -170,6 +170,65 @@ def calc_score(card: Card, season: str) -> float:
     return js_round_decimal(0.5 * stem_score + 0.3 * branch_score + 0.2 * relation)
 
 
+class ScoreModel:
+    """Raw 规则与逐牌四季均值校正候选的同源评分模型。"""
+
+    MODES = ("raw", "centered", "centered_beta")
+
+    def __init__(self, cards: Iterable[Card], mode: str = "raw", beta: float = 0.0):
+        if mode not in self.MODES:
+            raise ValueError(f"未知 score_mode: {mode}")
+        self.mode = mode
+        self.beta = float(beta)
+        cards = list(cards)
+        self.raw_values = {
+            (card.id, season): calc_score(card, season)
+            for card in cards
+            for season in SEASONS
+        }
+        self.card_means = {
+            card.id: statistics.mean(self.raw_values[(card.id, season)] for season in SEASONS)
+            for card in cards
+        }
+        self.values = {}
+        for card in cards:
+            for season in SEASONS:
+                raw = self.raw_values[(card.id, season)]
+                if mode == "raw":
+                    value = raw
+                else:
+                    value = raw - self.card_means[card.id]
+                    if mode == "centered_beta":
+                        value += self.beta
+                self.values[(card.id, season)] = js_round_decimal(value)
+
+    def score(self, card: Card, season: str) -> float:
+        return self.values[(card.id, season)]
+
+    def card_rows(self, cards: Iterable[Card]) -> list[dict]:
+        cards = list(cards)
+        rows = []
+        for card in cards:
+            scores = [self.score(card, season) for season in SEASONS]
+            rows.append({
+                "id": card.id,
+                "name": card.name,
+                "season_scores": dict(zip(SEASONS, scores)),
+                "mean": statistics.mean(scores),
+                "sd": statistics.pstdev(scores),
+                "min": min(scores),
+                "max": max(scores),
+            })
+        for row in rows:
+            row["pareto_dominated_by_count"] = sum(
+                all(other["season_scores"][season] >= row["season_scores"][season] for season in SEASONS)
+                and any(other["season_scores"][season] > row["season_scores"][season] for season in SEASONS)
+                for other in rows
+                if other["id"] != row["id"]
+            )
+        return rows
+
+
 def generate_season_lengths(random: Mulberry32) -> list[int]:
     n = random.int(5, 21)
     lengths = [3] * n
@@ -241,13 +300,15 @@ class Holding:
 
 
 class GameState:
-    def __init__(self, seed: int):
+    def __init__(self, seed: int, score_mode: str = "raw", beta: float = 0.0):
         self.random = Mulberry32(seed)
         self.season_lengths = generate_season_lengths(self.random)
         self.season_index = 0
         self.round_in_season = 1
         self.current_round = 1
-        self.pool = CardPool(load_cards(), self.random)
+        cards = load_cards()
+        self.score_model = ScoreModel(cards, score_mode, beta)
+        self.pool = CardPool(cards, self.random)
         self.hand: list[Holding | None] = [None] * MAX_HAND_SIZE
         self.qi = float(INITIAL_QI)
         self.score = 0.0
@@ -258,6 +319,9 @@ class GameState:
         self.total_hold_earnings = self.total_sell_earnings = 0.0
         self.forced_waits = 0
         self.history: list[dict] = []
+
+    def card_score(self, card: Card, season: str | None = None) -> float:
+        return self.score_model.score(card, season or self.season)
 
     @property
     def season(self) -> str:
@@ -293,7 +357,7 @@ class GameState:
             if slot is None:
                 continue
             leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
-            score = calc_score(slot.card, self.season)
+            score = self.card_score(slot.card)
             earning = HOLD_BONUS * score * leverage
             qi_cost = self.hold_qi_cost(score, leverage)
             self.score += earning
@@ -318,7 +382,7 @@ class GameState:
         slot = self.hand[target]
         assert slot is not None
         leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
-        current_score = calc_score(slot.card, self.season)
+        current_score = self.card_score(slot.card)
         sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
         final_sell = math.floor(sell_score * FORCED_SCORE_MULTIPLIER) if sell_score > 0 else sell_score
         self.score += final_sell
@@ -350,7 +414,7 @@ class GameState:
         card = self.pool.public[public_index] if 0 <= public_index < len(self.pool.public) else None
         if card is None:
             return False
-        score = calc_score(card, self.season)
+        score = self.card_score(card)
         cost = self.buy_cost(score, use_leverage)
         if self.qi < cost:
             return False
@@ -373,7 +437,7 @@ class GameState:
             return False
         if self.qi + slot.locked_qi < SELL_COST:
             return False
-        current_score = calc_score(slot.card, self.season)
+        current_score = self.card_score(slot.card)
         leverage = leverage_for_round(self.round_in_season) if slot.use_leverage else 1.0
         sell_score = (current_score - slot.buy_score) * SELL_MULTIPLIER * leverage
         self.hand[slot_index] = None
@@ -428,7 +492,7 @@ def strategy_always_wait(game: GameState) -> tuple[str, int | None, bool | None]
 def strategy_random(game: GameState) -> tuple[str, int | None, bool | None]:
     actions: list[tuple[str, int | None, bool | None]] = [("wait", None, None)]
     for index, card in enumerate(game.pool.public):
-        score = calc_score(card, game.season)
+        score = game.card_score(card)
         for leverage in (False, True):
             if game.hand_size() < MAX_HAND_SIZE and game.qi >= game.buy_cost(score, leverage):
                 actions.append(("buy", index, leverage))
@@ -440,12 +504,12 @@ def strategy_random(game: GameState) -> tuple[str, int | None, bool | None]:
 
 def strategy_conservative(game: GameState) -> tuple[str, int | None, bool | None]:
     for index, slot in enumerate(game.hand):
-        if slot and calc_score(slot.card, game.season) - slot.buy_score < -5 and game.qi + slot.locked_qi >= SELL_COST:
+        if slot and game.card_score(slot.card) - slot.buy_score < -5 and game.qi + slot.locked_qi >= SELL_COST:
             return "sell", index, None
     candidates = [
-        (calc_score(card, game.season), index)
+        (game.card_score(card), index)
         for index, card in enumerate(game.pool.public)
-        if calc_score(card, game.season) > 0 and game.qi >= game.buy_cost(calc_score(card, game.season), False)
+        if game.card_score(card) > 0 and game.qi >= game.buy_cost(game.card_score(card), False)
     ]
     if candidates:
         _, index = max(candidates)
@@ -455,9 +519,9 @@ def strategy_conservative(game: GameState) -> tuple[str, int | None, bool | None
 
 def strategy_aggressive(game: GameState) -> tuple[str, int | None, bool | None]:
     candidates = [
-        (calc_score(card, game.season), index)
+        (game.card_score(card), index)
         for index, card in enumerate(game.pool.public)
-        if game.qi >= game.buy_cost(calc_score(card, game.season), True) and game.hand_size() < MAX_HAND_SIZE
+        if game.qi >= game.buy_cost(game.card_score(card), True) and game.hand_size() < MAX_HAND_SIZE
     ]
     if candidates:
         _, index = max(candidates)
@@ -467,7 +531,7 @@ def strategy_aggressive(game: GameState) -> tuple[str, int | None, bool | None]:
 
 def strategy_balanced(game: GameState) -> tuple[str, int | None, bool | None]:
     current_hold_cost = sum(
-        game.hold_qi_cost(calc_score(slot.card, game.season), leverage_for_round(game.round_in_season) if slot.use_leverage else 1.0)
+        game.hold_qi_cost(game.card_score(slot.card), leverage_for_round(game.round_in_season) if slot.use_leverage else 1.0)
         for slot in game.hand if slot is not None
     )
     if game.qi - current_hold_cost < 5:
@@ -476,7 +540,7 @@ def strategy_balanced(game: GameState) -> tuple[str, int | None, bool | None]:
                 return "sell", index, None
     candidates = []
     for index, card in enumerate(game.pool.public):
-        score = calc_score(card, game.season)
+        score = game.card_score(card)
         leverage = game.qi > 30 and game.round_in_season > 3
         if score > 0.5 and game.qi >= game.buy_cost(score, leverage) and game.hand_size() < MAX_HAND_SIZE:
             candidates.append((score, index, leverage))
@@ -495,18 +559,39 @@ STRATEGIES: dict[str, Strategy] = {
 }
 
 
-def card_score_report(cards: list[Card]) -> dict:
-    values = {season: [calc_score(card, season) for card in cards] for season in SEASONS}
-    return {
-        season: {
-            "mean": statistics.mean(scores),
-            "sd": statistics.pstdev(scores),
-            "min": min(scores),
-            "max": max(scores),
-            "positive_share": sum(score > 0 for score in scores) / len(scores),
-        }
-        for season, scores in values.items()
+def card_score_report(cards: list[Card], score_mode: str = "raw", beta: float = 0.0) -> dict:
+    model = ScoreModel(cards, score_mode, beta)
+    seasonal = {
+        season: [model.score(card, season) for card in cards]
+        for season in SEASONS
     }
+    return {
+        "score_mode": score_mode,
+        "beta": beta,
+        "seasons": {
+            season: {
+                "mean": statistics.mean(scores),
+                "sd": statistics.pstdev(scores),
+                "min": min(scores),
+                "max": max(scores),
+                "positive_share": sum(score > 0 for score in scores) / len(scores),
+            }
+            for season, scores in seasonal.items()
+        },
+        "cards": model.card_rows(cards),
+        "pareto_dominated_total": sum(row["pareto_dominated_by_count"] > 0 for row in model.card_rows(cards)),
+    }
+
+
+def metric_summary(values: Iterable[float], binary: bool = False) -> dict:
+    values = list(values)
+    mean = statistics.mean(values)
+    if binary:
+        standard_error = math.sqrt(mean * (1 - mean) / len(values))
+    else:
+        standard_error = statistics.stdev(values) / math.sqrt(len(values)) if len(values) > 1 else 0.0
+    half_width = 1.96 * standard_error
+    return {"mean": mean, "ci95": [mean - half_width, mean + half_width]}
 
 
 def summarize(games: list[GameState]) -> dict:
@@ -514,30 +599,59 @@ def summarize(games: list[GameState]) -> dict:
     margin = [game.margin_calls for game in games]
     return {
         "games": len(games),
-        "score": {"mean": statistics.mean(scores), "median": statistics.median(scores), "min": min(scores), "max": max(scores)},
-        "margin_call_rate": sum(value > 0 for value in margin) / len(margin),
-        "margin_calls_mean": statistics.mean(margin),
-        "buys_mean": statistics.mean(game.total_buys for game in games),
-        "sells_mean": statistics.mean(game.total_sells for game in games),
-        "waits_mean": statistics.mean(game.total_waits for game in games),
-        "forced_wait_rate": sum(game.forced_waits > 0 for game in games) / len(games),
-        "leverage_buys_mean": statistics.mean(game.total_leverage_buys for game in games),
-        "qi_end_mean": statistics.mean(game.qi for game in games),
-        "hold_earnings_mean": statistics.mean(game.total_hold_earnings for game in games),
-        "sell_earnings_mean": statistics.mean(game.total_sell_earnings for game in games),
-        "discarded_public_cards_mean": statistics.mean(len(game.pool.discarded) for game in games),
+        "score": {**metric_summary(scores), "median": statistics.median(scores), "min": min(scores), "max": max(scores)},
+        "margin_call_rate": metric_summary([value > 0 for value in margin], binary=True),
+        "margin_calls": metric_summary(margin),
+        "buys": metric_summary([game.total_buys for game in games]),
+        "sells": metric_summary([game.total_sells for game in games]),
+        "waits": metric_summary([game.total_waits for game in games]),
+        "forced_wait_rate": metric_summary([game.forced_waits > 0 for game in games], binary=True),
+        "leverage_buys": metric_summary([game.total_leverage_buys for game in games]),
+        "qi_end": metric_summary([game.qi for game in games]),
+        "hold_earnings": metric_summary([game.total_hold_earnings for game in games]),
+        "sell_earnings": metric_summary([game.total_sell_earnings for game in games]),
+        "discarded_public_cards": metric_summary([len(game.pool.discarded) for game in games]),
     }
 
 
-def run_baseline(games: int, seed: int, strategy_names: list[str]) -> dict:
+def run_baseline(games: int, seed: int, strategy_names: list[str], score_mode: str = "raw", beta: float = 0.0) -> dict:
     cards = load_cards()
     output = {"rule_source": "src/core mirror", "card_count": len(cards), "total_rounds": TOTAL_ROUNDS,
-              "score_distribution": card_score_report(cards), "strategies": {}}
+              "shadow_accounting": {
+                  "discarded_public_cards": "Python-only accounting for public cards overwritten by current core draw; not a TypeScript core state",
+              },
+              "score_distribution": card_score_report(cards, score_mode, beta), "strategies": {}}
     for name in strategy_names:
         if name not in STRATEGIES:
             raise ValueError(f"未知策略: {name}")
-        output["strategies"][name] = summarize([GameState(seed + index).play(STRATEGIES[name]) for index in range(games)])
+        output["strategies"][name] = summarize([
+            GameState(seed + index, score_mode, beta).play(STRATEGIES[name])
+            for index in range(games)
+        ])
     return output
+
+
+def run_comparison(games: int, seed: int, strategy_names: list[str], beta: float = 0.0) -> dict:
+    modes = {
+        "baseline": ("raw", 0.0),
+        "candidate_a": ("centered", 0.0),
+        "candidate_b": ("centered_beta", beta),
+    }
+    return {
+        "rule_source": "src/core mirror",
+        "card_count": 60,
+        "total_rounds": TOTAL_ROUNDS,
+        "games_per_strategy": games,
+        "seed": seed,
+        "candidate_b_beta": beta,
+        "shadow_accounting": {
+            "discarded_public_cards": "Python-only accounting; not included in cross-language core snapshots",
+        },
+        "modes": {
+            name: run_baseline(games, seed, strategy_names, mode, mode_beta)
+            for name, (mode, mode_beta) in modes.items()
+        },
+    }
 
 
 def snapshot(game: GameState) -> dict:
@@ -597,10 +711,13 @@ def run_trace(payload: dict) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="甲子纪真实规则 Monte Carlo 基线")
-    parser.add_argument("--games", type=int, default=200)
+    parser = argparse.ArgumentParser(description="甲子纪真实规则 Monte Carlo 基线与逐牌均值校正 A/B")
+    parser.add_argument("--games", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=20260801)
     parser.add_argument("--strategy", action="append", choices=sorted(STRATEGIES), dest="strategies")
+    parser.add_argument("--score-mode", choices=ScoreModel.MODES, default="raw")
+    parser.add_argument("--beta", type=float, default=0.0, help="candidate_b 的统一 beta 偏置，默认0")
+    parser.add_argument("--compare", action="store_true", help="一次输出 baseline/candidate_a/candidate_b")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     parser.add_argument("--trace-stdin", action="store_true", help="从 stdin 读取固定动作 trace 并输出快照")
     args = parser.parse_args()
@@ -608,7 +725,9 @@ def main() -> None:
         print(json.dumps(run_trace(json.load(__import__("sys").stdin)), ensure_ascii=False, separators=(",", ":")))
         return
     names = args.strategies or list(STRATEGIES)
-    report = run_baseline(args.games, args.seed, names)
+    report = run_comparison(args.games, args.seed, names, args.beta) if args.compare else run_baseline(
+        args.games, args.seed, names, args.score_mode, args.beta
+    )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
