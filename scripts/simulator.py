@@ -13,6 +13,7 @@ import argparse
 import json
 import math
 import statistics
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -80,6 +81,10 @@ class Card:
     yin_yang: str
 
 
+_CARD_CACHE: list[Card] | None = None
+_SCORE_MODEL_CACHE: dict[tuple[str, float, float], "ScoreModel"] = {}
+
+
 class Mulberry32:
     """与 src/core/RandomSource.ts 的 SeededRandomSource 完全一致。"""
 
@@ -102,6 +107,9 @@ class Mulberry32:
 
 
 def load_cards() -> list[Card]:
+    global _CARD_CACHE
+    if _CARD_CACHE is not None:
+        return _CARD_CACHE
     path = Path(__file__).resolve().parents[1] / "assets" / "data" / "jiazi_cards.json"
     raw = json.loads(path.read_text(encoding="utf-8"))
     cards = [
@@ -119,6 +127,7 @@ def load_cards() -> list[Card]:
     ]
     if len(cards) != 60 or {card.id for card in cards} != set(range(1, 61)):
         raise ValueError("jiazi_cards.json 必须包含 ID 1-60 的完整牌池")
+    _CARD_CACHE = cards
     return cards
 
 
@@ -238,6 +247,13 @@ class ScoreModel:
         return rows
 
 
+def get_score_model(cards: list[Card], mode: str, beta: float, gamma: float) -> ScoreModel:
+    key = (mode, float(beta), float(gamma))
+    if key not in _SCORE_MODEL_CACHE:
+        _SCORE_MODEL_CACHE[key] = ScoreModel(cards, mode, beta, gamma)
+    return _SCORE_MODEL_CACHE[key]
+
+
 def generate_season_lengths(random: Mulberry32) -> list[int]:
     n = random.int(5, 21)
     lengths = [3] * n
@@ -310,14 +326,14 @@ class Holding:
 
 
 class GameState:
-    def __init__(self, seed: int, score_mode: str = "raw", beta: float = 0.0, gamma: float = 0.15):
+    def __init__(self, seed: int, score_mode: str = "raw", beta: float = 0.0, gamma: float = 0.15, record_history: bool = False):
         self.random = Mulberry32(seed)
         self.season_lengths = generate_season_lengths(self.random)
         self.season_index = 0
         self.round_in_season = 1
         self.current_round = 1
         cards = load_cards()
-        self.score_model = ScoreModel(cards, score_mode, beta, gamma)
+        self.score_model = get_score_model(cards, score_mode, beta, gamma)
         self.pool = CardPool(cards, self.random)
         self.hand: list[Holding | None] = [None] * MAX_HAND_SIZE
         self.qi = float(INITIAL_QI)
@@ -329,7 +345,9 @@ class GameState:
         self.total_hold_earnings = self.total_sell_earnings = 0.0
         self.forced_waits = 0
         self.hold_durations: list[int] = []
+        self.buy_elements: list[str] = []
         self.history: list[dict] = []
+        self.record_history = record_history
 
     def card_score(self, card: Card, season: str | None = None) -> float:
         return self.score_model.score(card, season or self.season)
@@ -437,6 +455,7 @@ class GameState:
         if use_leverage:
             self.total_leverage_buys += 1
         self.total_buys += 1
+        self.buy_elements.append(card.main_element)
         self.pool.buy(public_index)
         self.last_action = "buy"
         return True
@@ -488,8 +507,9 @@ class GameState:
                 if action != "wait":
                     self.forced_waits += 1
                 self.wait()
-            self.history.append({**detail, "action": self.last_action, "qi": self.qi, "score": self.score,
-                                 "season_round": self.round_in_season, "leverage": leverage_for_round(self.round_in_season)})
+            if self.record_history:
+                self.history.append({**detail, "action": self.last_action, "qi": self.qi, "score": self.score,
+                                     "season_round": self.round_in_season, "leverage": leverage_for_round(self.round_in_season)})
             self.invariant()
             self.advance_season()
         return self
@@ -708,7 +728,7 @@ STRATEGIES: dict[str, Strategy] = {
 
 
 def card_score_report(cards: list[Card], score_mode: str = "raw", beta: float = 0.0, gamma: float = 0.15) -> dict:
-    model = ScoreModel(cards, score_mode, beta, gamma)
+    model = get_score_model(cards, score_mode, beta, gamma)
     seasonal = {
         season: [model.score(card, season) for card in cards]
         for season in SEASONS
@@ -747,9 +767,16 @@ def summarize(games: list[GameState]) -> dict:
     scores = [game.score for game in games]
     margin = [game.margin_calls for game in games]
     durations = []
+    element_concentrations = []
     for game in games:
         durations.extend(game.hold_durations)
         durations.extend(TOTAL_ROUNDS + 1 - slot.buy_round for slot in game.hand if slot is not None)
+        if game.buy_elements:
+            counts = Counter(game.buy_elements)
+            element_concentrations.append(max(counts.values()) / len(game.buy_elements))
+        else:
+            element_concentrations.append(0.0)
+    action_totals = [game.total_buys + game.total_sells + game.total_waits for game in games]
     return {
         "games": len(games),
         "score": {**metric_summary(scores), "median": statistics.median(scores), "min": min(scores), "max": max(scores)},
@@ -765,6 +792,12 @@ def summarize(games: list[GameState]) -> dict:
         "sell_earnings": metric_summary([game.total_sell_earnings for game in games]),
         "discarded_public_cards": metric_summary([len(game.pool.discarded) for game in games]),
         "holding_duration": metric_summary(durations) if durations else {"mean": 0.0, "ci95": [0.0, 0.0]},
+        "element_selection_concentration": metric_summary(element_concentrations),
+        "action_structure": {
+            "buy_share": metric_summary([game.total_buys / total if total else 0.0 for game, total in zip(games, action_totals)]),
+            "sell_share": metric_summary([game.total_sells / total if total else 0.0 for game, total in zip(games, action_totals)]),
+            "wait_share": metric_summary([game.total_waits / total if total else 0.0 for game, total in zip(games, action_totals)]),
+        },
     }
 
 
@@ -823,6 +856,10 @@ EVALUATION_CONFIG_V1 = {
     "seasonal_relative_advantage_vs_chase_current": {"min": 0.20, "max": 0.40, "experience": "仅在两策略分数CI显著为正时解释百分比优势"},
     "conservative_margin_call_rate_max": {"value": 0.05, "experience": "保守策略应给新手可恢复的试错空间"},
     "blind_leverage_margin_call_rate_max": {"value": 0.70, "experience": "盲目杠杆只做风险红线，过高强平率不能被高分掩盖"},
+    "skilled_leverage_uplift_vs_seasonal": {"min": 0.10, "experience": "受控杠杆相对非杠杆季节布局应有至少10%收益增幅（provisional）"},
+    "skilled_leverage_margin_call_rate_max": {"value": 0.15, "experience": "受控杠杆强平率应保持在15%以内（provisional）"},
+    "new_player_safety_margin_call_rate_max": {"value": 0.05, "experience": "新手当前季追分代理应安全完成，不依靠强平（provisional）"},
+    "element_selection_concentration_max": {"value": 0.70, "experience": "单一五行不应垄断买入，保留可观察的选择空间（provisional）"},
     "pareto_dominated_max": 0,
     "confidence": "normal_95_percent_ci",
     "manual_metrics": ["understandability", "兑现感"],
@@ -896,6 +933,36 @@ def evaluate_report(report: dict, config: dict = EVALUATION_CONFIG_V0) -> dict:
         checks["conservative_margin_call_rate"] = _evaluate_band(
             strategies["conservative"]["margin_call_rate"], None, config["conservative_margin_call_rate_max"]["value"], "保守策略强平率", "fail", config["conservative_margin_call_rate_max"]["experience"]
         )
+        checks["new_player_safety"] = _evaluate_band(
+            strategies["chase_current"]["margin_call_rate"], None,
+            config["new_player_safety_margin_call_rate_max"]["value"], "新手当前季追分代理强平率", "fail",
+            config["new_player_safety_margin_call_rate_max"]["experience"],
+        )
+        skilled = strategies["skilled_leverage"]
+        seasonal = strategies["seasonal"]
+        if seasonal["score"]["ci95"][0] > 0:
+            skilled_uplift = (skilled["score"]["mean"] - seasonal["score"]["mean"]) / seasonal["score"]["mean"]
+            skilled_uplift_ci = [
+                (skilled["score"]["ci95"][0] - seasonal["score"]["ci95"][1]) / seasonal["score"]["ci95"][1],
+                (skilled["score"]["ci95"][1] - seasonal["score"]["ci95"][0]) / seasonal["score"]["ci95"][0],
+            ]
+            target = config["skilled_leverage_uplift_vs_seasonal"]
+            checks["skilled_leverage_uplift"] = _evaluate_band(
+                {"mean": skilled_uplift, "ci95": skilled_uplift_ci}, target["min"], None,
+                "受控杠杆相对季节代理收益增幅", "fail", target["experience"],
+            )
+        else:
+            checks["skilled_leverage_uplift"] = {"status": "warn", "reason": "季节代理CI未显著为正，无法评价受控杠杆增幅", "experience": config["skilled_leverage_uplift_vs_seasonal"]["experience"]}
+        checks["skilled_leverage_risk"] = _evaluate_band(
+            skilled["margin_call_rate"], None, config["skilled_leverage_margin_call_rate_max"]["value"],
+            "受控杠杆强平率", "fail", config["skilled_leverage_margin_call_rate_max"]["experience"],
+        )
+        for strategy_name in ("chase_current", "seasonal", "skilled_leverage"):
+            concentration_target = config["element_selection_concentration_max"]
+            checks[f"element_concentration:{strategy_name}"] = _evaluate_band(
+                strategies[strategy_name]["element_selection_concentration"], None, concentration_target["value"],
+                f"{strategy_name} 五行选择集中度", "warn", concentration_target["experience"],
+            )
         checks["aggressive_risk"] = _evaluate_band(
             strategies["blind_leverage"]["margin_call_rate"], None,
             config["blind_leverage_margin_call_rate_max"]["value"], "盲目杠杆压力测试强平率", "fail", config["blind_leverage_margin_call_rate_max"]["experience"]
@@ -908,11 +975,12 @@ def evaluate_report(report: dict, config: dict = EVALUATION_CONFIG_V0) -> dict:
             "target_max": config["pareto_dominated_max"],
         }
         checks["manual_playtest"] = {
-            "status": "manual",
-            "reason": "看懂性与收益兑现感不能由模拟自动判定",
+            "status": "deferred_after_release",
+            "blocks": False,
+            "reason": "看懂性与收益兑现感延后到发布后人工复核，不阻塞当前自动评价",
             "metrics": config["manual_metrics"],
         }
-        statuses = [check["status"] for check in checks.values() if check["status"] != "manual"]
+        statuses = [check["status"] for check in checks.values() if check["status"] not in {"manual", "deferred_after_release"}]
         overall = "fail" if "fail" in statuses else ("warn" if "warn" in statuses else "pass")
         evaluations[mode_name] = {"overall": overall, "checks": checks}
     return {"config": config, "modes": evaluations}
@@ -936,6 +1004,87 @@ def run_evaluation(games: int, seed: int, strategy_names: list[str], gamma: floa
     }
     report["evaluation"] = evaluate_report(report, EVALUATION_CONFIG_V1)
     return report
+
+
+def run_baseline_multi_seed(games_per_seed: int, seeds: list[int], strategy_names: list[str], score_mode: str, beta: float = 0.0, gamma: float = 0.15) -> dict:
+    cards = load_cards()
+    output = {
+        "rule_source": "src/core mirror",
+        "card_count": len(cards),
+        "total_rounds": TOTAL_ROUNDS,
+        "games": games_per_seed * len(seeds),
+        "games_per_seed": games_per_seed,
+        "seeds": seeds,
+        "shadow_accounting": {"discarded_public_cards": "Python-only; not TypeScript core state"},
+        "score_distribution": card_score_report(cards, score_mode, beta, gamma),
+        "strategies": {},
+    }
+    for name in strategy_names:
+        games = [
+            GameState(seed + index, score_mode, beta, gamma).play(STRATEGIES[name])
+            for seed in seeds
+            for index in range(games_per_seed)
+        ]
+        output["strategies"][name] = summarize(games)
+    return output
+
+
+def run_evaluation_multi_seed(games_per_seed: int, seeds: list[int], strategy_names: list[str], gamma_values: tuple[float, ...] = (0.10, 0.15)) -> dict:
+    mode_specs = {
+        "baseline": ("raw", 0.0, 0.0),
+        "candidate_a": ("centered", 0.0, 0.0),
+    }
+    for gamma in gamma_values:
+        mode_specs[f"candidate_centered_polarity_gamma_{gamma:.2f}"] = ("centered_polarity", 0.0, gamma)
+    report = {
+        "rule_source": "src/core mirror",
+        "games_per_seed": games_per_seed,
+        "seeds": seeds,
+        "rule_review": rule_review_scenarios(gamma_values[0] if gamma_values else 0.10),
+        "modes": {
+            name: run_baseline_multi_seed(games_per_seed, seeds, strategy_names, mode, beta, gamma)
+            for name, (mode, beta, gamma) in mode_specs.items()
+        },
+    }
+    report["evaluation"] = evaluate_report(report, EVALUATION_CONFIG_V1)
+    return report
+
+
+def rule_review_scenarios(gamma: float = 0.10) -> list[dict]:
+    """子代理式可解释性审查：四季各三种公开曲线情景，共12条。"""
+    cards = load_cards()
+    model = get_score_model(cards, "centered_polarity", 0.0, gamma)
+    scenarios = []
+    for season_index, season in enumerate(SEASONS):
+        next_season = SEASONS[(season_index + 1) % 4]
+        following = SEASONS[(season_index + 2) % 4]
+        rows = []
+        for card in cards:
+            scores = [model.score(card, value) for value in (season, next_season, following)]
+            utility = 0.25 * scores[0] + 0.5 * scores[1] + 0.25 * scores[2]
+            rows.append((utility, scores[1] - scores[0], card, scores))
+        ranked = sorted(rows, key=lambda row: (row[0], row[1]), reverse=True)
+        rising = max(rows, key=lambda row: (row[1], row[0]))
+        falling = min(rows, key=lambda row: (row[0], row[1]))
+        picks = [ranked[0], rising, falling]
+        for kind, (utility, slope, card, scores) in zip(("highest_next_utility", "strongest_rise", "weakest_outlook"), picks):
+            margin = abs(utility - ranked[1][0]) if kind == "highest_next_utility" else abs(slope)
+            confidence = "high" if margin >= 1.0 else ("medium" if margin >= 0.4 else "low")
+            buy = kind != "weakest_outlook"
+            scenarios.append({
+                "id": f"{season}-{kind}",
+                "currentSeason": season,
+                "nextSeason": next_season,
+                "followingSeason": following,
+                "card": {"id": card.id, "name": card.name, "tianGan": card.tian_gan, "diZhi": card.di_zhi, "mainElement": card.main_element, "yinYang": card.yin_yang},
+                "visibleScores": {season: scores[0], next_season: scores[1], following: scores[2]},
+                "recommendation": "buy" if buy else "wait_or_sell",
+                "reason": "只依据当前、下季和下下季评分曲线；评分由五行×季节及天干地支组合形成，阴阳仅调整季节波动振幅",
+                "reasonBasis": ["five_elements_season_curve", "stem_branch_hidden_stem_combination", "polarity_amplitude"],
+                "confidence": confidence,
+                "hiddenInputsUsed": [],
+            })
+    return scenarios
 
 
 def snapshot(game: GameState) -> dict:
@@ -1004,15 +1153,24 @@ def main() -> None:
     parser.add_argument("--gamma", type=float, default=0.15, help="candidate_polarity 的阴阳波动系数，默认0.15")
     parser.add_argument("--compare", action="store_true", help="一次输出 baseline/candidate_a/candidate_b")
     parser.add_argument("--evaluate", action="store_true", help="输出 v0 pass/warn/fail 评价")
+    parser.add_argument("--multi-seed", action="store_true", help="评价模式使用多组固定 seed")
+    parser.add_argument("--seeds", default="20260801,20260802", help="逗号分隔的固定 seed")
+    parser.add_argument("--rule-review", action="store_true", help="输出12条公开信息规则审查情景")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     parser.add_argument("--trace-stdin", action="store_true", help="从 stdin 读取固定动作 trace 并输出快照")
     args = parser.parse_args()
     if args.trace_stdin:
         print(json.dumps(run_trace(json.load(__import__("sys").stdin)), ensure_ascii=False, separators=(",", ":")))
         return
+    if args.rule_review:
+        print(json.dumps({"version": "v1-candidate", "scenarios": rule_review_scenarios(args.gamma)}, ensure_ascii=False, indent=2))
+        return
     names = args.strategies or list(STRATEGIES)
     if args.evaluate:
-        report = run_evaluation(args.games, args.seed, names, args.gamma)
+        if args.multi_seed:
+            report = run_evaluation_multi_seed(args.games, [int(value) for value in args.seeds.split(",") if value.strip()], names)
+        else:
+            report = run_evaluation(args.games, args.seed, names, args.gamma)
     else:
         report = run_comparison(args.games, args.seed, names, args.beta, args.gamma) if args.compare else run_baseline(
             args.games, args.seed, names, args.score_mode, args.beta, args.gamma

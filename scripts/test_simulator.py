@@ -26,6 +26,7 @@ from simulator import (  # noqa: E402
     _evaluate_band,
     evaluate_report,
     run_baseline,
+    rule_review_scenarios,
 )
 
 
@@ -137,8 +138,19 @@ class SimulatorParityTests(unittest.TestCase):
         evaluated = evaluate_report({"modes": {"baseline": baseline}})
         checks = evaluated["modes"]["baseline"]["checks"]
         self.assertEqual(evaluated["config"]["version"], EVALUATION_CONFIG_V0["version"])
-        self.assertEqual(checks["manual_playtest"]["status"], "manual")
+        self.assertEqual(checks["manual_playtest"]["status"], "deferred_after_release")
+        self.assertFalse(checks["manual_playtest"]["blocks"])
         self.assertEqual(checks["pareto_dominated"]["status"], "fail")
+
+    def test_rule_review_has_twelve_visible_atomic_logic_scenarios(self) -> None:
+        scenarios = rule_review_scenarios(0.10)
+        self.assertEqual(len(scenarios), 12)
+        self.assertEqual({item["currentSeason"] for item in scenarios}, set(SEASONS))
+        for item in scenarios:
+            self.assertEqual(item["hiddenInputsUsed"], [])
+            self.assertEqual(set(item["reasonBasis"]), {"five_elements_season_curve", "stem_branch_hidden_stem_combination", "polarity_amplitude"})
+            self.assertNotIn("deck", item["reason"].lower())
+            self.assertNotIn("随机", item["reason"])
 
     def test_season_lengths_match_core_constraints(self) -> None:
         lengths = generate_season_lengths(Mulberry32(20260801))
