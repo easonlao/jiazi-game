@@ -68,6 +68,18 @@ class SimulatorParityTests(unittest.TestCase):
             expected_factor = 1.15 if card.yin_yang == "yang" else 0.85
             self.assertAlmostEqual(polarity_sd, raw_sd * expected_factor, delta=0.03)
 
+    def test_centered_polarity_combines_zero_target_mean_with_amplitude_factor(self) -> None:
+        cards = load_cards()
+        centered = ScoreModel(cards, "centered")
+        composite = ScoreModel(cards, "centered_polarity", beta=0.0, gamma=0.15)
+        for card in cards:
+            values = [composite.score(card, season) for season in SEASONS]
+            self.assertAlmostEqual(statistics.mean(values), 0.0, delta=0.005)
+            centered_sd = statistics.pstdev(centered.score(card, season) for season in SEASONS)
+            composite_sd = statistics.pstdev(values)
+            factor = 1.15 if card.yin_yang == "yang" else 0.85
+            self.assertAlmostEqual(composite_sd, centered_sd * factor, delta=0.03)
+
     def test_seasonal_strategy_uses_public_information_only(self) -> None:
         cards = load_cards()
 

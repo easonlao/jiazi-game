@@ -173,7 +173,7 @@ def calc_score(card: Card, season: str) -> float:
 class ScoreModel:
     """Raw 规则与逐牌四季均值校正候选的同源评分模型。"""
 
-    MODES = ("raw", "centered", "centered_beta", "polarity_volatility")
+    MODES = ("raw", "centered", "centered_beta", "polarity_volatility", "centered_polarity")
 
     def __init__(self, cards: Iterable[Card], mode: str = "raw", beta: float = 0.0, gamma: float = 0.15):
         if mode not in self.MODES:
@@ -200,10 +200,11 @@ class ScoreModel:
                 if mode == "raw":
                     value = raw
                 else:
-                    if mode == "polarity_volatility":
+                    if mode in {"polarity_volatility", "centered_polarity"}:
                         deviation = raw - self.card_means[card.id]
                         factor = 1 + self.gamma if card.yin_yang == "yang" else 1 - self.gamma
-                        value = self.card_means[card.id] + factor * deviation
+                        target_mean = self.card_means[card.id] if mode == "polarity_volatility" else self.beta
+                        value = target_mean + factor * deviation
                     else:
                         value = raw - self.card_means[card.id]
                     if mode == "centered_beta":
@@ -721,6 +722,7 @@ def run_comparison(games: int, seed: int, strategy_names: list[str], beta: float
         "candidate_a": ("centered", 0.0),
         "candidate_b": ("centered_beta", beta),
         "candidate_polarity": ("polarity_volatility", 0.0),
+        "candidate_composite": ("centered_polarity", beta),
     }
     return {
         "rule_source": "src/core mirror",
@@ -730,6 +732,7 @@ def run_comparison(games: int, seed: int, strategy_names: list[str], beta: float
         "seed": seed,
         "candidate_b_beta": beta,
         "candidate_polarity_gamma": gamma,
+        "candidate_composite_target_mean": beta,
         "shadow_accounting": {
             "discarded_public_cards": "Python-only accounting; not included in cross-language core snapshots",
         },
