@@ -452,8 +452,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const cards = get().publicCards;
     if (!tm || cardIndex < 0 || cardIndex >= cards.length) return 0;
     const card = cards[cardIndex];
-    const score = card.getSeasonScore(get().season);
-    const leverage = get().useLeverage ? tm.getLeverageMultiplier() : 1;
+    const score = tm.getCardScore(card, tm.getSettlementSeason());
+    const leverage = get().useLeverage ? tm.getSettlementLeverageMultiplier() : 1;
     return tm.previewHoldEarning(score, leverage);
   },
 
@@ -462,8 +462,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const cards = get().publicCards;
     if (!tm || cardIndex < 0 || cardIndex >= cards.length) return 0;
     const card = cards[cardIndex];
-    const score = card.getSeasonScore(get().season);
-    const leverage = get().useLeverage ? tm.getLeverageMultiplier() : 1;
+    const score = tm.getCardScore(card, tm.getSettlementSeason());
+    const leverage = get().useLeverage ? tm.getSettlementLeverageMultiplier() : 1;
     return tm.previewHoldQiCost(score, leverage);
   },
 
@@ -505,7 +505,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (!slot) continue;
       if (slot.useLeverage) hasLeverage = true;
       const effLeverage = slot.useLeverage ? settlementLeverage : 1;
-      holdQiCost += tm.previewHoldQiCost(slot.card.getSeasonScore(settlementSeason), effLeverage);
+      holdQiCost += tm.previewHoldQiCost(tm.getCardScore(slot.card, settlementSeason), effLeverage);
     }
     // 真实时序：扣持仓气耗 → 判定爆仓/强平 → 回气。
     // midQi 即扣气后的中间气量；若 midQi ≤ 0 会触发强平：

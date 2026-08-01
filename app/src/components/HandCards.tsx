@@ -29,23 +29,25 @@ export function HandCards() {
         <div className="grid grid-cols-2 gap-2">
           {hand.map((slot: HandSlot | null, i: number) => {
             if (!slot) return <EmptySlot key={i} />;
-            const score = slot.card.getSeasonScore(season);
+            const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
+            const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getSettlementSeason()) : score;
             const profit = slot.getProfit(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
             // 动态杠杆：买入时开了杠杆的牌，倍数随回合自动增长
             const dynamicLeverage =
               slot.useLeverage
-                ? (turnManager ? turnManager.getLeverageMultiplier() : 1)
+                ? (turnManager ? turnManager.getSettlementLeverageMultiplier() : 1)
                 : 1;
-            const holdEarning = turnManager ? turnManager.previewHoldEarning(score, dynamicLeverage) : 0;
-            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(score, dynamicLeverage) : 0;
+            const holdEarning = turnManager ? turnManager.previewHoldEarning(nextScore, dynamicLeverage) : 0;
+            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(nextScore, dynamicLeverage) : 0;
 
             return (
               <Card
                 key={i}
                 card={slot.card}
                 score={score}
+                nextScore={nextScore}
                 selected={selectedHandCard === i}
                 onClick={
                   gameState === 'player_action'

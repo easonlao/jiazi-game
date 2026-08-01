@@ -29,7 +29,7 @@ export class LeverageCalculator {
    * 计算持仓气耗
    *
    * 基础气耗 = max(holdQiMin, holdQiBase + holdQiScoreFactor * cardScore)
-   * 杠杆额外气耗 = leverage × leverageQiCostPerX（倍数越高气耗越大）
+   * 杠杆额外气耗 = (leverage - 1) × leverageQiCostPerX（仅实际放大部分计费）
    *
    * 设计意图：杠杆同时放大收益和持仓压力，让高杠杆位置有真实的持续风险。
    */
@@ -38,7 +38,7 @@ export class LeverageCalculator {
       this.cfg.holdQiMin,
       this.cfg.holdQiBase + this.cfg.holdQiScoreFactor * cardScore
     );
-    return baseCost + (leverage > 1 ? leverage * this.cfg.leverageQiCostPerX : 0);
+    return baseCost + (leverage > 1 ? (leverage - 1) * this.cfg.leverageQiCostPerX : 0);
   }
 
   /** 检查是否需要强制平仓 */

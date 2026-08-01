@@ -9,31 +9,31 @@ describe('LeverageCalculator', () => {
     expect(lc.getMultiplier(1)).toBe(1.0);
     expect(lc.getMultiplier(2)).toBe(1.0);
 
-    // 第 3-5 回合 -> 1.5
-    expect(lc.getMultiplier(3)).toBe(1.5);
-    expect(lc.getMultiplier(5)).toBe(1.5);
+    // 第 3-5 回合 -> 2.0
+    expect(lc.getMultiplier(3)).toBe(2.0);
+    expect(lc.getMultiplier(5)).toBe(2.0);
 
-    // 第 6-8 回合 -> 2.0
-    expect(lc.getMultiplier(6)).toBe(2.0);
-    expect(lc.getMultiplier(8)).toBe(2.0);
+    // 第 6-8 回合 -> 2.5
+    expect(lc.getMultiplier(6)).toBe(2.5);
+    expect(lc.getMultiplier(8)).toBe(2.5);
 
-    // 第 9-11 回合 -> 2.5
-    expect(lc.getMultiplier(9)).toBe(2.5);
-    expect(lc.getMultiplier(11)).toBe(2.5);
+    // 第 9-11 回合 -> 3.0
+    expect(lc.getMultiplier(9)).toBe(3.0);
+    expect(lc.getMultiplier(11)).toBe(3.0);
 
-    // 第 12 回合 -> 3.0；换季后重新传入 1 即回到 1.0
-    expect(lc.getMultiplier(12)).toBe(3.0);
+    // 第 12 回合 -> 3.5；换季后重新传入 1 即回到 1.0
+    expect(lc.getMultiplier(12)).toBe(3.5);
     expect(lc.getMultiplier(1)).toBe(1.0);
 
     // 超出季内上限时保持最高档
-    expect(lc.getMultiplier(13)).toBe(3.0);
+    expect(lc.getMultiplier(13)).toBe(3.5);
   });
 
   it('计算持仓气耗', () => {
     // cardScore = 3, leverage = 2.0
     // base = max(0.5, 1.5 + 0.4 * 3) = max(0.5, 2.7) = 2.7
-    // cost = base + 2.0 * 4 = 2.7 + 8 = 10.7
-    expect(lc.calculateHoldQiCost(3, 2.0)).toBeCloseTo(10.7, 1);
+    // cost = base + (2.0 - 1.0) * 1 = 2.7 + 1 = 3.7
+    expect(lc.calculateHoldQiCost(3, 2.0)).toBeCloseTo(3.7, 1);
 
     // cardScore = -5, leverage = 1.0（无杠杆）
     // base = max(0.5, 1.5 + 0.4 * -5) = max(0.5, -0.5) = 0.5
@@ -41,8 +41,8 @@ describe('LeverageCalculator', () => {
     expect(lc.calculateHoldQiCost(-5, 1.0)).toBeCloseTo(0.5, 1);
 
     // cardScore = 0, leverage = 1.5
-    // base = max(0.5, 1.5) = 1.5, cost = 1.5 + 1.5 * 4 = 1.5 + 6 = 7.5
-    expect(lc.calculateHoldQiCost(0, 1.5)).toBeCloseTo(7.5, 1);
+    // base = 1.5, cost = 1.5 + (1.5 - 1.0) * 1 = 2.0
+    expect(lc.calculateHoldQiCost(0, 1.5)).toBeCloseTo(2.0, 1);
   });
 
   it('爆仓强平判定', () => {

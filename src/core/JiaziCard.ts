@@ -15,6 +15,18 @@ export enum YinYang {
 
 type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 
+export interface ScoreConfig {
+  scoreBeta: number;
+  yangPolarityFactor: number;
+  yinPolarityFactor: number;
+}
+
+export const DEFAULT_SCORE_CONFIG: ScoreConfig = {
+  scoreBeta: 0.02,
+  yangPolarityFactor: 1.1,
+  yinPolarityFactor: 0.9,
+};
+
 interface HiddenStem {
   stem: string;
   weight: number;
@@ -66,8 +78,8 @@ export class JiaziCard {
     return map[element];
   }
 
-  /** 获取卡牌的季节评分 */
-  getSeasonScore(season: string): number {
+  /** 获取卡牌未校准的季节原始评分。 */
+  getRawSeasonScore(season: string): number {
     const seasonElementMap: Record<Season, Element> = {
       spring: Element.WOOD,
       summer: Element.FIRE,
@@ -85,6 +97,21 @@ export class JiaziCard {
     const relationScore = this.scoreStemBranchRelation();
 
     return this.roundScore(stemScore * 0.5 + branchScore * 0.3 + relationScore * 0.2);
+  }
+
+  /**
+   * 获取最终季节评分：以该卡四季原始均值为中心，再施加阴阳波动系数。
+   * 评分基线/系数从 BalanceConfig 传入；不传时使用默认配置，保证 UI 与核心一致。
+   */
+  getSeasonScore(season: string, config: ScoreConfig = DEFAULT_SCORE_CONFIG): number {
+    if (!this.isSeason(season)) return 0;
+    const seasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+    const rawScores = seasons.map((item) => this.getRawSeasonScore(item));
+    const rawMean = rawScores.reduce((sum, value) => sum + value, 0) / rawScores.length;
+    const factor = this.yinYang === YinYang.YANG
+      ? config.yangPolarityFactor
+      : config.yinPolarityFactor;
+    return this.roundScore(config.scoreBeta + factor * (this.getRawSeasonScore(season) - rawMean));
   }
 
   private isSeason(season: string): season is Season {

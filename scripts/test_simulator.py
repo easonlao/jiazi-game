@@ -253,7 +253,7 @@ class SimulatorParityTests(unittest.TestCase):
         self.assertTrue(all(3 <= length <= 12 for length in lengths))
 
     def test_leverage_table_matches_core_boundaries(self) -> None:
-        self.assertEqual([leverage_for_round(round_number) for round_number in (1, 2, 3, 5, 6, 8, 9, 11, 12)], [1, 1, 1.5, 1.5, 2, 2, 2.5, 2.5, 3])
+        self.assertEqual([leverage_for_round(round_number) for round_number in (1, 2, 3, 5, 6, 8, 9, 11, 12)], [1, 1, 2, 2, 2.5, 2.5, 3, 3, 3.5])
 
     def test_preset_actions_cover_buy_hold_sell_and_qi_flow(self) -> None:
         game = GameState(42)

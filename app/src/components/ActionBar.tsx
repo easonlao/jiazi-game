@@ -52,17 +52,15 @@ export function ActionBar() {
             <span className="ml-1 opacity-70">(本季第{roundInSeason}/{seasonLength}回合)</span>
           )}
           {useLeverage && leverageMultiplier === 1 && (
-            <span className="ml-1 opacity-70 text-qi-critical">(预埋杠杆)</span>
+            <span className="ml-1 opacity-70 text-qi-critical">(当前档位)</span>
           )}
         </span>
       </div>
 
-      {/* 杠杆预埋提示 */}
-      {useLeverage && leverageMultiplier === 1 && (
-        <div className="text-[11px] text-qi-critical bg-qi-critical/10 px-2 py-1 rounded">
-          预埋杠杆仓位 · 当前 1.0x · 季内第 3 回合升至 1.5x，之后每 3 回合升档（换季重置）
-        </div>
-      )}
+      {/* 杠杆只作可选参考，不构成强制门槛 */}
+      <div className="text-[11px] text-ink-light bg-white/70 px-2 py-1 rounded">
+        顺势参考：下季高于当季，且气量充足时再开。当前倍率会随季内回合变化，换季重置。
+      </div>
 
       {/* 最后一回合提示：核心禁止买入，需明确告知 */}
       {isFinalRound && (
@@ -117,7 +115,7 @@ export function ActionBar() {
           杠杆{useLeverage ? ' ON' : ' OFF'}
           {useLeverage && (
             <span className="block text-[10px] font-normal">
-              {leverageMultiplier > 1 ? `${leverageMultiplier}x` : '预埋 1.0x'}
+              {`${leverageMultiplier.toFixed(1)}x`}
             </span>
           )}
         </button>

@@ -7,9 +7,6 @@ export function PublicCards() {
   const selectedPublicCard = useGameStore((s) => s.selectedPublicCard);
   const selectPublicCard = useGameStore((s) => s.selectPublicCard);
   const gameState = useGameStore((s) => s.gameState);
-  const previewBuyCost = useGameStore((s) => s.previewBuyCost);
-  const useLeverage = useGameStore((s) => s.useLeverage);
-  const qi = useGameStore((s) => s.qi);
   const turnManager = useGameStore((s) => s.turnManager);
 
   if (gameState === 'init') {
@@ -89,7 +86,9 @@ function PublicCardItem({
   const useLeverage = useGameStore((s) => s.useLeverage);
   const qi = useGameStore((s) => s.qi);
   const season = useGameStore((s) => s.season);
-  const score = card.getSeasonScore(season);
+  const turnManager = useGameStore((s) => s.turnManager);
+  const score = turnManager ? turnManager.getCardScore(card, season) : card.getSeasonScore(season);
+  const nextScore = turnManager ? turnManager.getCardScore(card, turnManager.getSettlementSeason()) : score;
 
   const cost = previewBuyCost(index);
   const canAfford = cost <= qi;
@@ -100,6 +99,7 @@ function PublicCardItem({
     <Card
       card={card}
       score={score}
+      nextScore={nextScore}
       selected={selected}
       onClick={disabled ? undefined : onSelect}
       buyCost={cost}

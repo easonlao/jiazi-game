@@ -23,7 +23,7 @@ TOTAL_ROUNDS = 60
 MAX_HAND_SIZE = 3
 SEASONS = ("spring", "summer", "autumn", "winter")
 SEASON_ELEMENTS = dict(zip(SEASONS, ("wood", "fire", "metal", "water")))
-LEVERAGE_TABLE = ((2, 1.0), (5, 1.5), (8, 2.0), (11, 2.5), (12, 3.0))
+LEVERAGE_TABLE = ((2, 1.0), (5, 2.0), (8, 2.5), (11, 3.0), (12, 3.5))
 
 # 与 BalanceConfig / QiManager / ScoreManager / LeverageCalculator 对齐。
 MAX_QI = 80
@@ -33,7 +33,7 @@ WAIT_BONUS = 10
 SELL_COST = 4
 BASE_BUY_COST = 11
 BUY_COST_FACTOR = 0.05
-LQC = 14
+LQC = 8
 BUY_ENTRY_FEE = 2
 FORCED_QI_RETURN_FACTOR = 0.5
 FORCED_SCORE_MULTIPLIER = 0.8
@@ -43,7 +43,7 @@ SELL_MULTIPLIER = 4
 HOLD_QI_BASE = 1.5
 HOLD_QI_SCORE_FACTOR = 0.4
 HOLD_QI_MIN = 0.5
-LEVERAGE_QI_COST_PER_X = 4
+LEVERAGE_QI_COST_PER_X = 1
 
 
 @dataclass(frozen=True)
@@ -71,8 +71,8 @@ class LeverageEconomy:
     def qi_charge(self, leverage: float) -> float:
         if leverage <= 1:
             return 0.0
-        # excess_cost：只为超出1x的杠杆倍率付气耗；杠杆越高仍然越贵。
-        basis = leverage - 1.0 if self.structure == "excess_cost" else leverage
+        # 核心默认结构统一按超出1x的部分计费；保留 excess_cost 名称仅兼容历史实验。
+        basis = leverage - 1.0
         return basis * self.qi_cost_per_x
 
 
@@ -1539,7 +1539,8 @@ def snapshot(game: GameState) -> dict:
 
 def run_trace(payload: dict) -> dict:
     """运行一个由测试传入的固定动作 trace，供 Vitest 跨语言核对。"""
-    game = GameState(int(payload["seed"]))
+    # trace 与产品默认配置对齐：中心化评分 + 阴阳波动，beta=0.02。
+    game = GameState(int(payload["seed"]), "centered_polarity", 0.02, 0.10)
     if payload.get("season_lengths") is not None:
         lengths = [int(value) for value in payload["season_lengths"]]
         if sum(lengths) != TOTAL_ROUNDS or not all(3 <= value <= 12 for value in lengths):

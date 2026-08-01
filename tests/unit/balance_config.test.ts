@@ -62,10 +62,10 @@ describe('BalanceConfig', () => {
     expect(DEFAULT_BALANCE_CONFIG.maxQi).toBe(80);
     expect(DEFAULT_BALANCE_CONFIG.leverageTable).toEqual([
       [2, 1.0],
-      [5, 1.5],
-      [8, 2.0],
-      [11, 2.5],
-      [12, 3.0],
+      [5, 2.0],
+      [8, 2.5],
+      [11, 3.0],
+      [12, 3.5],
     ]);
   });
 

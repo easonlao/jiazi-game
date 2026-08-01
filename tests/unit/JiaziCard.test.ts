@@ -35,7 +35,8 @@ describe('JiaziCard seasonal resonance scoring', () => {
     const scores = ['spring', 'summer', 'autumn', 'winter'].map(season => wuChen.getSeasonScore(season));
 
     expect(scores.every(score => score !== 0)).toBe(true);
-    expect(Math.min(...scores)).toBeGreaterThan(0);
+    // 中心化评分允许弱季出现负分，但不会退化为季节无效的零分。
+    expect(Math.max(...scores)).toBeGreaterThan(0);
   });
 
   it('keeps the visible seasonal rhythm for the four directional elements', () => {

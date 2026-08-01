@@ -8,22 +8,6 @@ const elementBorder: Record<Element, string> = {
   [Element.WATER]: 'border-sky-400 bg-sky-50/50',
 };
 
-const elementTag: Record<Element, string> = {
-  [Element.WOOD]: 'bg-emerald-500 text-white',
-  [Element.FIRE]: 'bg-red-500 text-white',
-  [Element.EARTH]: 'bg-amber-500 text-white',
-  [Element.METAL]: 'bg-slate-500 text-white',
-  [Element.WATER]: 'bg-sky-500 text-white',
-};
-
-const elementChars: Record<Element, string> = {
-  [Element.WOOD]: '木',
-  [Element.FIRE]: '火',
-  [Element.EARTH]: '土',
-  [Element.METAL]: '金',
-  [Element.WATER]: '水',
-};
-
 const elementScoreColor: Record<Element, string> = {
   [Element.WOOD]: 'text-emerald-700',
   [Element.FIRE]: 'text-red-700',
@@ -35,6 +19,7 @@ const elementScoreColor: Record<Element, string> = {
 interface CardProps {
   card: JiaziCard;
   score: number;
+  nextScore?: number;
   selected?: boolean;
   onClick?: () => void;
   handInfo?: {
@@ -52,7 +37,7 @@ interface CardProps {
   holdQiCost?: number;
 }
 
-export function Card({ card, score, selected, onClick, handInfo, buyCost, canAfford, sellPreview, highlight, holdEarning, holdQiCost }: CardProps) {
+export function Card({ card, score, nextScore, selected, onClick, handInfo, buyCost, canAfford, sellPreview, highlight, holdEarning, holdQiCost }: CardProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
 
   const baseBorder = elementBorder[card.mainElement];
@@ -78,25 +63,23 @@ export function Card({ card, score, selected, onClick, handInfo, buyCost, canAff
           <span className={elementScoreColor[card.diZhiElement]}>{card.diZhi}</span>
         </span>
         <div className="flex gap-1 shrink-0">
-          <span className={`text-[11px] px-1.5 py-0.5 rounded font-bold ${elementTag[card.mainElement]}`}>
-            {elementChars[card.mainElement]}
-          </span>
           <span className={`text-[11px] px-1.5 py-0.5 rounded font-bold ${
             card.yinYang === YinYang.YANG
               ? 'bg-orange-500 text-white'
               : 'bg-violet-500 text-white'
           }`}>
-            {yinYangChar}
+            {yinYangChar} · {card.yinYang === YinYang.YANG ? '波动较大' : '较稳'}
           </span>
         </div>
       </div>
 
-      {/* 当前价值：卡片唯一的主数字 */}
+      {/* 当前→下季价值：与结算预览使用同一评分口径 */}
       <div className="flex items-end justify-between gap-2 border-y border-wood-light/35 bg-white/35 px-2.5 py-1.5">
         <div>
-          <span className="block text-[10px] leading-none text-ink-light">当季评分</span>
+          <span className="block text-[10px] leading-none text-ink-light">当季 → 下季评分</span>
           <span className={`text-xl leading-tight font-bold tabular-nums ${elementScoreColor[card.mainElement]}`}>
             {score >= 0 ? '+' : ''}{score.toFixed(1)}
+            {nextScore !== undefined && <><span className="mx-1 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
           </span>
         </div>
         {handInfo && (

@@ -45,7 +45,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
       currentRound: 25,
       state: 'player_action',
       lastAction: null,
-      qi: 5,
+      qi: 3,
       score: 0,
       totalHoldEarnings: 0,
       totalSellEarnings: 0,
@@ -76,15 +76,15 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     // 加载存档
     const loadSuccess = tm.loadGame();
     expect(loadSuccess).toBe(true);
-    expect(tm.getQi()).toBe(5);
+    expect(tm.getQi()).toBe(3);
 
     // 动态拦截卡牌的 getSeasonScore，使其返回 4.0
-    // 动态杠杆：roundInSeason=7 → multiplier=2.0，持仓气耗 = max(0.5, 1.5+0.4*4) + 2.0*4 = 3.1 + 8 = 11.1
+    // 动态杠杆：roundInSeason=7 → multiplier=2.5，持仓气耗 = 3.1 + (2.5-1)*1 = 4.6
     const hand = tm.getHand();
     expect(hand[0]).not.toBeNull();
     hand[0]!.card.getSeasonScore = () => 4.0;
 
-    // 执行等待动作，推进回合。这会触发结算，由于扣除气耗(11.1)导致气变为负数(5 - 11.1 = -6.1)，爆仓强平卡牌被卖出。
+    // 执行等待动作，推进回合。这会触发结算，由于扣除气耗导致气变为负数，爆仓强平卡牌被卖出。
     const actionSuccess = tm.executeWait();
     expect(actionSuccess).toBe(true);
 
@@ -105,7 +105,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
       currentRound: 25,
       state: 'player_action',
       lastAction: null,
-      qi: 5,
+      qi: 3,
       score: 100,
       totalHoldEarnings: 0,
       totalSellEarnings: 0,
@@ -144,11 +144,11 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     tm.executeWait();
 
     // 验证分数：
-    // 1. 持仓结算得分：1.2 * 4.0 * 2.0 = 9.6
-    // 2. 强平卖出得分（强平8折）：((4.0 - 3.0) * 4) * 2.0 = 8，8折后 = 6.4 → int = 6
-    // 3. 爆仓扣分：2.0 * |4.0| * 6 = 48
-    // 最终分：100 + 9.6 + 6 - 48 = 67.6
-    expect(tm.getScore()).toBeCloseTo(67.6, 1);
+    // 1. 持仓结算得分：1.2 * 4.0 * 2.5 = 12
+    // 2. 强平卖出得分（强平8折）：((4.0 - 3.0) * 4) * 2.5 * 0.8 = 8
+    // 3. 爆仓扣分：2.5 * |4.0| * 6 = 60
+    // 最终分：100 + 12 + 8 - 60 = 60
+    expect(tm.getScore()).toBeCloseTo(60.0, 1);
     expect(tm.getHand()[0]).toBeNull();
   });
 
@@ -161,7 +161,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
       currentRound: 25,
       state: 'player_action',
       lastAction: null,
-      qi: 5,
+      qi: 3,
       score: 0,
       totalHoldEarnings: 0,
       totalSellEarnings: 0,
@@ -303,12 +303,12 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     const tm = new TurnManager();
     await tm.initialize();
 
-    // 构造存档：可用气为 5，持有1张杠杆卡牌，roundInSeason=7 触发 2.0x 动态杠杆
+    // 构造存档：可用气为 3，持有1张杠杆卡牌，roundInSeason=7 触发 2.5x 动态杠杆
     const stateData = {
       currentRound: 25,
       state: 'player_action',
       lastAction: null,
-      qi: 5,
+      qi: 3,
       score: 0,
       totalHoldEarnings: 0,
       totalSellEarnings: 0,
@@ -341,8 +341,8 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     // 设定持仓评分，使其产生扣气导致爆仓
     const hand = tm.getHand();
     hand[0]!.card.getSeasonScore = () => 4.0;
-    // 持仓气耗 = max(0.5, 1.5 + 0.4*4) + 6 = 3.1 + 6 = 9.1
-    // 5 - 9.1 = -4.1 <= 0 -> 触发强平
+    // 持仓气耗 = 3.1 + (2.0 - 1.0) * 1 = 4.1
+    // 3 - 4.1 = -1.1 <= 0 -> 触发强平
 
     // 执行等待以触发结算强平
     tm.executeWait();
@@ -350,7 +350,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     // 卡牌被强平
     expect(tm.getHand()[0]).toBeNull();
 
-    // 强平后：退回保证金 10 * 0.5 = 5，qi = -4.1 + 5 = 0.9
+    // 强平后退回部分保证金，再进行自然/等待回气。
     // 无低保缓冲，自然回复 10 + 等待回复 10 = 20
     // 最终气约 20.9
     expect(tm.getQi()).toBeGreaterThan(10);  // 有回复但无低保
@@ -401,7 +401,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     // 验证 lockedQi 是否被正确还原
     const slot = tm.getHand()[0];
     expect(slot).not.toBeNull();
-    expect(slot!.lockedQi).toBe(25);
-    expect(tm.getTotalLockedQi()).toBe(25);
+    expect(slot!.lockedQi).toBe(19);
+    expect(tm.getTotalLockedQi()).toBe(19);
   });
 });

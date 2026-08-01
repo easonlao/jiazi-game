@@ -2,16 +2,17 @@
  * 平衡配置：唯一参数来源
  *
  * 所有影响经济/数值的常量收拢于此，通过构造函数注入到各管理器。
- * 默认值与现状（2026-07-31 Codex handoff 核对）一致。
- *
- * 候选参数（Codex handoff 建议，未经模拟验证前不启用）：
- *   baseRecovery: 4, waitBonus: 8, buyEntryFee: 3, sellCost: 5
+ * 默认值与已验证的候选经济模型一致。
  */
 
 /** 杠杆曲线表：季内回合上限 → 杠杆倍数 */
 export type LeverageTable = [number, number][];
 
 export interface BalanceConfig {
+  /** 评分基线与阴阳波动系数：最终分 = beta + polarity * (raw - 四季均值) */
+  scoreBeta: number;
+  yangPolarityFactor: number;
+  yinPolarityFactor: number;
   // 气
   maxQi: number;
   initialQi: number;
@@ -42,7 +43,6 @@ export interface BalanceConfig {
   // 杠杆
   /**
    * 杠杆曲线：[[季内回合上限, 倍数], ...]。
-   * 默认每 3 个季内回合升一档；3 回合的最短季也能在季末升至 1.5x，
    * 换季重新传入第 1 回合后回到 1.0x。
    */
   leverageTable: LeverageTable;
@@ -50,12 +50,15 @@ export interface BalanceConfig {
   holdQiBase: number;
   holdQiScoreFactor: number;
   holdQiMin: number;
-  /** 杠杆每倍额外气耗：extra = leverage * leverageQiCostPerX */
+  /** 杠杆每倍额外气耗（仅当倍率大于 1 时）：extra = (leverage - 1) * leverageQiCostPerX */
   leverageQiCostPerX: number;
 }
 
-/** 当前默认配置（与现有行为一致） */
+/** 当前默认配置（模拟验证候选） */
 export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
+  scoreBeta: 0.02,
+  yangPolarityFactor: 1.1,
+  yinPolarityFactor: 0.9,
   maxQi: 80,
   initialQi: 50,
   baseRecovery: 10,
@@ -63,25 +66,25 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   sellCost: 4,
   baseBuyCost: 11,
   buyCostFactor: 0.05,
-  lqc: 14,
+  lqc: 8,
   buyEntryFee: 2,
   forcedLiquidationQiReturnFactor: 0.5,
   forcedLiquidationScoreMultiplier: 0.8,
   marginCallPenaltyPerScore: 6,
   leverageTable: [
     [2, 1.0],
-    [5, 1.5],
-    [8, 2.0],
-    [11, 2.5],
-    [12, 3.0],
+    [5, 2.0],
+    [8, 2.5],
+    [11, 3.0],
+    [12, 3.5],
   ],
   holdQiBase: 1.5,
   holdQiScoreFactor: 0.4,
   holdQiMin: 0.5,
-  leverageQiCostPerX: 4,
+  leverageQiCostPerX: 1,
 };
 
-/** Codex handoff 候选配置（Phase 3 模拟验证用，勿直接设为默认） */
+/** 兼容旧调用方的候选配置别名；默认经济参数已采用同一模型。 */
 export const CANDIDATE_BALANCE_CONFIG: BalanceConfig = {
   ...DEFAULT_BALANCE_CONFIG,
   baseRecovery: 4,

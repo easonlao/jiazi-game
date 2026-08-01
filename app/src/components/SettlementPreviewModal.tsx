@@ -13,7 +13,7 @@ export function SettlementPreviewModal() {
 
   const targetLabel = preview.actionCardName ? `：${preview.actionCardName}` : '';
   const actionLabel = preview.action.type === 'buy'
-    ? `买入${targetLabel}${preview.actionUsesLeverage ? '（预埋杠杆仓位）' : ''}`
+    ? `买入${targetLabel}${preview.actionUsesLeverage ? '（杠杆仓位）' : ''}`
     : preview.action.type === 'sell'
       ? `卖出${targetLabel}${preview.actionUsesLeverage ? '（杠杆仓位）' : ''}`
       : '等待';
@@ -34,7 +34,7 @@ export function SettlementPreviewModal() {
             </div>
             {!preview.saleBreakdown && (preview.actionQiChange !== 0 || preview.actionScoreChange !== 0) && (
               <div className="flex justify-between mt-1">
-                <span>行动即时变化</span>
+                <span>{preview.action.type === 'buy' ? '买入消耗' : '行动即时变化'}</span>
                 <span>
                   {preview.actionQiChange !== 0 && <span className={preview.actionQiChange > 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.actionQiChange)}气</span>}
                   {preview.actionQiChange !== 0 && preview.actionScoreChange !== 0 && ' · '}
@@ -108,6 +108,9 @@ export function SettlementPreviewModal() {
                   </div>
                 </div>
               )}
+            {preview.action.type === 'buy' && preview.actionUsesLeverage && (
+              <p className="mt-1 text-[11px] text-ink-light/80">顺势参考：下季高于当季，且气量充足时再开。杠杆为可选项。</p>
+            )}
 
               <div className="space-y-1 text-xs text-ink-light">
                 <div className="flex justify-between"><span>行动后气</span><span>{preview.qiAfterAction.toFixed(1)}气</span></div>

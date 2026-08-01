@@ -165,6 +165,11 @@ export class TurnManager {
     this.totalLeverageBuys = 0;
   }
 
+  /** 所有核心结算和预览共用的最终评分入口。 */
+  getCardScore(card: JiaziCard, season: string): number {
+    return card.getSeasonScore(season, this.balanceConfig);
+  }
+
   /**
    * 初始化游戏，拉取卡牌数据，并初始化牌池
    */
@@ -252,7 +257,7 @@ export class TurnManager {
 
         // 计算持仓收益
         const holdEarnings = this.scoreManager.calculateHoldEarnings(
-          slot.card.getSeasonScore(currentSeason),
+          this.getCardScore(slot.card, currentSeason),
           effectiveLeverage
         );
         this.scoreManager.addHoldEarnings(holdEarnings);
@@ -261,7 +266,7 @@ export class TurnManager {
 
         // 累计持仓气耗
         const qiCost = this.leverageCalculator.calculateHoldQiCost(
-          slot.card.getSeasonScore(currentSeason),
+          this.getCardScore(slot.card, currentSeason),
           effectiveLeverage
         );
         totalQiCost += qiCost;
@@ -343,7 +348,7 @@ export class TurnManager {
           : 1;
 
       // 正常获得卖出分数（强平惩罚：正收益打 8 折，负收益 100% 承担）
-      const currentScore = slot.card.getSeasonScore(this.seasonCycle.getCurrentSeason());
+      const currentScore = this.getCardScore(slot.card, this.seasonCycle.getCurrentSeason());
       const baseSellScore = this.scoreManager.calculateSellScore(
         currentScore,
         slot.buyScore,
@@ -427,7 +432,7 @@ export class TurnManager {
 
     // 计算买入消耗
     const buyCost = this.qiManager.calculateBuyCost(
-      card.getSeasonScore(this.seasonCycle.getCurrentSeason()),
+      this.getCardScore(card, this.seasonCycle.getCurrentSeason()),
       leverage
     );
 
@@ -443,7 +448,7 @@ export class TurnManager {
     if (leverage) {
       this.totalLeverageBuys++;
     }
-    const buyScore = card.getSeasonScore(this.seasonCycle.getCurrentSeason());
+    const buyScore = this.getCardScore(card, this.seasonCycle.getCurrentSeason());
     const lockedQi = buyCost - this.qiManager.getBuyEntryFee();
       const initialLeverage = leverage
         ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
@@ -479,7 +484,7 @@ export class TurnManager {
     const slot = this.handManager.getSlot(slotIndex);
     if (!slot) return false;
 
-    const currentScore = slot.card.getSeasonScore(this.seasonCycle.getCurrentSeason());
+    const currentScore = this.getCardScore(slot.card, this.seasonCycle.getCurrentSeason());
     const effectiveLeverage =
       slot.useLeverage
         ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
@@ -847,7 +852,7 @@ export class TurnManager {
 
   /** 预览买入卡牌气消耗 */
   previewBuyCost(card: JiaziCard, useLeverage: boolean): number {
-    const score = card.getSeasonScore(this.getCurrentSeason());
+    const score = this.getCardScore(card, this.getCurrentSeason());
     return this.qiManager.calculateBuyCost(score, useLeverage);
   }
 
@@ -863,7 +868,7 @@ export class TurnManager {
 
   /** 预览卖出卡牌的得分结算 */
   previewSellScore(slot: HandSlot): number {
-    const currentScore = slot.card.getSeasonScore(this.getCurrentSeason());
+    const currentScore = this.getCardScore(slot.card, this.getCurrentSeason());
     const effectiveLeverage =
       slot.useLeverage
         ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
@@ -902,7 +907,8 @@ export class TurnManager {
       if (this.currentRound >= TurnManager.TOTAL_ROUNDS || !this.handManager.canBuy()) return null;
       const card = this.cardPoolManager.getPublicCards()[action.cardIndex];
       if (!card) return null;
-      const buyCost = this.qiManager.calculateBuyCost(card.getSeasonScore(currentSeason), action.leverage);
+      const buyScore = this.getCardScore(card, currentSeason);
+      const buyCost = this.qiManager.calculateBuyCost(buyScore, action.leverage);
       if (!this.qiManager.canAfford(buyCost)) return null;
 
       actionCardName = card.name;
@@ -910,7 +916,7 @@ export class TurnManager {
       actionQiChange = -buyCost;
       virtualHand.push(new HandSlot(
         card,
-        card.getSeasonScore(currentSeason),
+        buyScore,
         action.leverage,
         action.leverage
           ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
@@ -936,7 +942,7 @@ export class TurnManager {
         : 1;
       saleBreakdown = {
         buyScore: slot.buyScore,
-        currentScore: slot.card.getSeasonScore(currentSeason),
+        currentScore: this.getCardScore(slot.card, currentSeason),
         leverage: effectiveLeverage,
         scoreChange: actionScoreChange,
         lockedQiReturn,
@@ -985,7 +991,7 @@ export class TurnManager {
     const settlementLeverage = this.getSettlementLeverageMultiplier();
     const holdItems = virtualHand.map((slot) => {
       const leverage = slot.useLeverage ? settlementLeverage : 1;
-      const cardScore = slot.card.getSeasonScore(nextSeason);
+      const cardScore = this.getCardScore(slot.card, nextSeason);
       return {
         cardName: slot.card.name,
         earning: this.scoreManager.calculateHoldEarnings(cardScore, leverage),
