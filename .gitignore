@@ -87,3 +87,8 @@ $RECYCLE.BIN/
 # Preview files
 .preview
 .cozeproj/reduction
+
+# Browser test artifacts (never commit reports, traces, screenshots, or results)
+.playwright-cli/
+playwright-report/
+test-results/
