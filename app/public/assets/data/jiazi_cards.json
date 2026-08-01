@@ -1,0 +1,602 @@
+[
+  {
+    "id": 1,
+    "name": "甲子",
+    "tianGan": "甲",
+    "diZhi": "子",
+    "tianGanElement": "wood",
+    "diZhiElement": "water",
+    "mainElement": "wood",
+    "yinYang": "yang"
+  },
+  {
+    "id": 2,
+    "name": "乙丑",
+    "tianGan": "乙",
+    "diZhi": "丑",
+    "tianGanElement": "wood",
+    "diZhiElement": "earth",
+    "mainElement": "wood",
+    "yinYang": "yin"
+  },
+  {
+    "id": 3,
+    "name": "丙寅",
+    "tianGan": "丙",
+    "diZhi": "寅",
+    "tianGanElement": "fire",
+    "diZhiElement": "wood",
+    "mainElement": "fire",
+    "yinYang": "yang"
+  },
+  {
+    "id": 4,
+    "name": "丁卯",
+    "tianGan": "丁",
+    "diZhi": "卯",
+    "tianGanElement": "fire",
+    "diZhiElement": "wood",
+    "mainElement": "fire",
+    "yinYang": "yin"
+  },
+  {
+    "id": 5,
+    "name": "戊辰",
+    "tianGan": "戊",
+    "diZhi": "辰",
+    "tianGanElement": "earth",
+    "diZhiElement": "earth",
+    "mainElement": "earth",
+    "yinYang": "yang"
+  },
+  {
+    "id": 6,
+    "name": "己巳",
+    "tianGan": "己",
+    "diZhi": "巳",
+    "tianGanElement": "earth",
+    "diZhiElement": "fire",
+    "mainElement": "earth",
+    "yinYang": "yin"
+  },
+  {
+    "id": 7,
+    "name": "庚午",
+    "tianGan": "庚",
+    "diZhi": "午",
+    "tianGanElement": "metal",
+    "diZhiElement": "fire",
+    "mainElement": "metal",
+    "yinYang": "yang"
+  },
+  {
+    "id": 8,
+    "name": "辛未",
+    "tianGan": "辛",
+    "diZhi": "未",
+    "tianGanElement": "metal",
+    "diZhiElement": "earth",
+    "mainElement": "metal",
+    "yinYang": "yin"
+  },
+  {
+    "id": 9,
+    "name": "壬申",
+    "tianGan": "壬",
+    "diZhi": "申",
+    "tianGanElement": "water",
+    "diZhiElement": "metal",
+    "mainElement": "water",
+    "yinYang": "yang"
+  },
+  {
+    "id": 10,
+    "name": "癸酉",
+    "tianGan": "癸",
+    "diZhi": "酉",
+    "tianGanElement": "water",
+    "diZhiElement": "metal",
+    "mainElement": "water",
+    "yinYang": "yin"
+  },
+  {
+    "id": 11,
+    "name": "甲戌",
+    "tianGan": "甲",
+    "diZhi": "戌",
+    "tianGanElement": "wood",
+    "diZhiElement": "earth",
+    "mainElement": "wood",
+    "yinYang": "yang"
+  },
+  {
+    "id": 12,
+    "name": "乙亥",
+    "tianGan": "乙",
+    "diZhi": "亥",
+    "tianGanElement": "wood",
+    "diZhiElement": "water",
+    "mainElement": "wood",
+    "yinYang": "yin"
+  },
+  {
+    "id": 13,
+    "name": "丙子",
+    "tianGan": "丙",
+    "diZhi": "子",
+    "tianGanElement": "fire",
+    "diZhiElement": "water",
+    "mainElement": "fire",
+    "yinYang": "yang"
+  },
+  {
+    "id": 14,
+    "name": "丁丑",
+    "tianGan": "丁",
+    "diZhi": "丑",
+    "tianGanElement": "fire",
+    "diZhiElement": "earth",
+    "mainElement": "fire",
+    "yinYang": "yin"
+  },
+  {
+    "id": 15,
+    "name": "戊寅",
+    "tianGan": "戊",
+    "diZhi": "寅",
+    "tianGanElement": "earth",
+    "diZhiElement": "wood",
+    "mainElement": "earth",
+    "yinYang": "yang"
+  },
+  {
+    "id": 16,
+    "name": "己卯",
+    "tianGan": "己",
+    "diZhi": "卯",
+    "tianGanElement": "earth",
+    "diZhiElement": "wood",
+    "mainElement": "earth",
+    "yinYang": "yin"
+  },
+  {
+    "id": 17,
+    "name": "庚辰",
+    "tianGan": "庚",
+    "diZhi": "辰",
+    "tianGanElement": "metal",
+    "diZhiElement": "earth",
+    "mainElement": "metal",
+    "yinYang": "yang"
+  },
+  {
+    "id": 18,
+    "name": "辛巳",
+    "tianGan": "辛",
+    "diZhi": "巳",
+    "tianGanElement": "metal",
+    "diZhiElement": "fire",
+    "mainElement": "metal",
+    "yinYang": "yin"
+  },
+  {
+    "id": 19,
+    "name": "壬午",
+    "tianGan": "壬",
+    "diZhi": "午",
+    "tianGanElement": "water",
+    "diZhiElement": "fire",
+    "mainElement": "water",
+    "yinYang": "yang"
+  },
+  {
+    "id": 20,
+    "name": "癸未",
+    "tianGan": "癸",
+    "diZhi": "未",
+    "tianGanElement": "water",
+    "diZhiElement": "earth",
+    "mainElement": "water",
+    "yinYang": "yin"
+  },
+  {
+    "id": 21,
+    "name": "甲申",
+    "tianGan": "甲",
+    "diZhi": "申",
+    "tianGanElement": "wood",
+    "diZhiElement": "metal",
+    "mainElement": "wood",
+    "yinYang": "yang"
+  },
+  {
+    "id": 22,
+    "name": "乙酉",
+    "tianGan": "乙",
+    "diZhi": "酉",
+    "tianGanElement": "wood",
+    "diZhiElement": "metal",
+    "mainElement": "wood",
+    "yinYang": "yin"
+  },
+  {
+    "id": 23,
+    "name": "丙戌",
+    "tianGan": "丙",
+    "diZhi": "戌",
+    "tianGanElement": "fire",
+    "diZhiElement": "earth",
+    "mainElement": "fire",
+    "yinYang": "yang"
+  },
+  {
+    "id": 24,
+    "name": "丁亥",
+    "tianGan": "丁",
+    "diZhi": "亥",
+    "tianGanElement": "fire",
+    "diZhiElement": "water",
+    "mainElement": "fire",
+    "yinYang": "yin"
+  },
+  {
+    "id": 25,
+    "name": "戊子",
+    "tianGan": "戊",
+    "diZhi": "子",
+    "tianGanElement": "earth",
+    "diZhiElement": "water",
+    "mainElement": "earth",
+    "yinYang": "yang"
+  },
+  {
+    "id": 26,
+    "name": "己丑",
+    "tianGan": "己",
+    "diZhi": "丑",
+    "tianGanElement": "earth",
+    "diZhiElement": "earth",
+    "mainElement": "earth",
+    "yinYang": "yin"
+  },
+  {
+    "id": 27,
+    "name": "庚寅",
+    "tianGan": "庚",
+    "diZhi": "寅",
+    "tianGanElement": "metal",
+    "diZhiElement": "wood",
+    "mainElement": "metal",
+    "yinYang": "yang"
+  },
+  {
+    "id": 28,
+    "name": "辛卯",
+    "tianGan": "辛",
+    "diZhi": "卯",
+    "tianGanElement": "metal",
+    "diZhiElement": "wood",
+    "mainElement": "metal",
+    "yinYang": "yin"
+  },
+  {
+    "id": 29,
+    "name": "壬辰",
+    "tianGan": "壬",
+    "diZhi": "辰",
+    "tianGanElement": "water",
+    "diZhiElement": "earth",
+    "mainElement": "water",
+    "yinYang": "yang"
+  },
+  {
+    "id": 30,
+    "name": "癸巳",
+    "tianGan": "癸",
+    "diZhi": "巳",
+    "tianGanElement": "water",
+    "diZhiElement": "fire",
+    "mainElement": "water",
+    "yinYang": "yin"
+  },
+  {
+    "id": 31,
+    "name": "甲午",
+    "tianGan": "甲",
+    "diZhi": "午",
+    "tianGanElement": "wood",
+    "diZhiElement": "fire",
+    "mainElement": "wood",
+    "yinYang": "yang"
+  },
+  {
+    "id": 32,
+    "name": "乙未",
+    "tianGan": "乙",
+    "diZhi": "未",
+    "tianGanElement": "wood",
+    "diZhiElement": "earth",
+    "mainElement": "wood",
+    "yinYang": "yin"
+  },
+  {
+    "id": 33,
+    "name": "丙申",
+    "tianGan": "丙",
+    "diZhi": "申",
+    "tianGanElement": "fire",
+    "diZhiElement": "metal",
+    "mainElement": "fire",
+    "yinYang": "yang"
+  },
+  {
+    "id": 34,
+    "name": "丁酉",
+    "tianGan": "丁",
+    "diZhi": "酉",
+    "tianGanElement": "fire",
+    "diZhiElement": "metal",
+    "mainElement": "fire",
+    "yinYang": "yin"
+  },
+  {
+    "id": 35,
+    "name": "戊戌",
+    "tianGan": "戊",
+    "diZhi": "戌",
+    "tianGanElement": "earth",
+    "diZhiElement": "earth",
+    "mainElement": "earth",
+    "yinYang": "yang"
+  },
+  {
+    "id": 36,
+    "name": "己亥",
+    "tianGan": "己",
+    "diZhi": "亥",
+    "tianGanElement": "earth",
+    "diZhiElement": "water",
+    "mainElement": "earth",
+    "yinYang": "yin"
+  },
+  {
+    "id": 37,
+    "name": "庚子",
+    "tianGan": "庚",
+    "diZhi": "子",
+    "tianGanElement": "metal",
+    "diZhiElement": "water",
+    "mainElement": "metal",
+    "yinYang": "yang"
+  },
+  {
+    "id": 38,
+    "name": "辛丑",
+    "tianGan": "辛",
+    "diZhi": "丑",
+    "tianGanElement": "metal",
+    "diZhiElement": "earth",
+    "mainElement": "metal",
+    "yinYang": "yin"
+  },
+  {
+    "id": 39,
+    "name": "壬寅",
+    "tianGan": "壬",
+    "diZhi": "寅",
+    "tianGanElement": "water",
+    "diZhiElement": "wood",
+    "mainElement": "water",
+    "yinYang": "yang"
+  },
+  {
+    "id": 40,
+    "name": "癸卯",
+    "tianGan": "癸",
+    "diZhi": "卯",
+    "tianGanElement": "water",
+    "diZhiElement": "wood",
+    "mainElement": "water",
+    "yinYang": "yin"
+  },
+  {
+    "id": 41,
+    "name": "甲辰",
+    "tianGan": "甲",
+    "diZhi": "辰",
+    "tianGanElement": "wood",
+    "diZhiElement": "earth",
+    "mainElement": "wood",
+    "yinYang": "yang"
+  },
+  {
+    "id": 42,
+    "name": "乙巳",
+    "tianGan": "乙",
+    "diZhi": "巳",
+    "tianGanElement": "wood",
+    "diZhiElement": "fire",
+    "mainElement": "wood",
+    "yinYang": "yin"
+  },
+  {
+    "id": 43,
+    "name": "丙午",
+    "tianGan": "丙",
+    "diZhi": "午",
+    "tianGanElement": "fire",
+    "diZhiElement": "fire",
+    "mainElement": "fire",
+    "yinYang": "yang"
+  },
+  {
+    "id": 44,
+    "name": "丁未",
+    "tianGan": "丁",
+    "diZhi": "未",
+    "tianGanElement": "fire",
+    "diZhiElement": "earth",
+    "mainElement": "fire",
+    "yinYang": "yin"
+  },
+  {
+    "id": 45,
+    "name": "戊申",
+    "tianGan": "戊",
+    "diZhi": "申",
+    "tianGanElement": "earth",
+    "diZhiElement": "metal",
+    "mainElement": "earth",
+    "yinYang": "yang"
+  },
+  {
+    "id": 46,
+    "name": "己酉",
+    "tianGan": "己",
+    "diZhi": "酉",
+    "tianGanElement": "earth",
+    "diZhiElement": "metal",
+    "mainElement": "earth",
+    "yinYang": "yin"
+  },
+  {
+    "id": 47,
+    "name": "庚戌",
+    "tianGan": "庚",
+    "diZhi": "戌",
+    "tianGanElement": "metal",
+    "diZhiElement": "earth",
+    "mainElement": "metal",
+    "yinYang": "yang"
+  },
+  {
+    "id": 48,
+    "name": "辛亥",
+    "tianGan": "辛",
+    "diZhi": "亥",
+    "tianGanElement": "metal",
+    "diZhiElement": "water",
+    "mainElement": "metal",
+    "yinYang": "yin"
+  },
+  {
+    "id": 49,
+    "name": "壬子",
+    "tianGan": "壬",
+    "diZhi": "子",
+    "tianGanElement": "water",
+    "diZhiElement": "water",
+    "mainElement": "water",
+    "yinYang": "yang"
+  },
+  {
+    "id": 50,
+    "name": "癸丑",
+    "tianGan": "癸",
+    "diZhi": "丑",
+    "tianGanElement": "water",
+    "diZhiElement": "earth",
+    "mainElement": "water",
+    "yinYang": "yin"
+  },
+  {
+    "id": 51,
+    "name": "甲寅",
+    "tianGan": "甲",
+    "diZhi": "寅",
+    "tianGanElement": "wood",
+    "diZhiElement": "wood",
+    "mainElement": "wood",
+    "yinYang": "yang"
+  },
+  {
+    "id": 52,
+    "name": "乙卯",
+    "tianGan": "乙",
+    "diZhi": "卯",
+    "tianGanElement": "wood",
+    "diZhiElement": "wood",
+    "mainElement": "wood",
+    "yinYang": "yin"
+  },
+  {
+    "id": 53,
+    "name": "丙辰",
+    "tianGan": "丙",
+    "diZhi": "辰",
+    "tianGanElement": "fire",
+    "diZhiElement": "earth",
+    "mainElement": "fire",
+    "yinYang": "yang"
+  },
+  {
+    "id": 54,
+    "name": "丁巳",
+    "tianGan": "丁",
+    "diZhi": "巳",
+    "tianGanElement": "fire",
+    "diZhiElement": "fire",
+    "mainElement": "fire",
+    "yinYang": "yin"
+  },
+  {
+    "id": 55,
+    "name": "戊午",
+    "tianGan": "戊",
+    "diZhi": "午",
+    "tianGanElement": "earth",
+    "diZhiElement": "fire",
+    "mainElement": "earth",
+    "yinYang": "yang"
+  },
+  {
+    "id": 56,
+    "name": "己未",
+    "tianGan": "己",
+    "diZhi": "未",
+    "tianGanElement": "earth",
+    "diZhiElement": "earth",
+    "mainElement": "earth",
+    "yinYang": "yin"
+  },
+  {
+    "id": 57,
+    "name": "庚申",
+    "tianGan": "庚",
+    "diZhi": "申",
+    "tianGanElement": "metal",
+    "diZhiElement": "metal",
+    "mainElement": "metal",
+    "yinYang": "yang"
+  },
+  {
+    "id": 58,
+    "name": "辛酉",
+    "tianGan": "辛",
+    "diZhi": "酉",
+    "tianGanElement": "metal",
+    "diZhiElement": "metal",
+    "mainElement": "metal",
+    "yinYang": "yin"
+  },
+  {
+    "id": 59,
+    "name": "壬戌",
+    "tianGan": "壬",
+    "diZhi": "戌",
+    "tianGanElement": "water",
+    "diZhiElement": "earth",
+    "mainElement": "water",
+    "yinYang": "yang"
+  },
+  {
+    "id": 60,
+    "name": "癸亥",
+    "tianGan": "癸",
+    "diZhi": "亥",
+    "tianGanElement": "water",
+    "diZhiElement": "water",
+    "mainElement": "water",
+    "yinYang": "yin"
+  }
+]
