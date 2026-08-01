@@ -17,8 +17,8 @@ export class CardDataBank {
 
       console.log(`[CardDataBank] 已加载 ${this.cards.size} 张卡牌`);
     } catch (error) {
-      console.error('[CardDataBank] 加载卡牌数据失败:', error);
-      // 使用默认数据
+      // 测试环境（Node.js）下 fetch 相对 URL 会失败，属于正常现象；
+      // 使用默认数据可保证 60 张甲子循环卡牌完整可用。
       this.loadDefaultCards();
     }
   }
@@ -38,7 +38,7 @@ export class CardDataBank {
     return this.cards.size;
   }
 
-  /** 加载默认卡牌数据（当 JSON 加载失败时使用） */
+  /** 加载默认卡牌数据（当 JSON 加载失败时使用）：生成正确的 60 张甲子循环 */
   private loadDefaultCards(): void {
     const tianGan = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
     const diZhi = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
@@ -60,22 +60,24 @@ export class CardDataBank {
       '戌': Element.EARTH, '亥': Element.WATER,
     };
 
-    let id = 1;
-    for (const tg of tianGan) {
-      for (const dz of diZhi) {
-        const cardData: JiaziCardData = {
-          id,
-          name: `${tg}${dz}`,
-          tianGan: tg,
-          diZhi: dz,
-          tianGanElement: tianGanElementMap[tg],
-          diZhiElement: diZhiElementMap[dz],
-          mainElement: tianGanElementMap[tg],
-          yinYang: id % 2 === 0 ? YinYang.YIN : YinYang.YANG,
-        };
-        this.cards.set(id, new JiaziCard(cardData));
-        id++;
-      }
+    let tgIdx = 0;
+    let dzIdx = 0;
+    for (let id = 1; id <= 60; id++) {
+      const tg = tianGan[tgIdx];
+      const dz = diZhi[dzIdx];
+      const cardData: JiaziCardData = {
+        id,
+        name: `${tg}${dz}`,
+        tianGan: tg,
+        diZhi: dz,
+        tianGanElement: tianGanElementMap[tg],
+        diZhiElement: diZhiElementMap[dz],
+        mainElement: tianGanElementMap[tg],
+        yinYang: id % 2 === 0 ? YinYang.YIN : YinYang.YANG,
+      };
+      this.cards.set(id, new JiaziCard(cardData));
+      tgIdx = (tgIdx + 1) % tianGan.length;
+      dzIdx = (dzIdx + 1) % diZhi.length;
     }
 
     console.log(`[CardDataBank] 已加载 ${this.cards.size} 张默认卡牌`);

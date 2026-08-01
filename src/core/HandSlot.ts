@@ -4,14 +4,16 @@ import { JiaziCard } from './JiaziCard';
 export class HandSlot {
   readonly card: JiaziCard;
   readonly buyScore: number;
+  readonly useLeverage: boolean;
   readonly leverage: number;
   readonly buyRound: number;
   readonly lockedQi: number;
   holdEarnings: number;
 
-  constructor(card: JiaziCard, buyScore: number, leverage: number, buyRound: number, lockedQi: number) {
+  constructor(card: JiaziCard, buyScore: number, useLeverage: boolean, leverage: number, buyRound: number, lockedQi: number) {
     this.card = card;
     this.buyScore = buyScore;
+    this.useLeverage = useLeverage;
     this.leverage = leverage;
     this.buyRound = buyRound;
     this.lockedQi = lockedQi;

@@ -1,5 +1,12 @@
 export { TurnManager } from './TurnManager';
-export type { GameState, ActionType, SettlementDetail, MarginCallDetail } from './TurnManager';
+export type {
+  GameState,
+  ActionType,
+  SettlementDetail,
+  MarginCallDetail,
+  SettlementPreview,
+  SettlementPreviewAction,
+} from './TurnManager';
 
 export { SeasonCycle } from './SeasonCycle';
 export type { Season } from './SeasonCycle';
@@ -15,3 +22,9 @@ export { JiaziCard, Element, YinYang } from './JiaziCard';
 export type { JiaziCardData } from './JiaziCard';
 
 export { HandSlot } from './HandSlot';
+
+export { DEFAULT_BALANCE_CONFIG, CANDIDATE_BALANCE_CONFIG } from './BalanceConfig';
+export type { BalanceConfig, LeverageTable } from './BalanceConfig';
+
+export { MathRandomSource, SeededRandomSource } from './RandomSource';
+export type { RandomSource } from './RandomSource';

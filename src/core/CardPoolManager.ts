@@ -1,10 +1,12 @@
 import { JiaziCard } from './JiaziCard';
+import { MathRandomSource, RandomSource } from './RandomSource';
 
 /**
  * 牌池管理器
  * 
  * 维护游戏中的共享卡牌堆（Deck）以及每回合刷新到公共展示区域供买入的选择卡牌。
  * 遵循游戏设计中关于每回合从牌堆随机抽取 2 张并在决策后未买入卡牌回洗归还牌堆的规则。
+ * 随机源可注入（测试/模拟器用固定 seed），默认 Math.random。
  * 
  * @see {@link design/gdd/system-card-pool.md} 牌池系统设计文档
  */
@@ -13,10 +15,12 @@ export class CardPoolManager {
 
   private deck: JiaziCard[];
   private publicCards: JiaziCard[];
+  private readonly random: RandomSource;
 
-  constructor() {
+  constructor(random?: RandomSource) {
     this.deck = [];
     this.publicCards = [];
+    this.random = random ?? new MathRandomSource();
   }
 
   /**
@@ -52,7 +56,7 @@ export class CardPoolManager {
    */
   private shuffleDeck(): void {
     for (let i = this.deck.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = this.random.int(0, i + 1);
       [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
     }
   }
@@ -91,7 +95,8 @@ export class CardPoolManager {
    */
   returnCards(cards: JiaziCard[]): void {
     for (const card of cards) {
-      const insertIndex = Math.floor(Math.random() * this.deck.length);
+      // 插入范围 [0, deck.length]（含末尾位置），避免末尾位置概率偏低
+      const insertIndex = this.random.int(0, this.deck.length + 1);
       this.deck.splice(insertIndex, 0, card);
     }
   }

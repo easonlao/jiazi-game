@@ -62,17 +62,18 @@ export class HandManager {
    * 买入一张卡牌并放置在第一个空插槽中
    * @param card 卡牌数据对象
    * @param buyScore 购买时当季该卡牌的分数
+   * @param useLeverage 是否使用杠杆
    * @param leverage 购买时设置的杠杆倍数
    * @param buyRound 购买时的游戏大回合数
    * @returns 成功放置的插槽索引 (0-2)；若满仓失败则返回 -1
    */
-  buy(card: JiaziCard, buyScore: number, leverage: number, buyRound: number, lockedQi: number): number {
+  buy(card: JiaziCard, buyScore: number, useLeverage: boolean, leverage: number, buyRound: number, lockedQi: number): number {
     if (!this.canBuy()) return -1;
 
     const emptySlotIndex = this.hand.findIndex(slot => slot === null);
     if (emptySlotIndex === -1) return -1;
 
-    this.hand[emptySlotIndex] = new HandSlot(card, buyScore, leverage, buyRound, lockedQi);
+    this.hand[emptySlotIndex] = new HandSlot(card, buyScore, useLeverage, leverage, buyRound, lockedQi);
     return emptySlotIndex;
   }
 

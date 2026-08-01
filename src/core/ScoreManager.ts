@@ -2,13 +2,13 @@
  * 计分管理器
  * 
  * 记录玩家的总得分，并提供持仓收益和卖出收益的详细构成统计。
- * 遵循游戏设计文档中关于持仓系数（1.2x）、卖出基础分（8）和差价倍数（4x）的计算规范。
+ * 遵循当前规则：持仓系数为 1.2x，卖出没有基础分，只结算评分差价的 4 倍。
  * 
  * @see {@link design/gdd/system-scoring.md} 计分系统设计文档
  */
 export class ScoreManager {
   private static readonly HOLD_BONUS = 1.2;
-  private static readonly SELL_BASE = 8;
+  private static readonly SELL_BASE = 0;
   private static readonly SPREAD_MULTIPLIER = 4;
 
   private score: number;
@@ -78,7 +78,7 @@ export class ScoreManager {
   /**
    * 计算卡牌卖出时的得分收益
    * 
-   * 计算公式: (SELL_BASE(8) + (卖出时评分 - 买入时评分) * SPREAD_MULTIPLIER(4)) * 杠杆倍数
+   * 计算公式: (卖出时评分 - 买入时评分) * SPREAD_MULTIPLIER(4) * 杠杆倍数
    * 
    * @param currentScore 卖出当季卡牌的评分
    * @param buyScore 购买时记录的卡牌评分
@@ -109,11 +109,12 @@ export class ScoreManager {
 
   /**
    * 应用爆仓强平扣分惩罚
-   * @param penaltyAmount 扣分额度
+   * @param penaltyAmount 扣分额度（由调用方计算：杠杆 × |爆仓时卡牌评分| × 6）
+   *
+   * 注意：不扣减 totalSellEarnings，因为惩罚不是卖出交易，不应当混淆统计口径。
    */
-  applyMarginCallPenalty(penaltyAmount: number = 35): void {
+  applyMarginCallPenalty(penaltyAmount: number): void {
     this.score = Math.max(0, this.score - penaltyAmount);
-    this.totalSellEarnings -= penaltyAmount;
   }
 
   /**

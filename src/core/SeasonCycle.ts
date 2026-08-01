@@ -2,11 +2,14 @@
 /** 季节类型 */
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 
+import { MathRandomSource, RandomSource } from './RandomSource';
+
 /**
  * 季节循环管理器
  * 
  * 负责游戏中四季（春、夏、秋、冬）的推进和交替管理。
  * 每个季节的长度在初始化时随机生成（3-12回合），总和确保覆盖 60 个回合。
+ * 随机源可注入（测试/模拟器用固定 seed），默认 Math.random。
  * 
  * @see {@link design/gdd/system-season.md} 季节系统设计文档
  */
@@ -16,28 +19,50 @@ export class SeasonCycle {
   private currentSeasonIndex: number = 0;
   private currentRoundInSeason: number = 1;
   private totalRounds: number = 60;
+  private readonly random: RandomSource;
 
-  constructor() {
+  constructor(random?: RandomSource) {
+    this.random = random ?? new MathRandomSource();
     this.generateSeasonLengths();
   }
 
   /**
-   * 生成随机季节长度，确保总和 >= totalRounds
+   * 生成随机季节长度：每段严格 3-12，总和恰好 totalRounds(60)。
+   * 算法：段数 n ∈ [5, 20]（3n ≤ 60 ≤ 12n），先每段铺 3，再从未满（<12）段中
+   * 随机选择 +1 分摊剩余，保证每次必成功分配，无需 guard 兜底。
    */
   private generateSeasonLengths(): void {
-    this.seasonLengths = [];
-    let remaining = this.totalRounds;
+    const n = this.random.int(5, 21); // [5, 20]
+    const lengths = new Array<number>(n).fill(3);
+    let remaining = this.totalRounds - 3 * n;
+
+    // 未满段索引池：只从中选，杜绝指向已满段的无效尝试
+    const underfull: number[] = [];
+    for (let i = 0; i < n; i++) underfull.push(i);
 
     while (remaining > 0) {
-      for (const _ of this.seasonOrder) {
-        if (remaining <= 0) break;
-        const length = Math.min(remaining, Math.floor(Math.random() * 10) + 3); // 3-12
-        this.seasonLengths.push(length);
-        remaining -= length;
+      const pick = this.random.int(0, underfull.length);
+      const idx = underfull[pick];
+      lengths[idx]++;
+      remaining--;
+      if (lengths[idx] >= 12) {
+        underfull.splice(pick, 1);
       }
     }
+    this.seasonLengths = lengths;
 
     console.log('[SeasonCycle] 季节长度:', this.seasonLengths);
+  }
+
+  /**
+   * 获取下一回合结算时会处于的季节（用于跨季预览）
+   * 若当前是季末，返回下一季节；否则返回当前季节。
+   */
+  getNextSeason(): Season {
+    if (this.isSeasonEnd()) {
+      return this.seasonOrder[(this.currentSeasonIndex + 1) % 4];
+    }
+    return this.seasonOrder[this.currentSeasonIndex % 4];
   }
 
   /**
@@ -82,6 +107,11 @@ export class SeasonCycle {
    */
   getCurrentRoundInSeason(): number {
     return this.currentRoundInSeason;
+  }
+
+  /** 获取下一回合结算所在季节的季内回合数；换季后的第一回合为 1。 */
+  getNextRoundInSeason(): number {
+    return this.isSeasonEnd() ? 1 : this.currentRoundInSeason + 1;
   }
 
   /**

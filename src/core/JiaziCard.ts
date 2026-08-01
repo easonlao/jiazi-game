@@ -84,7 +84,7 @@ export class JiaziCard {
     const branchScore = this.scoreHiddenStemsInSeason(seasonElement);
     const relationScore = this.scoreStemBranchRelation();
 
-    return this.roundScore(stemScore * 0.6 + branchScore * 0.3 + relationScore * 0.1);
+    return this.roundScore(stemScore * 0.5 + branchScore * 0.3 + relationScore * 0.2);
   }
 
   private isSeason(season: string): season is Season {
@@ -104,21 +104,57 @@ export class JiaziCard {
   }
 
   private scoreElementInSeason(element: Element, seasonElement: Element): number {
-    if (element === Element.EARTH) return 1.2;
-    if (element === seasonElement) return 4;
-    if (this.generates(seasonElement, element)) return 2;
-    if (this.generates(element, seasonElement)) return 1.5;
-    if (this.overcomes(seasonElement, element)) return -3;
-    if (this.overcomes(element, seasonElement)) return 0.5;
-    return 0;
+    // 土牌永远稳定
+    if (element === Element.EARTH) return 1.0;
+
+    // 当季：+4
+    if (element === seasonElement) return 4.0;
+
+    // 分组：木火组 / 金水组
+    const woodFireGroup = [Element.WOOD, Element.FIRE];
+    const metalWaterGroup = [Element.METAL, Element.WATER];
+
+    // 同组：+2
+    if (woodFireGroup.includes(element) && woodFireGroup.includes(seasonElement)) return 2.0;
+    if (metalWaterGroup.includes(element) && metalWaterGroup.includes(seasonElement)) return 2.0;
+
+    // 对立：-4（木↔金，火↔水）
+    const oppositePairs = [[Element.WOOD, Element.METAL], [Element.FIRE, Element.WATER]];
+    for (const [a, b] of oppositePairs) {
+      if ((element === a && seasonElement === b) || (element === b && seasonElement === a)) {
+        return -4.0;
+      }
+    }
+
+    // 跨组：-2
+    return -2.0;
   }
 
   private scoreStemBranchRelation(): number {
     if (this.tianGanElement === this.diZhiElement) return 2;
-    if (this.generates(this.diZhiElement, this.tianGanElement)) return 2;
-    if (this.generates(this.tianGanElement, this.diZhiElement)) return 1;
-    if (this.overcomes(this.diZhiElement, this.tianGanElement)) return -2;
-    if (this.overcomes(this.tianGanElement, this.diZhiElement)) return 0.5;
+
+    // 分组：木火组 / 金水组
+    const woodFireGroup = [Element.WOOD, Element.FIRE];
+    const metalWaterGroup = [Element.METAL, Element.WATER];
+
+    const tgInWoodFire = woodFireGroup.includes(this.tianGanElement);
+    const dzInWoodFire = woodFireGroup.includes(this.diZhiElement);
+    const tgInMetalWater = metalWaterGroup.includes(this.tianGanElement);
+    const dzInMetalWater = metalWaterGroup.includes(this.diZhiElement);
+
+    // 同组：+1.5
+    if ((tgInWoodFire && dzInWoodFire) || (tgInMetalWater && dzInMetalWater)) return 1.5;
+
+    // 对立：-2（木↔金，火↔水）
+    const oppositePairs = [[Element.WOOD, Element.METAL], [Element.FIRE, Element.WATER]];
+    for (const [a, b] of oppositePairs) {
+      if ((this.tianGanElement === a && this.diZhiElement === b) ||
+          (this.tianGanElement === b && this.diZhiElement === a)) {
+        return -2.0;
+      }
+    }
+
+    // 跨组：0
     return 0;
   }
 
@@ -190,30 +226,6 @@ export class JiaziCard {
     };
 
     return stemElementMap[stem] ?? Element.EARTH;
-  }
-
-  /** 判断是否相生 (source 生 target) */
-  private generates(source: Element, target: Element): boolean {
-    const shengMap: Record<Element, Element> = {
-      [Element.WOOD]: Element.FIRE,
-      [Element.FIRE]: Element.EARTH,
-      [Element.EARTH]: Element.METAL,
-      [Element.METAL]: Element.WATER,
-      [Element.WATER]: Element.WOOD,
-    };
-    return shengMap[source] === target;
-  }
-
-  /** 判断是否相克 (source 克 target) */
-  private overcomes(source: Element, target: Element): boolean {
-    const keMap: Record<Element, Element> = {
-      [Element.WOOD]: Element.EARTH,
-      [Element.FIRE]: Element.METAL,
-      [Element.EARTH]: Element.WATER,
-      [Element.METAL]: Element.WOOD,
-      [Element.WATER]: Element.FIRE,
-    };
-    return keMap[source] === target;
   }
 
   private roundScore(score: number): number {

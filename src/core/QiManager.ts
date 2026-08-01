@@ -2,31 +2,22 @@
  * 气资源管理器
  * 
  * 管理玩家在游戏中的“气”资源，包括气的当前值、上限、消耗计算、自然回复及等待加成。
- * 符合游戏设计文档中关于气上限（80）、初始气（50）以及动作消耗的相关规范。
+ * 数值参数全部来自注入的 BalanceConfig（唯一参数来源）。
  * 
  * @see {@link design/gdd/system-qi-resource.md} 气资源设计文档
  */
-export class QiManager {
-  private static readonly MAX_QI = 80;
-  private static readonly INITIAL_QI = 50;
-  private static readonly BASE_RECOVERY = 7;
-  private static readonly WAIT_BONUS = 10;
-  private static readonly SELL_COST = 4;
-  private static readonly SELL_RECOVER = 0;
-  private static readonly BASE_BUY_COST = 11;
-  private static readonly BUY_COST_FACTOR = 0.05;
-  private static readonly LQC = 14;
+import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig';
 
-  private static readonly BUY_ENTRY_FEE = 2;
-  private static readonly FORCED_LIQUIDATION_QI_RETURN_FACTOR = 0.5;
-  private static readonly FORCED_LIQUIDATION_SCORE_MULTIPLIER = 0.8;
+export class QiManager {
+  private readonly cfg: BalanceConfig;
 
   private qi: number;
   private maxQi: number;
 
-  constructor(initialQi?: number) {
-    this.maxQi = QiManager.MAX_QI;
-    this.qi = initialQi !== undefined ? initialQi : QiManager.INITIAL_QI;
+  constructor(initialQi?: number, config?: BalanceConfig) {
+    this.cfg = config ?? DEFAULT_BALANCE_CONFIG;
+    this.maxQi = this.cfg.maxQi;
+    this.qi = initialQi !== undefined ? initialQi : this.cfg.initialQi;
     if (initialQi !== undefined) {
       this.qi = Math.max(0, Math.min(this.maxQi, initialQi));
     }
@@ -43,10 +34,10 @@ export class QiManager {
   /**
    * 强制设定当前的气值（多用于加载游戏存档还原状态）
    * @param value 气值
+   * @param _totalLockedQi 已废弃：qi 是总气，lockedQi 不应影响 qi 的存储上限
    */
-  setQi(value: number, totalLockedQi: number = 0): void {
-    const currentMax = this.maxQi - totalLockedQi;
-    this.qi = Math.max(0, Math.min(currentMax, value));
+  setQi(value: number, _totalLockedQi: number = 0): void {
+    this.qi = Math.max(0, Math.min(this.maxQi, value));
   }
 
   /**
@@ -71,10 +62,10 @@ export class QiManager {
   /**
    * 恢复指定额度的气，且不会超过最大气上限限制
    * @param amount 恢复额度
+   * @param _totalLockedQi 已废弃：qi 是总气，lockedQi 不应影响回气上限
    */
-  recover(amount: number, totalLockedQi: number = 0): void {
-    const currentMax = this.maxQi - totalLockedQi;
-    this.qi = Math.min(currentMax, this.qi + amount);
+  recover(amount: number, _totalLockedQi: number = 0): void {
+    this.qi = Math.min(this.maxQi, this.qi + amount);
   }
 
   /**
@@ -96,31 +87,11 @@ export class QiManager {
    * @returns 消耗的气量值
    */
   calculateBuyCost(cardScore: number, useLeverage: boolean = false): number {
-    let cost = QiManager.BASE_BUY_COST * (1 + QiManager.BUY_COST_FACTOR * cardScore);
+    let cost = this.cfg.baseBuyCost * (1 + this.cfg.buyCostFactor * cardScore);
     if (useLeverage) {
-      cost += QiManager.LQC; // 杠杆额外消耗 LQC
+      cost += this.cfg.lqc; // 杠杆额外消耗 LQC
     }
     return Math.ceil(cost);
-  }
-
-  /** 应用自然回复 */
-  applyNaturalRecovery(): void {
-    this.recover(QiManager.BASE_RECOVERY);
-  }
-
-  /** 应用卖出即时回复 */
-  applySellRecovery(): void {
-    this.recover(QiManager.SELL_RECOVER);
-  }
-
-  /** 应用等待额外回复 */
-  applyWaitRecovery(): void {
-    this.recover(QiManager.WAIT_BONUS);
-  }
-
-  /** 计算持仓气耗 */
-  calculateHoldCost(score: number, leverage: number): number {
-    return Math.max(0.5, 1.5 + 0.4 * score) * leverage;
   }
 
   /** 扣除气（支持负值以触发爆仓） */
@@ -138,23 +109,15 @@ export class QiManager {
    * @returns 卖出气耗 (当前设定为 4)
    */
   getSellCost(): number {
-    return QiManager.SELL_COST;
-  }
-
-  /**
-   * 获取卖出卡牌后即时回复的气值
-   * @returns 卖出回复气量 (当前设定为 0)
-   */
-  getSellRecover(): number {
-    return QiManager.SELL_RECOVER;
+    return this.cfg.sellCost;
   }
 
   /**
    * 获取每回合的基础自然回复气量
-   * @returns 基础回复气量 (默认为 7)
+   * @returns 基础回复气量 (默认为 10)
    */
   getBaseRecovery(): number {
-    return QiManager.BASE_RECOVERY;
+    return this.cfg.baseRecovery;
   }
 
   /**
@@ -162,7 +125,7 @@ export class QiManager {
    * @returns 等待额外回复气量 (默认为 10)
    */
   getWaitBonus(): number {
-    return QiManager.WAIT_BONUS;
+    return this.cfg.waitBonus;
   }
 
   /**
@@ -170,34 +133,34 @@ export class QiManager {
    * @returns 杠杆额外消耗
    */
   getLQC(): number {
-    return QiManager.LQC;
+    return this.cfg.lqc;
   }
 
   /**
    * 获取买入手续费
    */
   getBuyEntryFee(): number {
-    return QiManager.BUY_ENTRY_FEE;
+    return this.cfg.buyEntryFee;
   }
 
   /**
    * 获取强平保证金退还系数
    */
   getForcedLiquidationQiReturnFactor(): number {
-    return QiManager.FORCED_LIQUIDATION_QI_RETURN_FACTOR;
+    return this.cfg.forcedLiquidationQiReturnFactor;
   }
 
   /**
    * 获取强平得分折价系数
    */
   getForcedLiquidationScoreMultiplier(): number {
-    return QiManager.FORCED_LIQUIDATION_SCORE_MULTIPLIER;
+    return this.cfg.forcedLiquidationScoreMultiplier;
   }
 
   /**
    * 重置气资源管理器至初始状态
    */
   reset(): void {
-    this.qi = QiManager.INITIAL_QI;
+    this.qi = this.cfg.initialQi;
   }
 }
