@@ -58,7 +58,7 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
       `}
     >
       {/* 牌名本身编码干支五行：天干、地支各自按所属元素着色 */}
-      <div className="flex items-center justify-between gap-1 px-2.5 pt-2 pb-1">
+      <div className={`flex items-center justify-between gap-1 px-2.5 pt-2 pb-1 ${handInfo?.isLeverage ? 'pr-16' : ''}`}>
         <span className="text-lg leading-none font-bold truncate">
           <span className={elementScoreColor[card.tianGanElement]}>{card.tianGan}</span>
           <span className={elementScoreColor[card.diZhiElement]}>{card.diZhi}</span>
@@ -72,6 +72,16 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
             {yinYangChar} · {card.yinYang === YinYang.YANG ? '波动较大' : '较稳'}
           </span>
         </div>
+        {handInfo?.isLeverage && (
+          <span
+            className="absolute right-2 top-1.5 rounded bg-qi-critical/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-qi-critical"
+            title={`当前回合杠杆 ${handInfo.leverage.toFixed(1)}×${handInfo.settlementLeverage !== undefined ? `；下回合结算 ${handInfo.settlementLeverage.toFixed(1)}×` : ''}`}
+            aria-label={`当前回合杠杆 ${handInfo.leverage.toFixed(1)}×${handInfo.settlementLeverage !== undefined ? `，下回合结算 ${handInfo.settlementLeverage.toFixed(1)}×` : ''}`}
+          >
+            {handInfo.leverage.toFixed(1)}×
+            {handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage !== handInfo.leverage && `→${handInfo.settlementLeverage.toFixed(1)}×`}
+          </span>
+        )}
       </div>
 
       {/* 当前→下季价值：与结算预览使用同一评分口径 */}
@@ -85,18 +95,6 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
         </div>
         {handInfo && (
           <div className="flex flex-col items-end gap-1 text-[10px] leading-none text-ink-light">
-            {handInfo.isLeverage && (
-              <div className="flex flex-col items-end gap-0.5">
-                <span className="rounded bg-qi-critical/10 px-1.5 py-1 text-qi-critical font-bold tabular-nums">
-                  当前杠杆 ×{handInfo.leverage.toFixed(1)}
-                </span>
-                {handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage !== handInfo.leverage && (
-                  <span className="text-[9px] text-ink-light tabular-nums">
-                    下回合结算 ×{handInfo.settlementLeverage.toFixed(1)}
-                  </span>
-                )}
-              </div>
-            )}
             <span>买入评分 {handInfo.buyScore.toFixed(1)}</span>
           </div>
         )}
