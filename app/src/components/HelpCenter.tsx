@@ -34,7 +34,6 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
           <HelpSection title="一回合怎么做">先选公共牌，再选择买入、卖出或等待。买入会持有并每回合结算；卖出结算买入与当前评分的差价；等待不交易，但下回合额外回气。</HelpSection>
           <HelpSection title="怎么看卡牌">卡名中天干、地支的颜色代表各自五行。卡面评分显示“当季 → 下一季”；评分越高，持仓收益越高，同时气耗也越高。</HelpSection>
           <HelpSection title="杠杆与气">开启杠杆买入后，倍率按当季回合逐档提高，换季重置为 1.0×；倍率同时放大收益和持仓气耗。气归零时，杠杆仓位可能被强制卖出。</HelpSection>
-          <HelpSection title="记住这一点">卡面和气条显示当前回合已经生效的数值；点击操作后，结算确认页会展示下一回合实际会执行的收益、气耗和爆仓风险。</HelpSection>
         </div>
       </div>
     </div>

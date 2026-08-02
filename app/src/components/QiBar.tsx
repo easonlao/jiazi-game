@@ -90,7 +90,9 @@ export function QiBar() {
 
           {holdQiCost > 0 && Math.abs(holdQiCost - currentHoldQiCost) >= 0.05 && (
             <div className="text-[11px] text-ink-light">
-              下回合杠杆结算 <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 气</span>
+              下回合结算 <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 气</span>
+              <span className="mx-1 text-wood-light">·</span>
+              等待后 <b className="text-qi-full tabular-nums">{afterQi.toFixed(1)} 气</b>
             </div>
           )}
 
@@ -113,7 +115,7 @@ export function QiBar() {
                 点「等待」后预计 <b className="tabular-nums">{afterQi.toFixed(1)}</b> 气
               </div>
             </>
-          ) : (
+          ) : holdQiCost > 0 && Math.abs(holdQiCost - currentHoldQiCost) >= 0.05 ? null : (
             <div className="text-xs font-medium text-qi-full">
               点「等待」后剩余 <b className="tabular-nums">{afterQi.toFixed(1)}</b> 气
             </div>
