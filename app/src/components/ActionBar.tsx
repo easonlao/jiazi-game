@@ -8,7 +8,6 @@ export function ActionBar() {
   const leverageMultiplier = useGameStore((s) => s.leverageMultiplier);
   const currentRound = useGameStore((s) => s.currentRound);
   const roundInSeason = useGameStore((s) => s.roundInSeason);
-  const seasonLength = useGameStore((s) => s.seasonLength);
   const deckSize = useGameStore((s) => s.deckSize);
   const hand = useGameStore((s) => s.hand);
   const qi = useGameStore((s) => s.qi);
@@ -49,7 +48,7 @@ export function ActionBar() {
         <span className={useLeverage ? 'text-qi-critical font-bold' : ''}>
           杠杆 {effectiveMultiplier.toFixed(1)}x
           {useLeverage && leverageMultiplier > 1 && (
-            <span className="ml-1 opacity-70">(本季第{roundInSeason}/{seasonLength}回合)</span>
+            <span className="ml-1 opacity-70">(本季第{roundInSeason}回合)</span>
           )}
           {useLeverage && leverageMultiplier === 1 && (
             <span className="ml-1 opacity-70 text-qi-critical">(当前档位)</span>
