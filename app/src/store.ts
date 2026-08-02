@@ -336,6 +336,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const tm = get().turnManager;
     if (!tm) return;
     tm.reset();
+    // 先把引擎重置后的关键值写回 store，再清空 FX 事件。
+    // 否则随后的 _sync 会把"重置前的旧季节/分数/气量 vs 重置后的初始值"的差异
+    // 误判为新 FX 事件，导致新一局开局误播上一局的换季/得分/回气动画。
+    set({
+      season: tm.getCurrentSeason(),
+      currentRound: tm.getCurrentRound(),
+      roundInSeason: tm.getCurrentRoundInSeason(),
+      qi: tm.getQi(),
+      score: tm.getScore(),
+      marginCallCount: tm.getMarginCallCount(),
+    });
     set({
       selectedPublicCard: -1,
       selectedHandCard: -1,

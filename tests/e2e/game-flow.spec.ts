@@ -295,6 +295,21 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 验证回到开始界面
     const newStartBtn = page.getByText('开始游戏', { exact: true });
     await expect(newStartBtn).toBeVisible({ timeout: 10_000 });
+
+    // 重新开始新一局：公共牌池必须正常抽出卡牌
+    // （回归：牌池 reset 只清空不重建会导致新一局无牌可买，界面卡死在"春季"）
+    await newStartBtn.click();
+    await dismissSettlement(page);
+    await expect(page.getByText('公共牌池')).toBeVisible();
+    await expect(page.locator('.card-in').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('公共牌池为空', { exact: true })).toHaveCount(0);
+    // 新一局仍可正常买入
+    const newPublicCard = page.locator('h3:has-text("公共牌池")').locator('..').locator('..').locator('.card-in').first();
+    await newPublicCard.click();
+    await page.getByRole('button', { name: /买入/ }).click();
+    await confirmSettlementPreview(page);
+    await dismissSettlement(page);
+    await expect(page.getByText('买入成功', { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 
   test('多回合混合操作（3 轮买入+等待+卖出循环）', async ({ page }) => {

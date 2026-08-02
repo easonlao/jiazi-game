@@ -20,6 +20,9 @@ export function SeasonTransition() {
   const [animKey, setAnimKey] = useState(0);
   const [data, setData] = useState<{ from: string; to: string } | null>(null);
   const lastEventId = useRef(0);
+  // 隐藏定时器独立于 effect 生命周期：若挂在 effect cleanup 上，
+  // marginCallEvent 等无关依赖变化会清掉定时器且不再重新调度，动画将永久卡住。
+  const hideTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (seasonEvent && seasonEvent.id !== lastEventId.current) {
@@ -29,10 +32,18 @@ export function SeasonTransition() {
       setData({ from: seasonEvent.prevSeason, to: seasonEvent.season });
       setAnimKey((k) => k + 1);
       setVisible(true);
-      const t = setTimeout(() => setVisible(false), 2300);
-      return () => clearTimeout(t);
+      if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+      hideTimer.current = window.setTimeout(() => {
+        hideTimer.current = null;
+        setVisible(false);
+      }, 2300);
     }
   }, [seasonEvent, marginCallEvent]);
+
+  // 仅组件卸载时清理隐藏定时器
+  useEffect(() => () => {
+    if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+  }, []);
 
   if (!visible || !data) return null;
 

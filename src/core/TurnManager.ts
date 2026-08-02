@@ -543,6 +543,14 @@ export class TurnManager {
   private advanceTurn(): void {
     this.currentRound++;
 
+    // 游戏已到终局：直接结束，不再推进季节循环。
+    // 否则最后一回合恰逢季末时，终局推进会连带换季，前端 diff 会把这次
+    // "换季"误判为真正的季节切换，在游戏结束画面误播季节转换动画。
+    if (this.currentRound > TurnManager.TOTAL_ROUNDS) {
+      this.processRound();
+      return;
+    }
+
     // 季节检查
     const seasonChanged = this.seasonCycle.advance();
     if (seasonChanged) {
@@ -1058,7 +1066,10 @@ export class TurnManager {
     this.qiManager.reset();
     this.scoreManager.reset();
     this.handManager.reset();
-    this.cardPoolManager.reset();
+    // 重置牌池后必须重新装填全套卡牌：CardPoolManager.reset 只清空牌堆，
+    // 若不重建，新一局 startGame → drawCards 会从空牌堆抽不出公共牌，
+    // 导致界面只剩季节、无牌可买（游戏卡死）。
+    this.cardPoolManager.initialize(this.cardDataBank.getAllCards());
 
     this.currentRound = 1;
     this.state = 'init';
