@@ -18,38 +18,31 @@ html, body, #root {
   }
 }
 
-/* 短视口仍保持完整信息：评分趋势在卡片内收成一行；高视口保留纵向层级。 */
+/* 评分趋势：label 与分数值各占一行（竖排），分数完整显示不压缩。
+   高视口与低视口一致——不为了省高度把两者并排（并排会导致分数在窄屏截断）。 */
+.card-score-trend > div:first-child {
+  display: block;
+}
+
+.card-score-trend .card-score-label {
+  display: block;
+  white-space: nowrap;
+}
+
+/* 短视口收紧顶部面板纵向空间（与卡片无关） */
 @media (max-height: 760px) {
   .score-panel {
     padding-top: 0;
     padding-bottom: 0;
   }
-
-  .card-score-trend > div:first-child {
-    display: flex;
-    align-items: baseline;
-    gap: 0.25rem;
-    min-width: 0;
-  }
-
-  .card-score-trend .card-score-label {
-    display: inline;
-    white-space: nowrap;
-  }
-
-  .card-score-trend .card-score-value {
-    font-size: 1.125rem;
-    white-space: nowrap;
-  }
 }
 
-/* 窄屏（典型手机 ≤ 400px）兜底：进一步压小卡牌评分字号 + 取消卡片大间距。
-   解决 "+1.7 → -1.1" 等长串被 overflow-hidden 截断的问题。 */
+/* 窄屏（典型手机 ≤ 420px）兜底：评分值保持 text-base 可读字号且防换行，
+   牌面文字小一档避免 "+2.0分 -2.2气" 撑出，ActionBar 说明文字防溢出。 */
 @media (max-width: 420px) {
   .card-score-trend .card-score-value {
-    font-size: 0.95rem;
+    font-size: 1rem;
     white-space: nowrap;
-    letter-spacing: -0.01em;
   }
 
   /* 牌面文字再小一档，避免 "+2.0分 -2.2气" 撑出 */
