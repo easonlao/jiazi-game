@@ -55,7 +55,7 @@ export default function App() {
       <div
         ref={gameRef}
         data-game-shell
-        className="relative w-full h-full max-w-[428px] bg-parchment overflow-hidden flex flex-col font-sans shadow-2xl md:rounded-2xl md:my-6 md:h-[calc(100%-3rem)] md:max-h-[920px]"
+        className="relative w-full h-full max-w-[428px] bg-parchment overflow-y-auto overflow-x-hidden flex flex-col font-sans shadow-2xl md:rounded-2xl md:my-6 md:h-[calc(100%-3rem)] md:max-h-[920px] max-md:pb-[88px]"
       >
         {isLoading ? (
           <StartScreen
@@ -83,8 +83,8 @@ export default function App() {
 
             <HandCards />
 
-            {/* 弹性占位，把操作栏推到底部 */}
-            <div className="flex-1" />
+            {/* 弹性占位：内容不满屏时把操作栏推到底部；内容超出时收缩为 0（配合滚动） */}
+            <div className="flex-1 min-h-0" />
 
             <ActionBar />
             <SettlementPreviewModal />
