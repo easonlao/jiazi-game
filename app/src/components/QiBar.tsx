@@ -90,7 +90,7 @@ export function QiBar() {
 
           {holdQiCost > 0 && Math.abs(holdQiCost - currentHoldQiCost) >= 0.05 && (
             <div className="text-[11px] text-ink-light">
-              点「等待」后预计持仓 <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 气</span>
+              下回合杠杆结算 <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 气</span>
             </div>
           )}
 

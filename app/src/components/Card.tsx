@@ -64,16 +64,16 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
           <span className={elementScoreColor[card.diZhiElement]}>{card.diZhi}</span>
         </span>
         <div className="flex gap-1 shrink-0">
-          <span className={`text-[11px] px-1.5 py-0.5 rounded font-bold ${
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
             card.yinYang === YinYang.YANG
               ? 'bg-orange-500 text-white'
               : 'bg-violet-500 text-white'
-          }`}>
-            {yinYangChar} · {card.yinYang === YinYang.YANG ? '波动较大' : '较稳'}
+          }`} title={card.yinYang === YinYang.YANG ? '阳 · 波动较大' : '阴 · 较稳'}>
+            {yinYangChar}
           </span>
           {handInfo && (
             <span
-              className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${handInfo.isLeverage ? 'bg-qi-critical text-white' : 'bg-white/75 text-ink-light border border-wood-light'}`}
+              className={`text-[9px] px-1 py-0.5 rounded font-bold whitespace-nowrap ${handInfo.isLeverage ? 'bg-qi-critical text-white' : 'bg-white/75 text-ink-light border border-wood-light'}`}
               title={handInfo.isLeverage ? `当前杠杆 ${handInfo.leverage.toFixed(1)}×` : '未启用杠杆，按 1.0× 结算'}
               aria-label={handInfo.isLeverage
                 ? `杠杆 ${handInfo.leverage.toFixed(1)}×${handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage ? `，下一回合 ${handInfo.settlementLeverage.toFixed(1)}×` : ''}`
@@ -98,11 +98,6 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
             {nextScore !== undefined && <><span className="mx-1 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
           </span>
         </div>
-        {handInfo && (
-          <div className="flex flex-col items-end gap-1 text-[10px] leading-none text-ink-light">
-            <span>买入评分 {handInfo.buyScore.toFixed(1)}</span>
-          </div>
-        )}
       </div>
 
       {/* 公共牌：把买入与持有后的结果并排，方便做选择 */}
