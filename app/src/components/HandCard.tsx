@@ -46,7 +46,7 @@ export function HandCard({
         ? `杠杆 ${leverage.toFixed(1)}×${settlementLeverage !== undefined && settlementLeverage > leverage ? `，下一回合 ${settlementLeverage.toFixed(1)}×` : ''}`
         : '杠杆未启用，当前按 1.0× 结算'}
     >
-      杠杆 {leverage.toFixed(1)}×
+      杆 {leverage.toFixed(1)}×
       {isLeverage && settlementLeverage !== undefined && settlementLeverage > leverage && (
         <span className="ml-0.5">→{settlementLeverage.toFixed(1)}×</span>
       )}
@@ -62,17 +62,20 @@ export function HandCard({
       onClick={onClick}
       badges={leverageBadge}
     >
-      <div className="grid grid-cols-2 divide-x divide-wood-light/35 text-xs">
-        <div className="px-2.5 py-1">
-          <span className="block text-[10px] text-ink-light">每回合持有</span>
-          <span className="whitespace-nowrap font-bold tabular-nums">
-            <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分</span>
-            <span className="ml-1 text-qi-critical">-{holdQiCost.toFixed(1)}气</span>
+      {/* 上下堆叠：每行 label + 值独享整行，避免窄屏文字被截断。 */}
+      <div className="divide-y divide-wood-light/35 text-xs">
+        <div className="flex items-center justify-between gap-1 px-2 py-1">
+          <span className="text-[10px] text-ink-light shrink-0">每回合持有</span>
+          <span className="font-bold tabular-nums whitespace-nowrap">
+            <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
+              {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
+            </span>
+            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}气</span>
           </span>
         </div>
-        <div className="px-2.5 py-1">
-          <span className="block text-[10px] text-ink-light">累计持有</span>
-          <span className={holdEarnings >= 0 ? 'font-bold tabular-nums text-qi-full' : 'font-bold tabular-nums text-qi-critical'}>
+        <div className="flex items-center justify-between gap-1 px-2 py-1">
+          <span className="text-[10px] text-ink-light shrink-0">累计持有</span>
+          <span className={`font-bold tabular-nums whitespace-nowrap ${holdEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
             {holdEarnings >= 0 ? '+' : ''}{holdEarnings.toFixed(1)}分
           </span>
         </div>
@@ -80,10 +83,12 @@ export function HandCard({
 
       {/* 只有选中手牌时才展示卖出结果，保持日常牌面干净 */}
       {sellPreview && (
-        <div className="mx-2.5 mb-2 mt-1.5 flex items-center justify-between rounded bg-white/60 px-2 py-1 text-[10px]">
+        <div className="mx-2 mb-1.5 mt-1 flex items-center justify-between rounded bg-white/60 px-2 py-1 text-[10px]">
           <span className="text-ink-light">卖出结算</span>
-          <span className="font-bold tabular-nums">
-            <span className={sellPreview.score >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{sellPreview.score >= 0 ? '+' : ''}{sellPreview.score.toFixed(1)}分</span>
+          <span className="font-bold tabular-nums whitespace-nowrap">
+            <span className={sellPreview.score >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
+              {sellPreview.score >= 0 ? '+' : ''}{sellPreview.score.toFixed(1)}分
+            </span>
             <span className="ml-1.5 text-ink-light">气{sellPreview.qiChange >= 0 ? '+' : ''}{sellPreview.qiChange.toFixed(1)}</span>
           </span>
         </div>

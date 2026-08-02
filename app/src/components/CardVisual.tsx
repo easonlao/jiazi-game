@@ -54,7 +54,7 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
       `}
     >
       {/* 牌名本身编码干支五行：天干、地支各自按所属元素着色 */}
-      <div className="flex items-center justify-between gap-1 px-2.5 pt-1.5 pb-0.5">
+      <div className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-0.5">
         <span className="text-base leading-none font-bold truncate">
           <span className={elementScoreColor[card.tianGanElement]}>{card.tianGan}</span>
           <span className={elementScoreColor[card.diZhiElement]}>{card.diZhi}</span>
@@ -71,13 +71,14 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
         </div>
       </div>
 
-      {/* 当前→下季价值：与结算预览使用同一评分口径 */}
-      <div className="card-score-trend flex items-end justify-between gap-2 border-y border-wood-light/35 bg-white/35 px-2.5 py-1.5">
-        <div>
+      {/* 当前→下季价值：与结算预览使用同一评分口径。
+          字号按视口宽度响应：小屏 text-base、防换行；中屏 text-lg；宽屏 text-xl 强调。 */}
+      <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1">
+        <div className="min-w-0 flex-1">
           <span className="card-score-label block text-[10px] leading-none text-ink-light">当季 → 下季评分</span>
-          <span className={`card-score-value text-xl leading-tight font-bold tabular-nums ${elementScoreColor[card.mainElement]}`}>
+          <span className={`card-score-value text-base sm:text-lg md:text-xl leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
             {score >= 0 ? '+' : ''}{score.toFixed(1)}
-            {nextScore !== undefined && <><span className="mx-1 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
+            {nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
           </span>
         </div>
       </div>

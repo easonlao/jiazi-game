@@ -26,18 +26,22 @@ export function PublicCard({ card, score, nextScore, selected, onClick, buyCost,
       selected={selected}
       onClick={onClick}
     >
-      <div className="grid grid-cols-2 divide-x divide-wood-light/35 text-xs">
-        <div className="px-2.5 py-1">
-          <span className="block text-[10px] text-ink-light">买入成本</span>
-          <span className={`font-bold tabular-nums ${canAfford ? 'text-qi-full' : 'text-qi-critical'}`}>
+      {/* 上下堆叠而非两列：每行 label + 值，独享整行宽度，
+          避免 "每回合持有 +2.0分 -2.2气" 在窄屏被截断。 */}
+      <div className="divide-y divide-wood-light/35 text-xs">
+        <div className="flex items-center justify-between gap-1 px-2 py-1">
+          <span className="text-[10px] text-ink-light shrink-0">买入成本</span>
+          <span className={`font-bold tabular-nums whitespace-nowrap ${canAfford ? 'text-qi-full' : 'text-qi-critical'}`}>
             -{buyCost} 气
           </span>
         </div>
-        <div className="px-2.5 py-1">
-          <span className="block text-[10px] text-ink-light">每回合持有</span>
-          <span className="whitespace-nowrap font-bold tabular-nums">
-            <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分</span>
-            <span className="ml-1 text-qi-critical">-{holdQiCost.toFixed(1)}气</span>
+        <div className="flex items-center justify-between gap-1 px-2 py-1">
+          <span className="text-[10px] text-ink-light shrink-0">每回合持有</span>
+          <span className="font-bold tabular-nums whitespace-nowrap">
+            <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
+              {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
+            </span>
+            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}气</span>
           </span>
         </div>
       </div>

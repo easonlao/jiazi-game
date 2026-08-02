@@ -24,7 +24,7 @@ export function HandCards() {
           暂无持仓 · 买入公共牌开始游戏
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           {hand.map((slot: HandSlot | null, i: number) => {
             if (!slot) return <EmptySlot key={i} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
