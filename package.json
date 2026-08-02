@@ -1,6 +1,6 @@
 {
   "name": "jiazi-game",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "甲子纪 - 六十甲子回合制策略卡牌游戏",
   "type": "module",
   "scripts": {

@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-brightgreen" alt="Version 0.1.0">
+  <img src="https://img.shields.io/badge/version-0.2.0-brightgreen" alt="Version 0.2.0">
   <img src="https://img.shields.io/badge/platform-Web-orange" alt="Web Platform">
 </p>
 
