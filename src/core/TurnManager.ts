@@ -9,6 +9,7 @@ import { HandSlot } from './HandSlot';
 import { CardPoolManager } from './CardPoolManager';
 import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig';
 import { MathRandomSource, RandomSource } from './RandomSource';
+import { calculateHoldingSettlement } from './SettlementPreviewCalculator';
 
 /** 游戏主状态 */
 export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'game_over';
@@ -244,51 +245,37 @@ export class TurnManager {
   private settleHoldings(): void {
     const hand = this.handManager.getHand();
     const currentSeason = this.seasonCycle.getCurrentSeason();
-    let totalQiCost = 0;
-    let totalHoldEarnings = 0;
+    const activeSlots = hand.filter((slot): slot is HandSlot => slot !== null);
+    // 杠杆持仓：每回合结算时取当前季内回合的实际倍数（换季从 1.0x 重置）。
+    const currentLeverage = this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason());
+    const holdingSettlement = calculateHoldingSettlement(
+      activeSlots.map((slot) => ({
+        cardName: slot.card.name,
+        cardScore: this.getCardScore(slot.card, currentSeason),
+        useLeverage: slot.useLeverage,
+      })),
+      currentLeverage,
+      {
+        calculateHoldEarnings: (cardScore, leverage) => this.scoreManager.calculateHoldEarnings(cardScore, leverage),
+        calculateHoldQiCost: (cardScore, leverage) => this.leverageCalculator.calculateHoldQiCost(cardScore, leverage),
+      },
+    );
 
-    for (const slot of hand) {
-      if (slot) {
-        // 杠杆持仓：每回合结算时取当前季内回合的实际倍数（换季从 1.0x 重置）
-        const effectiveLeverage =
-          slot.useLeverage
-            ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
-            : 1;
-
-        // 计算持仓收益
-        const holdEarnings = this.scoreManager.calculateHoldEarnings(
-          this.getCardScore(slot.card, currentSeason),
-          effectiveLeverage
-        );
-        this.scoreManager.addHoldEarnings(holdEarnings);
-        slot.holdEarnings += holdEarnings;
-        totalHoldEarnings += holdEarnings;
-
-        // 累计持仓气耗
-        const qiCost = this.leverageCalculator.calculateHoldQiCost(
-          this.getCardScore(slot.card, currentSeason),
-          effectiveLeverage
-        );
-        totalQiCost += qiCost;
-
-        // 记录明细项
-        this.lastSettlementDetail?.holdItems.push({
-          cardName: slot.card.name,
-          earning: holdEarnings,
-          qiCost: qiCost,
-          leverage: effectiveLeverage
-        });
-      }
-    }
+    holdingSettlement.items.forEach((item, index) => {
+      const slot = activeSlots[index]!;
+      this.scoreManager.addHoldEarnings(item.earning);
+      slot.holdEarnings += item.earning;
+      this.lastSettlementDetail?.holdItems.push(item);
+    });
 
     if (this.lastSettlementDetail) {
-      this.lastSettlementDetail.holdEarnings = totalHoldEarnings;
-      this.lastSettlementDetail.holdQiCost = totalQiCost;
+      this.lastSettlementDetail.holdEarnings = holdingSettlement.holdEarnings;
+      this.lastSettlementDetail.holdQiCost = holdingSettlement.holdQiCost;
     }
 
     // 强制扣除全部持仓气耗（支持扣成负数或0）
-    if (totalQiCost > 0) {
-      this.qiManager.deductQi(totalQiCost);
+    if (holdingSettlement.holdQiCost > 0) {
+      this.qiManager.deductQi(holdingSettlement.holdQiCost);
     }
 
     // 结算完成后进行爆仓判定
@@ -1005,19 +992,19 @@ export class TurnManager {
     const nextSeason = this.getSettlementSeason();
     const nextRoundInSeason = this.seasonCycle.getNextRoundInSeason();
     const settlementLeverage = this.getSettlementLeverageMultiplier();
-    const holdItems = virtualHand.map((slot) => {
-      const leverage = slot.useLeverage ? settlementLeverage : 1;
-      const cardScore = this.getCardScore(slot.card, nextSeason);
-      return {
+    const holdingSettlement = calculateHoldingSettlement(
+      virtualHand.map((slot) => ({
         cardName: slot.card.name,
-        earning: this.scoreManager.calculateHoldEarnings(cardScore, leverage),
-        qiCost: this.leverageCalculator.calculateHoldQiCost(cardScore, leverage),
-        leverage,
-      };
-    });
-    const holdEarnings = holdItems.reduce((total, item) => total + item.earning, 0);
-    const holdQiCost = holdItems.reduce((total, item) => total + item.qiCost, 0);
-    const qiAfterHold = qiAfterAction - holdQiCost;
+        cardScore: this.getCardScore(slot.card, nextSeason),
+        useLeverage: slot.useLeverage,
+      })),
+      settlementLeverage,
+      {
+        calculateHoldEarnings: (cardScore, leverage) => this.scoreManager.calculateHoldEarnings(cardScore, leverage),
+        calculateHoldQiCost: (cardScore, leverage) => this.leverageCalculator.calculateHoldQiCost(cardScore, leverage),
+      },
+    );
+    const qiAfterHold = qiAfterAction - holdingSettlement.holdQiCost;
     const marginCallCandidateNames = virtualHand
       .filter((slot) => slot.useLeverage)
       .map((slot) => slot.card.name);
@@ -1039,9 +1026,9 @@ export class TurnManager {
       nextSeason,
       nextRoundInSeason,
       settlementLeverage,
-      holdItems,
-      holdEarnings,
-      holdQiCost,
+      holdItems: holdingSettlement.items,
+      holdEarnings: holdingSettlement.holdEarnings,
+      holdQiCost: holdingSettlement.holdQiCost,
       qiAfterHold,
       baseQiRecover,
       waitQiRecover,
@@ -1050,7 +1037,7 @@ export class TurnManager {
       finalQi: willMarginCall
         ? null
         : Math.min(this.qiManager.getMaxQi(), qiAfterHold + baseQiRecover + waitQiRecover),
-      finalScore: willMarginCall ? null : scoreAfterAction + holdEarnings,
+      finalScore: willMarginCall ? null : scoreAfterAction + holdingSettlement.holdEarnings,
     };
   }
 
