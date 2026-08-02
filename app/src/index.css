@@ -20,6 +20,11 @@ html, body, #root {
 
 /* 短视口仍保持完整信息：评分趋势在卡片内收成一行；高视口保留纵向层级。 */
 @media (max-height: 760px) {
+  .score-panel {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
   .card-score-trend > div:first-child {
     display: flex;
     align-items: baseline;

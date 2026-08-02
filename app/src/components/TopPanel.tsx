@@ -58,13 +58,13 @@ export function TopPanel() {
           <div className={`h-full rounded-full ${seasonTheme.bar}`} style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />
         </div>
       </div>
-      <div className="relative min-h-[34px] shrink-0 rounded-lg border border-gold/35 bg-gold/5 px-2 py-0.5 text-right">
+      <div className="score-panel relative shrink-0 rounded-lg border border-gold/35 bg-gold/5 px-2 py-1 text-right">
         <div className="text-xl font-black leading-6 text-gold tabular-nums">
           {score.toFixed(1)} 分
         </div>
         <div className="text-[10px] text-ink-light">累计总分</div>
         {scoreDelta && (
-          <div className={`absolute right-0 top-full whitespace-nowrap text-[11px] font-bold tabular-nums ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
+          <div className={`mt-0.5 whitespace-nowrap text-[10px] font-bold leading-none tabular-nums ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
             本回合 {scoreDelta.delta >= 0 ? '+' : ''}{scoreDelta.delta.toFixed(1)} 分
           </div>
         )}
