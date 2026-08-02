@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from './store';
 import { TopPanel } from './components/TopPanel';
 import { QiBar } from './components/QiBar';
@@ -9,6 +9,7 @@ import { SettlementPreviewModal } from './components/SettlementPreviewModal';
 import { SeasonTransition } from './components/SeasonTransition';
 import { MarginCallOverlay } from './components/MarginCallOverlay';
 import { Toast } from './components/Toast';
+import { HelpButton, HelpModal } from './components/HelpCenter';
 
 export default function App() {
   const gameState = useGameStore((s) => s.gameState);
@@ -18,6 +19,7 @@ export default function App() {
   const startGame = useGameStore((s) => s.startGame);
   const showToast = useGameStore((s) => s.showToast);
   const marginCallEvent = useGameStore((s) => s.marginCallEvent);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const gameRef = useRef<HTMLDivElement>(null);
   const lastMcId = useRef(0);
@@ -56,39 +58,32 @@ export default function App() {
     <div className="flex items-center justify-center w-full h-full bg-stone-800">
       <div
         ref={gameRef}
-        className="relative w-full h-full max-w-[428px] bg-parchment overflow-y-auto overflow-x-hidden flex flex-col font-sans shadow-2xl md:rounded-2xl md:my-6 md:h-[calc(100%-3rem)] md:max-h-[920px]"
+        data-game-shell
+        className="relative w-full h-full max-w-[428px] bg-parchment overflow-hidden flex flex-col font-sans shadow-2xl md:rounded-2xl md:my-6 md:h-[calc(100%-3rem)] md:max-h-[920px]"
       >
         {/* 加载中 / 开始 */}
         {isLoading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-5 p-6 overflow-y-auto">
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
             <div className="text-center shrink-0">
               <h1 className="text-3xl font-bold font-serif text-ink mb-1">甲子纪</h1>
               <p className="text-xs text-ink-light">Jiazi Chronicle · 六十甲子策略卡牌</p>
             </div>
 
-            {/* 玩法说明 */}
-            <div className="w-full max-w-xs text-xs text-ink-light space-y-2 bg-[#faf6ee] border border-wood-light rounded-lg p-3">
-              <h3 className="font-bold font-serif text-ink text-sm">玩法</h3>
-              <ul className="space-y-1.5">
-                <li>· 单局 <b className="text-ink">60 回合</b>，分 春夏秋冬 四季交替推进</li>
-                <li>· 每回合从公共牌池选牌 <b className="text-ink">买入</b>持仓，每回合结算收益</li>
-                <li>· 牌在对应季节评分更高：<b className="text-emerald-700">春木</b> <b className="text-red-600">夏火</b> <b className="text-slate-600">秋金</b> <b className="text-sky-600">冬水</b>；土牌四季稳定</li>
-                <li>· <b className="text-ink">卖出</b>结算差价收益；买入会暂时占用一部分气，卖出时先释放占用气，再扣退出费；<b className="text-ink">等待</b>放弃本轮但下回合多回气</li>
-              <li>· 勾选 <b className="text-qi-critical">杠杆</b> 建立杠杆仓位；倍率按季内档位随回合变化，换季重置为 1.0x，同时放大收益与持仓气耗</li>
-              </ul>
-              <p className="text-[10px] text-ink-light/70 mt-2">目标：60 回合结束时 <b className="text-gold">总分尽可能高</b>。无固定胜负线。</p>
-            </div>
+            <p className="text-center text-xs text-ink-light">60 回合 · 四季换季 · 交易持仓 · 总分越高越好</p>
 
             {turnManager ? (
-              <button
-                onClick={() => {
-                  startGame();
-                  showToast('游戏开始');
-                }}
-                className="px-8 py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 shrink-0"
-              >
-                开始游戏
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    startGame();
+                    showToast('游戏开始');
+                  }}
+                  className="px-8 py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 shrink-0"
+                >
+                  开始游戏
+                </button>
+                <HelpButton onClick={() => setHelpOpen(true)} />
+              </div>
             ) : (
               <div className="flex flex-col items-center gap-3">
                 <div className="w-8 h-8 border-2 border-wood-mid border-t-transparent rounded-full animate-spin" />
@@ -99,7 +94,7 @@ export default function App() {
         ) : (
           <>
             {/* 游戏 UI */}
-            <TopPanel />
+            <TopPanel onHelp={() => setHelpOpen(true)} />
             <QiBar />
             <PublicCards />
 
@@ -142,6 +137,7 @@ export default function App() {
             )}
           </>
         )}
+        <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>
     </div>
   );

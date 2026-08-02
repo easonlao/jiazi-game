@@ -7,8 +7,6 @@ export function ActionBar() {
   const useLeverage = useGameStore((s) => s.useLeverage);
   const leverageMultiplier = useGameStore((s) => s.leverageMultiplier);
   const currentRound = useGameStore((s) => s.currentRound);
-  const roundInSeason = useGameStore((s) => s.roundInSeason);
-  const deckSize = useGameStore((s) => s.deckSize);
   const hand = useGameStore((s) => s.hand);
   const qi = useGameStore((s) => s.qi);
   // 数值一律来自核心配置，禁止硬编码
@@ -37,30 +35,8 @@ export function ActionBar() {
   const buyCost = canBuy ? previewBuyCost(selectedPublicCard) : 0;
   const affordBuy = buyCost <= qi;
 
-  // 杠杆 ON 时的实际倍数；OFF 时固定 1.0
-  const effectiveMultiplier = useLeverage ? leverageMultiplier : 1.0;
-
   return (
-    <div className="flex flex-col gap-2 px-4 py-3 bg-[#faf6ee] border-t border-wood-light">
-      {/* 信息行 */}
-      <div className="flex items-center justify-between text-[11px] text-ink-light">
-        <span>牌堆剩余 {deckSize} 张</span>
-        <span className={useLeverage ? 'text-qi-critical font-bold' : ''}>
-          杠杆 {effectiveMultiplier.toFixed(1)}x
-          {useLeverage && leverageMultiplier > 1 && (
-            <span className="ml-1 opacity-70">(本季第{roundInSeason}回合)</span>
-          )}
-          {useLeverage && leverageMultiplier === 1 && (
-            <span className="ml-1 opacity-70 text-qi-critical">(当前档位)</span>
-          )}
-        </span>
-      </div>
-
-      {/* 杠杆只作可选参考，不构成强制门槛 */}
-      <div className="text-[11px] text-ink-light bg-white/70 px-2 py-1 rounded">
-        顺势参考：下季高于当季，且气量充足时再开。当前倍率会随季内回合变化，换季重置。
-      </div>
-
+    <div className="flex flex-col gap-1 px-4 py-1.5 bg-[#faf6ee] border-t border-wood-light">
       {/* 最后一回合提示：核心禁止买入，需明确告知 */}
       {isFinalRound && (
         <div className="text-[11px] text-qi-critical bg-qi-critical/10 px-2 py-1 rounded">

@@ -26,28 +26,15 @@ export function PublicCards() {
   }
 
   return (
-    <div className="flex flex-col gap-2 px-4 py-3">
+    <div className="flex flex-col gap-1 px-4 py-1.5">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold font-serif text-ink">公共牌池</h3>
         <span className="text-[11px] text-ink-light">
-          {gameState === 'player_action' ? '点击卡牌选择，再按下方按钮操作' : '等待回合...'}
+          {gameState === 'player_action' ? '选牌后操作' : '等待回合...'}
         </span>
       </div>
       {/* 当季提示 */}
       <SeasonHint season={useGameStore((s) => s.season)} />
-      {/* 元素图例 */}
-      <div className="flex gap-1.5 text-[10px] text-ink-light">
-        <span className="flex items-center gap-0.5"><span className="w-3 h-3 rounded border-2 border-emerald-400 bg-emerald-50/50" />木</span>
-        <span className="flex items-center gap-0.5"><span className="w-3 h-3 rounded border-2 border-red-400 bg-red-50/50" />火</span>
-        <span className="flex items-center gap-0.5"><span className="w-3 h-3 rounded border-2 border-amber-400 bg-amber-50/50" />土</span>
-        <span className="flex items-center gap-0.5"><span className="w-3 h-3 rounded border-2 border-slate-400 bg-slate-50/50" />金</span>
-        <span className="flex items-center gap-0.5"><span className="w-3 h-3 rounded border-2 border-sky-400 bg-sky-50/50" />水</span>
-        <span className="ml-1 text-ink-light/60">= 元素</span>
-      </div>
-      {/* 评分机制提示 */}
-      <p className="text-[10px] text-ink-light/70 leading-relaxed">
-        评分越高：每回合收益越高、持仓气耗也越高；杠杆放大收益与气耗，气 ≤ 0 会爆仓强平。
-      </p>
       <div className="grid grid-cols-2 gap-2">
         {publicCards.map((card: JiaziCard, i: number) => {
           // 需要从 store 实时读 cost（因为 useLeverage 可能变了）

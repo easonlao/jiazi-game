@@ -44,9 +44,9 @@ export function QiBar() {
     'bg-qi-full';
 
   return (
-    <div className="px-3 py-2.5 bg-[#faf6ee] border-b border-wood-light">
+    <div className="px-3 py-1.5 bg-[#faf6ee] border-b border-wood-light">
       {/* 当前气量 */}
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 relative">
           <span className="font-bold font-serif text-ink text-sm">气</span>
           <span
@@ -83,7 +83,7 @@ export function QiBar() {
           结束游戏，不再进行持仓结算
         </div>
       ) : currentHoldQiCost > 0 ? (
-        <div className="mb-1.5 space-y-0.5">
+        <div className="mb-1 space-y-0.5">
           <div className="text-xs text-ink-light">
             本回合持仓 <span className="text-qi-critical font-bold">-{currentHoldQiCost.toFixed(1)} 气</span>
           </div>
@@ -120,7 +120,7 @@ export function QiBar() {
           )}
         </div>
       ) : (
-        <div className="mb-1.5 text-xs text-ink-light">
+        <div className="mb-1 text-xs text-ink-light">
           暂无持仓 · 点「等待」后剩余 <b className="text-qi-full tabular-nums">{afterQi.toFixed(1)}</b> 气
         </div>
       )}

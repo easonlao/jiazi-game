@@ -48,10 +48,13 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 注意：初始化可能极快，「加载牌库中...」仅为瞬时状态，不强制断言
     const startBtn = page.getByText('开始游戏', { exact: true });
     await expect(startBtn).toBeVisible({ timeout: 15_000 });
-    // 验证玩法说明可见
-    await expect(page.getByText('玩法')).toBeVisible();
+    // 规则收进帮助入口，开始界面保持紧凑
+    await expect(page.getByRole('button', { name: '打开帮助' })).toBeVisible();
     await expect(page.getByText('甲子纪')).toBeVisible();
-    await expect(page.getByText(/买入会暂时占用一部分气/)).toBeVisible();
+    await page.getByRole('button', { name: '打开帮助' }).click();
+    await expect(page.getByRole('heading', { name: '玩法帮助' })).toBeVisible();
+    await expect(page.getByText(/买入会持有并每回合结算/)).toBeVisible();
+    await page.getByRole('button', { name: '关闭帮助' }).click();
   });
 
   test('点击开始游戏进入游戏界面', async ({ page }) => {
@@ -116,6 +119,29 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByText('买入成功', { exact: true })).toBeVisible({ timeout: 5_000 });
     const handSection = page.locator('h3:has-text("手牌")').locator('..').locator('..');
     await expect(handSection.getByLabel(/杠杆未启用/)).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('三张手牌时主界面不产生滚动', async ({ page }) => {
+    await startGameAndDismiss(page);
+    const publicCardContainer = page.locator('h3:has-text("公共牌池")').locator('..').locator('..');
+
+    for (let i = 0; i < 3; i++) {
+      await publicCardContainer.locator('.card-in').first().click();
+      await page.getByRole('button', { name: /买入/ }).click();
+      await confirmSettlementPreview(page);
+      await dismissSettlement(page);
+    }
+
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 428, height: 920 }]) {
+      await page.setViewportSize(viewport);
+      const metrics = await page.locator('[data-game-shell]').evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: getComputedStyle(element).overflowY,
+      }));
+      expect(metrics.overflowY).toBe('hidden');
+      expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight);
+    }
   });
 
   test('等待一回合', async ({ page }) => {

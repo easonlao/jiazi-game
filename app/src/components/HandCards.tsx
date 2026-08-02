@@ -14,7 +14,7 @@ export function HandCards() {
   const hasCards = hand.some((s) => s !== null);
 
   return (
-    <div className="flex flex-col gap-2 px-4 py-3">
+    <div className="flex flex-col gap-1 px-4 py-1.5">
       <h3 className="text-sm font-bold font-serif text-ink">
         手牌 {hand.filter((s) => s).length}/{hand.length}
       </h3>

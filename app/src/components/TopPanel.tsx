@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore, seasonDisplay } from '../store';
+import { HelpButton } from './HelpCenter';
 
 const roundAnimStyle = {
   animation: 'roundPop 0.4s ease-out',
@@ -11,7 +12,7 @@ interface Floater {
 }
 
 /** 分数变化飘字：金色 +X.X / 红色 -X.X */
-export function TopPanel() {
+export function TopPanel({ onHelp }: { onHelp: () => void }) {
   const season = useGameStore((s) => s.season);
   const currentRound = useGameStore((s) => s.currentRound);
   const totalRounds = useGameStore((s) => s.totalRounds);
@@ -34,7 +35,7 @@ export function TopPanel() {
   }, [scoreDelta]);
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#faf6ee] border-b border-wood-light">
+    <div className="flex items-center justify-between gap-3 px-4 py-2 bg-[#faf6ee] border-b border-wood-light">
       <div className="min-w-0">
         <h1 className="text-lg font-bold font-serif text-ink">
         {/* key 变化触发切换动画，提示回合推进 */}
@@ -46,22 +47,23 @@ export function TopPanel() {
           <span className="font-bold text-ink">第 {currentRound}/{totalRounds} 回合</span>
           <span>本季第 {roundInSeason} 回合</span>
         </div>
-        <div className="mt-1 h-1 w-32 overflow-hidden rounded-full bg-wood-light/50" aria-label={`游戏进度 ${currentRound}/${totalRounds}`}>
+        <div className="mt-0.5 h-1 w-32 overflow-hidden rounded-full bg-wood-light/50" aria-label={`游戏进度 ${currentRound}/${totalRounds}`}>
           <div className="h-full rounded-full bg-gold/80" style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />
         </div>
       </div>
-      <div className="relative shrink-0 text-right">
+      <div className="flex shrink-0 items-start gap-2">
+        <div className="relative min-h-[34px] text-right">
         <div className="text-base font-bold text-gold tabular-nums">
           {score.toFixed(1)} 分
         </div>
         <div className="text-[10px] text-ink-light">累计总分</div>
-        {scoreDelta && (
-          <div className={`text-[11px] font-bold tabular-nums ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
+          {scoreDelta && (
+            <div className={`absolute right-0 top-full whitespace-nowrap text-[11px] font-bold tabular-nums ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
             本回合 {scoreDelta.delta >= 0 ? '+' : ''}{scoreDelta.delta.toFixed(1)} 分
           </div>
         )}
-        {/* 分数飘字：多个同时出现时横向错开，避免叠字 */}
-        {floaters.map((f, idx) => (
+          {/* 分数飘字：多个同时出现时横向错开，避免叠字 */}
+          {floaters.map((f, idx) => (
           <span
             key={f.id}
             className={`float-up absolute right-0 top-full mt-0.5 text-sm font-bold pointer-events-none whitespace-nowrap ${
@@ -71,7 +73,9 @@ export function TopPanel() {
           >
             {f.delta >= 0 ? '+' : ''}{f.delta.toFixed(1)}
           </span>
-        ))}
+          ))}
+        </div>
+        <HelpButton onClick={onHelp} />
       </div>
     </div>
   );

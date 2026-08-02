@@ -58,8 +58,8 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
       `}
     >
       {/* 牌名本身编码干支五行：天干、地支各自按所属元素着色 */}
-      <div className="flex items-center justify-between gap-1 px-2.5 pt-2 pb-1">
-        <span className="text-lg leading-none font-bold truncate">
+      <div className="flex items-center justify-between gap-1 px-2.5 pt-1.5 pb-0.5">
+        <span className="text-base leading-none font-bold truncate">
           <span className={elementScoreColor[card.tianGanElement]}>{card.tianGan}</span>
           <span className={elementScoreColor[card.diZhiElement]}>{card.diZhi}</span>
         </span>
@@ -71,35 +71,29 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
           }`}>
             {yinYangChar} · {card.yinYang === YinYang.YANG ? '波动较大' : '较稳'}
           </span>
+          {handInfo && (
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${handInfo.isLeverage ? 'bg-qi-critical text-white' : 'bg-white/75 text-ink-light border border-wood-light'}`}
+              title={handInfo.isLeverage ? `当前杠杆 ${handInfo.leverage.toFixed(1)}×` : '未启用杠杆，按 1.0× 结算'}
+              aria-label={handInfo.isLeverage
+                ? `杠杆 ${handInfo.leverage.toFixed(1)}×${handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage ? `，下一回合 ${handInfo.settlementLeverage.toFixed(1)}×` : ''}`
+                : '杠杆未启用，当前按 1.0× 结算'}
+            >
+              杠杆 {handInfo.leverage.toFixed(1)}×
+              {handInfo.isLeverage && handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage && (
+                <span className="ml-0.5">→{handInfo.settlementLeverage.toFixed(1)}×</span>
+              )}
+            </span>
+          )}
         </div>
       </div>
 
-      {handInfo && (
-        <div
-          className={`px-2.5 pb-1 text-[10px] font-bold tabular-nums ${handInfo.isLeverage ? 'text-qi-critical' : 'text-ink-light'}`}
-          title={handInfo.isLeverage
-            ? `当前季杠杆 ${handInfo.leverage.toFixed(1)}×${handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage ? `；下一回合 ${handInfo.settlementLeverage.toFixed(1)}×` : ''}`
-            : '杠杆未启用'}
-          aria-label={handInfo.isLeverage
-            ? `杠杆 ${handInfo.leverage.toFixed(1)}×${handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage ? `，下一回合 ${handInfo.settlementLeverage.toFixed(1)}×` : ''}`
-            : '杠杆未启用'}
-        >
-          {handInfo.isLeverage ? (
-            <>
-              杠杆 {handInfo.leverage.toFixed(1)}×
-              {handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage && (
-                <span className="ml-1">→{handInfo.settlementLeverage.toFixed(1)}×</span>
-              )}
-            </>
-          ) : '杠杆未启用'}
-        </div>
-      )}
 
       {/* 当前→下季价值：与结算预览使用同一评分口径 */}
-      <div className="flex items-end justify-between gap-2 border-y border-wood-light/35 bg-white/35 px-2.5 py-1.5">
-        <div>
-          <span className="block text-[10px] leading-none text-ink-light">当季 → 下季评分</span>
-          <span className={`text-xl leading-tight font-bold tabular-nums ${elementScoreColor[card.mainElement]}`}>
+      <div className="flex items-baseline justify-between gap-2 border-y border-wood-light/35 bg-white/35 px-2.5 py-1">
+        <div className="flex min-w-0 items-baseline gap-1">
+          <span className="shrink-0 text-[10px] leading-none text-ink-light">当季→下季</span>
+          <span className={`text-lg leading-tight font-bold tabular-nums ${elementScoreColor[card.mainElement]}`}>
             {score >= 0 ? '+' : ''}{score.toFixed(1)}
             {nextScore !== undefined && <><span className="mx-1 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
           </span>
@@ -114,7 +108,7 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
       {/* 公共牌：把买入与持有后的结果并排，方便做选择 */}
       {!handInfo && (buyCost !== undefined || (holdEarning !== undefined && holdQiCost !== undefined)) && (
         <div className="grid grid-cols-2 divide-x divide-wood-light/35 text-xs">
-          <div className="px-2.5 py-1.5">
+          <div className="px-2.5 py-1">
             <span className="block text-[10px] text-ink-light">买入成本</span>
             {buyCost !== undefined && (
               <span className={`font-bold tabular-nums ${canAfford ? 'text-qi-full' : 'text-qi-critical'}`}>
@@ -122,7 +116,7 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
               </span>
             )}
           </div>
-          <div className="px-2.5 py-1.5">
+          <div className="px-2.5 py-1">
             <span className="block text-[10px] text-ink-light">每回合持有</span>
             {holdEarning !== undefined && holdQiCost !== undefined && (
               <span className="whitespace-nowrap font-bold tabular-nums">
@@ -137,7 +131,7 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
       {/* 手牌：持有结果与累计收益分栏，不再与买入参考值混排 */}
       {handInfo && (
         <div className="grid grid-cols-2 divide-x divide-wood-light/35 text-xs">
-          <div className="px-2.5 py-1.5">
+          <div className="px-2.5 py-1">
             <span className="block text-[10px] text-ink-light">每回合持有</span>
             {holdEarning !== undefined && holdQiCost !== undefined && (
               <span className="whitespace-nowrap font-bold tabular-nums">
@@ -146,7 +140,7 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
               </span>
             )}
           </div>
-          <div className="px-2.5 py-1.5">
+          <div className="px-2.5 py-1">
             <span className="block text-[10px] text-ink-light">累计持有</span>
             <span className={handInfo.holdEarnings >= 0 ? 'font-bold tabular-nums text-qi-full' : 'font-bold tabular-nums text-qi-critical'}>
               {handInfo.holdEarnings >= 0 ? '+' : ''}{handInfo.holdEarnings.toFixed(1)}分
