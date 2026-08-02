@@ -90,10 +90,10 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
 
 
       {/* 当前→下季价值：与结算预览使用同一评分口径 */}
-      <div className="flex items-baseline justify-between gap-2 border-y border-wood-light/35 bg-white/35 px-2.5 py-1">
-        <div className="flex min-w-0 items-baseline gap-1">
-          <span className="shrink-0 text-[10px] leading-none text-ink-light">当季→下季</span>
-          <span className={`text-lg leading-tight font-bold tabular-nums ${elementScoreColor[card.mainElement]}`}>
+      <div className="card-score-trend flex items-end justify-between gap-2 border-y border-wood-light/35 bg-white/35 px-2.5 py-1.5">
+        <div>
+          <span className="card-score-label block text-[10px] leading-none text-ink-light">当季 → 下季评分</span>
+          <span className={`card-score-value text-xl leading-tight font-bold tabular-nums ${elementScoreColor[card.mainElement]}`}>
             {score >= 0 ? '+' : ''}{score.toFixed(1)}
             {nextScore !== undefined && <><span className="mx-1 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
           </span>

@@ -1,8 +1,9 @@
 import { useGameStore } from '../store';
 import { Card } from './Card';
+import { HelpButton } from './HelpCenter';
 import type { JiaziCard } from '@core/JiaziCard';
 
-export function PublicCards() {
+export function PublicCards({ onHelp }: { onHelp: () => void }) {
   const publicCards = useGameStore((s) => s.publicCards);
   const selectedPublicCard = useGameStore((s) => s.selectedPublicCard);
   const selectPublicCard = useGameStore((s) => s.selectPublicCard);
@@ -29,9 +30,12 @@ export function PublicCards() {
     <div className="flex flex-col gap-1 px-4 py-1.5">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold font-serif text-ink">公共牌池</h3>
-        <span className="text-[11px] text-ink-light">
-          {gameState === 'player_action' ? '选牌后操作' : '等待回合...'}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-ink-light">
+            {gameState === 'player_action' ? '选牌后操作' : '等待回合...'}
+          </span>
+          <HelpButton onClick={onHelp} />
+        </div>
       </div>
       {/* 当季提示 */}
       <SeasonHint season={useGameStore((s) => s.season)} />

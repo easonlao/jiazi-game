@@ -48,13 +48,10 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 注意：初始化可能极快，「加载牌库中...」仅为瞬时状态，不强制断言
     const startBtn = page.getByText('开始游戏', { exact: true });
     await expect(startBtn).toBeVisible({ timeout: 15_000 });
-    // 规则收进帮助入口，开始界面保持紧凑
-    await expect(page.getByRole('button', { name: '打开帮助' })).toBeVisible();
+    // 首页保留一段简短规则，不需要额外打开帮助
     await expect(page.getByText('甲子纪')).toBeVisible();
-    await page.getByRole('button', { name: '打开帮助' }).click();
-    await expect(page.getByRole('heading', { name: '玩法帮助' })).toBeVisible();
-    await expect(page.getByText(/买入会持有并每回合结算/)).toBeVisible();
-    await page.getByRole('button', { name: '关闭帮助' }).click();
+    await expect(page.getByText('玩法', { exact: true })).toBeVisible();
+    await expect(page.getByText(/60 回合，春夏秋冬随机换季/)).toBeVisible();
   });
 
   test('点击开始游戏进入游戏界面', async ({ page }) => {
@@ -70,6 +67,10 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByRole('button', { name: /买入/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /卖出/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /等待/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: '打开帮助' })).toBeVisible();
+    await page.getByRole('button', { name: '打开帮助' }).click();
+    await expect(page.getByRole('heading', { name: '玩法帮助' })).toBeVisible();
+    await page.getByRole('button', { name: '关闭帮助' }).click();
   });
 
   test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {
