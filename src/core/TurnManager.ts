@@ -10,6 +10,7 @@ import { CardPoolManager } from './CardPoolManager';
 import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig';
 import { MathRandomSource, RandomSource } from './RandomSource';
 import { calculateHoldingSettlement } from './SettlementPreviewCalculator';
+import { GameSaveService, type GameSnapshot } from './GameSaveService';
 
 /** 游戏主状态 */
 export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'game_over';
@@ -139,6 +140,9 @@ export class TurnManager {
   private onTurnStart?: (round: number) => void;
   private onGameEnd?: (finalScore: number) => void;
 
+  // 存档服务（序列化与 LocalStorage 边界）
+  private readonly saveService: GameSaveService;
+
   constructor(config?: BalanceConfig, random?: RandomSource) {
     const balanceConfig = config ?? DEFAULT_BALANCE_CONFIG;
     const randomSource = random ?? new MathRandomSource();
@@ -164,6 +168,8 @@ export class TurnManager {
     this.totalSells = 0;
     this.totalWaits = 0;
     this.totalLeverageBuys = 0;
+
+    this.saveService = new GameSaveService();
   }
 
   /** 所有核心结算和预览共用的最终评分入口。 */
@@ -559,156 +565,131 @@ export class TurnManager {
   }
 
   /**
-   * 一键保存游戏状态至 LocalStorage
+   * 导出当前游戏状态为可序列化快照。
+   * GameSaveService 负责序列化与 LocalStorage 持久化。
+   */
+  exportSnapshot(): GameSnapshot {
+    return {
+      currentRound: this.currentRound,
+      state: this.state,
+      lastAction: this.lastAction,
+      qi: this.qiManager.getQi(),
+      score: this.scoreManager.getScore(),
+      totalHoldEarnings: this.scoreManager.getTotalHoldEarnings(),
+      totalSellEarnings: this.scoreManager.getTotalSellEarnings(),
+      totalBuys: this.totalBuys,
+      totalSells: this.totalSells,
+      totalWaits: this.totalWaits,
+      totalLeverageBuys: this.totalLeverageBuys,
+      season: {
+        index: this.seasonCycle.getCurrentSeasonIndex(),
+        roundInSeason: this.seasonCycle.getCurrentRoundInSeason(),
+        lengths: this.seasonCycle.getSeasonLengths()
+      },
+      hand: this.handManager.getHand().map(slot => slot ? {
+        cardId: slot.card.id,
+        buyScore: slot.buyScore,
+        useLeverage: slot.useLeverage,
+        leverage: slot.leverage,
+        buyRound: slot.buyRound,
+        lockedQi: slot.lockedQi,
+        holdEarnings: slot.holdEarnings
+      } : null),
+      pool: {
+        deckIds: this.cardPoolManager.getDeck().map(c => c.id),
+        publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
+      }
+    };
+  }
+
+  /**
+   * 从已校验的快照还原游戏内部状态。
+   * GameSaveService 已完成格式与坏档校验，本方法只负责状态还原。
+   */
+  importSnapshot(data: GameSnapshot): void {
+    // 1. 还原基础状态
+    this.currentRound = data.currentRound;
+    this.state = data.state as GameState;
+    this.lastAction = data.lastAction as ActionType | null;
+
+    // 2. 还原积分
+    this.scoreManager.setScore(data.score, data.totalHoldEarnings, data.totalSellEarnings);
+
+    // 还原统计数据
+    this.totalBuys = data.totalBuys !== undefined ? data.totalBuys : 0;
+    this.totalSells = data.totalSells !== undefined ? data.totalSells : 0;
+    this.totalWaits = data.totalWaits !== undefined ? data.totalWaits : 0;
+    this.totalLeverageBuys = data.totalLeverageBuys !== undefined ? data.totalLeverageBuys : 0;
+
+    // 3. 还原季节周期
+    this.seasonCycle.loadState(data.season.index, data.season.roundInSeason, data.season.lengths);
+
+    // 4. 还原手牌
+    const restoredHand = data.hand.map((slotData) => {
+      if (!slotData) return null;
+      const card = this.cardDataBank.getCard(slotData.cardId);
+      if (!card) throw new Error(`找不到 ID 为 ${slotData.cardId} 的卡牌`);
+      const lockedQi = slotData.lockedQi !== undefined ? slotData.lockedQi : Math.max(0, this.qiManager.calculateBuyCost(slotData.buyScore, slotData.useLeverage || slotData.leverage > 1) - this.qiManager.getBuyEntryFee());
+      const useLeverage = slotData.useLeverage !== undefined ? slotData.useLeverage : slotData.leverage > 1;
+      const slot = new HandSlot(card, slotData.buyScore, useLeverage, slotData.leverage, slotData.buyRound, lockedQi);
+      slot.holdEarnings = slotData.holdEarnings;
+      return slot;
+    });
+    this.handManager.loadHand(restoredHand);
+
+    // 5. 还原气值（基于最新手牌计算的 totalLockedQi）
+    this.qiManager.setQi(data.qi, this.getTotalLockedQi());
+
+    // 6. 还原公共牌池与牌堆
+    const restoredDeck = data.pool.deckIds.map((id: number) => {
+      const card = this.cardDataBank.getCard(id);
+      if (!card) throw new Error(`找不到 ID 为 ${id} 的卡牌`);
+      return card;
+    });
+    const restoredPublic = data.pool.publicIds.map((id: number) => {
+      const card = this.cardDataBank.getCard(id);
+      if (!card) throw new Error(`找不到 ID 为 ${id} 的卡牌`);
+      return card;
+    });
+    this.cardPoolManager.loadState(restoredDeck, restoredPublic);
+  }
+
+  /**
+   * 一键保存游戏状态至 LocalStorage（委托给 GameSaveService）
    * @returns 是否保存成功
    */
   saveGame(): boolean {
-    try {
-      const stateData = {
-        currentRound: this.currentRound,
-        state: this.state,
-        lastAction: this.lastAction,
-        qi: this.qiManager.getQi(),
-        score: this.scoreManager.getScore(),
-        totalHoldEarnings: this.scoreManager.getTotalHoldEarnings(),
-        totalSellEarnings: this.scoreManager.getTotalSellEarnings(),
-        totalBuys: this.totalBuys,
-        totalSells: this.totalSells,
-        totalWaits: this.totalWaits,
-        totalLeverageBuys: this.totalLeverageBuys,
-        season: {
-          index: this.seasonCycle.getCurrentSeasonIndex(),
-          roundInSeason: this.seasonCycle.getCurrentRoundInSeason(),
-          lengths: this.seasonCycle.getSeasonLengths()
-        },
-        hand: this.handManager.getHand().map(slot => slot ? {
-          cardId: slot.card.id,
-          buyScore: slot.buyScore,
-          useLeverage: slot.useLeverage,
-          leverage: slot.leverage,
-          buyRound: slot.buyRound,
-          lockedQi: slot.lockedQi,
-          holdEarnings: slot.holdEarnings
-        } : null),
-        pool: {
-          deckIds: this.cardPoolManager.getDeck().map(c => c.id),
-          publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
-        }
-      };
-      localStorage.setItem('jiazi_game_save', JSON.stringify(stateData));
-      console.log('[TurnManager] 存档成功');
-      return true;
-    } catch (e) {
-      console.error('[TurnManager] 存档失败:', e);
-      return false;
-    }
+    return this.saveService.save(() => this.exportSnapshot());
   }
 
   /**
-   * 从 LocalStorage 一键读取还原存档
+   * 从 LocalStorage 一键读取还原存档（委托给 GameSaveService）
    * @returns 是否读档成功
    */
   loadGame(): boolean {
-    try {
-      const raw = localStorage.getItem('jiazi_game_save');
-      if (!raw) {
-        console.log('[TurnManager] 找不到存档');
-        return false;
-      }
-      const data = JSON.parse(raw);
-
-      // 1. 基础字段验证，确保 qi 是有效数值
-      if (
-        data.currentRound === undefined ||
-        data.qi === undefined ||
-        typeof data.qi !== 'number' ||
-        isNaN(data.qi)
-      ) {
-        console.warn('[TurnManager] 存档数据格式不正确，qi 为无效数值');
-        this.clearSave();
-        return false;
-      }
-
-      // 2. 校验无效存档（Round 1 且无手牌且气 <= 0 视为无效坏档）
-      const isHandEmpty = !data.hand || data.hand.every((slot: any) => slot === null);
-      if (data.currentRound <= 1 && isHandEmpty && data.qi <= 0) {
-        console.warn('[TurnManager] 检测到 Round 1 的无效坏档');
-        this.clearSave();
-        return false;
-      }
-
-      // 3. 还原基础状态
-      this.currentRound = data.currentRound;
-      this.state = data.state;
-      this.lastAction = data.lastAction;
-
-      // 2. 还原积分
-      this.scoreManager.setScore(data.score, data.totalHoldEarnings, data.totalSellEarnings);
-
-      // 还原统计数据
-      this.totalBuys = data.totalBuys !== undefined ? data.totalBuys : 0;
-      this.totalSells = data.totalSells !== undefined ? data.totalSells : 0;
-      this.totalWaits = data.totalWaits !== undefined ? data.totalWaits : 0;
-      this.totalLeverageBuys = data.totalLeverageBuys !== undefined ? data.totalLeverageBuys : 0;
-
-      // 3. 还原季节周期
-      this.seasonCycle.loadState(data.season.index, data.season.roundInSeason, data.season.lengths);
-
-      // 4. 还原手牌
-      const restoredHand = data.hand.map((slotData: any) => {
-        if (!slotData) return null;
-        const card = this.cardDataBank.getCard(slotData.cardId);
-        if (!card) throw new Error(`找不到 ID 为 ${slotData.cardId} 的卡牌`);
-        const lockedQi = slotData.lockedQi !== undefined ? slotData.lockedQi : Math.max(0, this.qiManager.calculateBuyCost(slotData.buyScore, slotData.useLeverage || slotData.leverage > 1) - this.qiManager.getBuyEntryFee());
-        const useLeverage = slotData.useLeverage !== undefined ? slotData.useLeverage : slotData.leverage > 1;
-        const slot = new HandSlot(card, slotData.buyScore, useLeverage, slotData.leverage, slotData.buyRound, lockedQi);
-        slot.holdEarnings = slotData.holdEarnings;
-        return slot;
-      });
-      this.handManager.loadHand(restoredHand);
-
-      // 5. 还原气值（基于最新手牌计算的 totalLockedQi）
-      this.qiManager.setQi(data.qi, this.getTotalLockedQi());
-
-      // 5. 还原公共牌池与牌堆
-      const restoredDeck = data.pool.deckIds.map((id: number) => {
-        const card = this.cardDataBank.getCard(id);
-        if (!card) throw new Error(`找不到 ID 为 ${id} 的卡牌`);
-        return card;
-      });
-      const restoredPublic = data.pool.publicIds.map((id: number) => {
-        const card = this.cardDataBank.getCard(id);
-        if (!card) throw new Error(`找不到 ID 为 ${id} 的卡牌`);
-        return card;
-      });
-      this.cardPoolManager.loadState(restoredDeck, restoredPublic);
-
-      console.log('[TurnManager] 读档还原成功');
-      
-      // 成功读档后手动触发一次状态广播，让 UI 自动绘制更新
-      this.onStateChange?.(this.state);
-      this.onTurnStart?.(this.currentRound);
-      
-      return true;
-    } catch (e) {
-      console.error('[TurnManager] 读档失败:', e);
-      return false;
-    }
+    return this.saveService.load(
+      (data) => this.importSnapshot(data),
+      () => {
+        // 成功读档后手动触发一次状态广播，让 UI 自动绘制更新
+        this.onStateChange?.(this.state);
+        this.onTurnStart?.(this.currentRound);
+      },
+    );
   }
 
   /**
-   * 检查 LocalStorage 中是否已存在有游戏存档
+   * 检查 LocalStorage 中是否已存在有游戏存档（委托给 GameSaveService）
    * @returns 是否有存档
    */
   hasSave(): boolean {
-    return localStorage.getItem('jiazi_game_save') !== null;
+    return this.saveService.hasSave();
   }
 
   /**
-   * 清除已有的存档
+   * 清除已有的存档（委托给 GameSaveService）
    */
   clearSave(): void {
-    localStorage.removeItem('jiazi_game_save');
+    this.saveService.clear();
   }
 
   /** 设置状态变化回调 */

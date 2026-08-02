@@ -7,29 +7,16 @@ import {
   type SettlementPreviewAction,
   type JiaziCard,
 } from '@core/index';
+import {
+  diffFxEvents,
+  type FxSeasonEvent,
+  type FxMarginCallEvent,
+  type FxDeltaEvent,
+  type FxRoundEvent,
+} from './store/fx-events';
 
-/** FX 事件类型：id 递增，组件监听 id 变化触发动画 */
-export interface FxSeasonEvent {
-  id: number;
-  season: string;
-  prevSeason: string;
-}
-export interface FxMarginCallEvent {
-  id: number;
-  detail: SettlementDetail;
-}
-export interface FxDeltaEvent {
-  id: number;
-  delta: number;
-}
-export interface FxRoundEvent {
-  id: number;
-  round: number;
-  season: string;
-}
-
-/** FX 事件全局自增序列 */
-let fxSeq = 0;
+// 重新导出 FX 事件类型，供 hooks/useScreenShake 等消费者使用
+export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent };
 
 /** 防止 React StrictMode 下 initialize 被重复调用 */
 let _initializing = false;
@@ -185,11 +172,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // 先捕获旧值，用于 FX 事件 diff
     const prev = get();
-    const prevSeason = prev.season;
-    const prevRound = prev.currentRound;
-    const prevQi = prev.qi;
-    const prevScore = prev.score;
-    const prevMarginCallCount = prev.marginCallCount;
 
     const nextSeason = tm.getCurrentSeason();
     const nextRound = tm.getCurrentRound();
@@ -223,29 +205,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
       marginCallCount: nextMarginCallCount,
     });
 
-    // ── FX 事件 diff：值真正变化才产出新事件 ──
-    const patch: Partial<GameStore> = {};
-    // 回合推进（第 1 回合开局不播过渡动画）
-    if (nextRound !== prevRound && nextRound > 1) {
-      patch.roundEvent = { id: ++fxSeq, round: nextRound, season: nextSeason };
-    }
-    // 季节切换
-    if (nextSeason !== prevSeason) {
-      patch.seasonEvent = { id: ++fxSeq, season: nextSeason, prevSeason };
-    }
-    // 爆仓强平（计数增加且结算详情确认触发）
-    if (nextMarginCallCount > prevMarginCallCount && settlement?.marginCallTriggered) {
-      patch.marginCallEvent = { id: ++fxSeq, detail: settlement };
-    }
-    // 每次进入新回合都记录本回合分数增量；即使为 0，也清除上一回合的旧提示。
-    if (nextRound !== prevRound || nextScore !== prevScore) {
-      patch.scoreDelta = { id: ++fxSeq, delta: nextScore - prevScore };
-    }
-    // 气量变化
-    if (nextQi !== prevQi) {
-      patch.qiDelta = { id: ++fxSeq, delta: nextQi - prevQi };
-    }
-    if (Object.keys(patch).length > 0) set(patch);
+    // ── FX 事件 diff：委托给 fx-events 模块 ──
+    const fxPatch = diffFxEvents(
+      {
+        season: prev.season,
+        round: prev.currentRound,
+        qi: prev.qi,
+        score: prev.score,
+        marginCallCount: prev.marginCallCount,
+      },
+      {
+        season: nextSeason,
+        round: nextRound,
+        qi: nextQi,
+        score: nextScore,
+        marginCallCount: nextMarginCallCount,
+        settlement,
+      },
+    );
+    if (Object.keys(fxPatch).length > 0) set(fxPatch);
   },
 
   async initialize() {
@@ -310,6 +288,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       qiDelta: null,
       roundEvent: null,
     });
+    // 同步 TurnManager 重置后的状态（gameState → 'init'），让 UI 回到开始界面
+    get()._sync();
   },
 
   selectPublicCard(index) {

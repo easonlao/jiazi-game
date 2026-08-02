@@ -1,5 +1,5 @@
 import { useGameStore } from '../store';
-import { Card } from './Card';
+import { PublicCard } from './PublicCard';
 import { HelpButton } from './HelpCenter';
 import type { JiaziCard } from '@core/JiaziCard';
 
@@ -87,7 +87,7 @@ function PublicCardItem({
   const holdQiCost = previewHoldQiCost(index);
 
   return (
-    <Card
+    <PublicCard
       card={card}
       score={score}
       nextScore={nextScore}

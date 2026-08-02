@@ -1,5 +1,5 @@
 import { useGameStore } from '../store';
-import { Card } from './Card';
+import { HandCard } from './HandCard';
 import type { HandSlot } from '@core/HandSlot';
 
 export function HandCards() {
@@ -29,7 +29,6 @@ export function HandCards() {
             if (!slot) return <EmptySlot key={i} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getFollowingSeason()) : score;
-            const profit = slot.getProfit(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
             // 持仓卡面展示当前回合已经生效的收益/气耗；下一回合倍率只通过杠杆箭头提示，
@@ -46,7 +45,7 @@ export function HandCards() {
             const holdQiCost = turnManager ? turnManager.previewHoldQiCost(score, currentLeverage) : 0;
 
             return (
-              <Card
+              <HandCard
                 key={i}
                 card={slot.card}
                 score={score}
@@ -57,17 +56,13 @@ export function HandCards() {
                     ? () => selectHandCard(i)
                     : undefined
                 }
-                handInfo={{
-                  buyScore: slot.buyScore,
-                  leverage: currentLeverage,
-                  settlementLeverage,
-                  isLeverage: slot.useLeverage,
-                  holdEarnings: slot.holdEarnings,
-                  profit,
-                }}
-                sellPreview={sellPreview}
+                leverage={currentLeverage}
+                settlementLeverage={settlementLeverage}
+                isLeverage={slot.useLeverage}
+                holdEarnings={slot.holdEarnings}
                 holdEarning={holdEarning}
                 holdQiCost={holdQiCost}
+                sellPreview={sellPreview}
               />
             );
           })}

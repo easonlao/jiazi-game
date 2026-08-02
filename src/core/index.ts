@@ -28,3 +28,6 @@ export type { BalanceConfig, LeverageTable } from './BalanceConfig';
 
 export { MathRandomSource, SeededRandomSource } from './RandomSource';
 export type { RandomSource } from './RandomSource';
+
+export { GameSaveService } from './GameSaveService';
+export type { GameSnapshot, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
