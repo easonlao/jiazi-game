@@ -32,7 +32,7 @@ export interface BalanceConfig {
   lqc: number;
   /** 买入入场手续费，lockedQi = buyCost - buyEntryFee */
   buyEntryFee: number;
-  /** 强平保证金退还系数 */
+  /** 强平占用气退还系数 */
   forcedLiquidationQiReturnFactor: number;
   /** 强平得分折价系数（正收益打折） */
   forcedLiquidationScoreMultiplier: number;

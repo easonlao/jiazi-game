@@ -91,7 +91,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     // 验证卡牌已被卖出
     expect(tm.getHand()[0]).toBeNull();
     // 最终气值：强平后无低保缓冲，自然回复 10 气，等待额外回复 10 气
-    // 强平退回保证金 = buyCost * 0.5（约 7 气），qi = -4.1 + 7 + 10 + 10 ≈ 22.9
+    // 强平退回占用气 = buyCost * 0.5（约 7 气），qi = -4.1 + 7 + 10 + 10 ≈ 22.9
     // 实际值取决于 lockedQi 计算，但应大于 0
     expect(tm.getQi()).toBeGreaterThan(0);
   });
@@ -350,7 +350,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     // 卡牌被强平
     expect(tm.getHand()[0]).toBeNull();
 
-    // 强平后退回部分保证金，再进行自然/等待回气。
+    // 强平后退回部分占用气，再进行自然/等待回气。
     // 无低保缓冲，自然回复 10 + 等待回复 10 = 20
     // 最终气约 20.9
     expect(tm.getQi()).toBeGreaterThan(10);  // 有回复但无低保

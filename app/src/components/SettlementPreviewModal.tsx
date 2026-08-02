@@ -85,7 +85,7 @@ export function SettlementPreviewModal() {
               <div className="flex justify-between border-t border-wood-light/35 pt-1.5">
                 <span>气量流转</span>
                 <span className="font-bold tabular-nums">
-                  <span className="text-qi-full">保证金 +{preview.saleBreakdown.lockedQiReturn.toFixed(1)}</span>
+                  <span className="text-qi-full">释放占用气 +{preview.saleBreakdown.lockedQiReturn.toFixed(1)}</span>
                   <span className="mx-1 text-wood-light">·</span>
                   <span className="text-qi-critical">退出费 -{preview.saleBreakdown.exitCost.toFixed(1)}</span>
                   <span className={preview.saleBreakdown.qiChange >= 0 ? 'ml-1 text-qi-full' : 'ml-1 text-qi-critical'}>

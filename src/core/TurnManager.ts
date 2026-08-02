@@ -53,7 +53,7 @@ export interface SalePreviewBreakdown {
   currentScore: number;
   leverage: number;
   scoreChange: number;
-  /** 保证金返还受气上限截断后的实际到账量。 */
+  /** 占用气返还受气上限截断后的实际到账量。 */
   lockedQiReturn: number;
   exitCost: number;
   qiChange: number;
@@ -364,7 +364,7 @@ export class TurnManager {
       );
       this.scoreManager.applyMarginCallPenalty(marginCallPenalty);
 
-      // 强平返还部分保证金
+      // 强平返还部分占用气
       const forcedLiquidationQiReturn = Math.floor(slot.lockedQi * this.qiManager.getForcedLiquidationQiReturnFactor());
       this.qiManager.recover(forcedLiquidationQiReturn, newTotalLocked);
 
@@ -376,7 +376,7 @@ export class TurnManager {
         reason: `气量归零强制平仓，杠杆 ${effectiveLeverage}x，卡牌评分 ${currentScore}，扣分 ${marginCallPenalty}（杠杆 × |评分| × ${penaltyCoeff}）`
       });
 
-      console.log(`[TurnManager] 爆仓强平：移除卡牌 ${slot.card.name}，结算收益 ${finalSellScore} 分，扣分 ${marginCallPenalty}（${effectiveLeverage} × |${currentScore}| × ${penaltyCoeff}），退回保证金 ${forcedLiquidationQiReturn}`);
+      console.log(`[TurnManager] 爆仓强平：移除卡牌 ${slot.card.name}，结算收益 ${finalSellScore} 分，扣分 ${marginCallPenalty}（${effectiveLeverage} × |${currentScore}| × ${penaltyCoeff}），退回占用气 ${forcedLiquidationQiReturn}`);
 
       // 强平成功后退出，不再提供低保缓冲——玩家必须自行管理气量，感受到爆仓的持续压力
       break;
@@ -415,7 +415,7 @@ export class TurnManager {
     if (this.state !== 'player_action') return false;
 
     // 最后一回合禁止买入：买入后会推进到第 61 回合直接结束，
-    // 所买卡牌没有下一回合结算、也没有保证金返还，是纯损失操作。
+    // 所买卡牌没有下一回合结算、也没有占用气返还，是纯损失操作。
     if (this.currentRound >= TurnManager.TOTAL_ROUNDS) {
       console.log('[TurnManager] 最后一回合无法买入');
       return false;
@@ -500,18 +500,18 @@ export class TurnManager {
     // 注意：卖出时会先释放 lockedQi 再扣 sellCost，所以可用气 = 当前气 + 该卡牌的 lockedQi
     const availableQi = this.qiManager.getQi() + (slot ? slot.lockedQi : 0);
     if (availableQi < sellCost) {
-      console.log('[TurnManager] 气不足以支付卖出成本（含锁定保证金）');
+      console.log('[TurnManager] 气不足以支付卖出成本（含锁定占用气）');
       return false;
     }
 
-    // 移除卡牌以释放对应的保证金锁定额，并将卡牌回洗入牌池
+    // 移除卡牌以释放对应的占用气锁定额，并将卡牌回洗入牌池
     const soldSlot = this.handManager.sell(slotIndex);
     if (soldSlot) {
       this.cardPoolManager.returnCards([soldSlot.card]);
     }
     const newTotalLocked = this.getTotalLockedQi();
 
-    // 归还全部保证金（lockedQi 是从总气里扣掉的子集，卖牌时退回）
+    // 归还全部占用气（lockedQi 是从总气里扣掉的子集，卖牌时退回）
     if (soldSlot) {
       this.qiManager.recover(soldSlot.lockedQi);
     }
@@ -881,7 +881,7 @@ export class TurnManager {
     return this.scoreManager.calculateSellScore(currentScore, slot.buyScore, effectiveLeverage);
   }
 
-  /** 预览卖出实际气变化：返还保证金先封顶，再扣卖出费。 */
+  /** 预览卖出实际气变化：释放占用气先封顶，再扣卖出费。 */
   previewSellQiChange(slot: HandSlot): number {
     const currentQi = this.qiManager.getQi();
     return Math.min(this.qiManager.getMaxQi(), currentQi + slot.lockedQi)

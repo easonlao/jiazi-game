@@ -51,6 +51,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 验证玩法说明可见
     await expect(page.getByText('玩法')).toBeVisible();
     await expect(page.getByText('甲子纪')).toBeVisible();
+    await expect(page.getByText(/买入会暂时占用一部分气/)).toBeVisible();
   });
 
   test('点击开始游戏进入游戏界面', async ({ page }) => {
@@ -173,6 +174,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
     await expect(page.getByText('实现价差', { exact: true })).toBeVisible();
     await expect(page.getByText('气量流转', { exact: true })).toBeVisible();
+    await expect(page.getByText(/释放占用气 \+/)).toBeVisible();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
 

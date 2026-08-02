@@ -144,7 +144,7 @@ export class QiManager {
   }
 
   /**
-   * 获取强平保证金退还系数
+   * 获取强平占用气退还系数
    */
   getForcedLiquidationQiReturnFactor(): number {
     return this.cfg.forcedLiquidationQiReturnFactor;

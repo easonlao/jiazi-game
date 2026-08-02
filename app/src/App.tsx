@@ -73,7 +73,7 @@ export default function App() {
                 <li>· 单局 <b className="text-ink">60 回合</b>，分 春夏秋冬 四季交替推进</li>
                 <li>· 每回合从公共牌池选牌 <b className="text-ink">买入</b>持仓，每回合结算收益</li>
                 <li>· 牌在对应季节评分更高：<b className="text-emerald-700">春木</b> <b className="text-red-600">夏火</b> <b className="text-slate-600">秋金</b> <b className="text-sky-600">冬水</b>；土牌四季稳定</li>
-                <li>· <b className="text-ink">卖出</b>结算差价收益，释放保证金；<b className="text-ink">等待</b>放弃本轮但下回合多回气</li>
+                <li>· <b className="text-ink">卖出</b>结算差价收益；买入会暂时占用一部分气，卖出时先释放占用气，再扣退出费；<b className="text-ink">等待</b>放弃本轮但下回合多回气</li>
               <li>· 勾选 <b className="text-qi-critical">杠杆</b> 建立杠杆仓位；倍率按季内档位随回合变化，换季重置为 1.0x，同时放大收益与持仓气耗</li>
               </ul>
               <p className="text-[10px] text-ink-light/70 mt-2">目标：60 回合结束时 <b className="text-gold">总分尽可能高</b>。无固定胜负线。</p>
