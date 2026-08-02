@@ -62,7 +62,6 @@ export function TopPanel() {
         <div className="text-xl font-black leading-6 text-gold tabular-nums">
           {score.toFixed(1)} 分
         </div>
-        <div className="text-[10px] text-ink-light">累计总分</div>
         {scoreDelta && (
           <div className={`mt-0.5 whitespace-nowrap text-[10px] font-bold leading-none tabular-nums ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
             本回合 {scoreDelta.delta >= 0 ? '+' : ''}{scoreDelta.delta.toFixed(1)} 分
