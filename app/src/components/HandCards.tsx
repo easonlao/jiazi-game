@@ -61,6 +61,7 @@ export function HandCards() {
                 handInfo={{
                   buyScore: slot.buyScore,
                   leverage: currentLeverage,
+                  settlementLeverage,
                   isLeverage: slot.useLeverage,
                   holdEarnings: slot.holdEarnings,
                   profit,

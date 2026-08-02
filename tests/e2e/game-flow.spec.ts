@@ -113,6 +113,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 验证 Toast 出现「买入成功」
     await expect(page.getByText('买入成功', { exact: true })).toBeVisible({ timeout: 5_000 });
+    const handSection = page.locator('h3:has-text("手牌")').locator('..').locator('..');
+    await expect(handSection.getByLabel(/杠杆未启用/)).toBeVisible({ timeout: 5_000 });
   });
 
   test('等待一回合', async ({ page }) => {
@@ -213,13 +215,15 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 买入于第 1 回合，推进到季内第 3 回合后，手牌应显示已升至 2.0x。
     // 季节最短为 3 回合，因此这里不会跨季，且不依赖随机季长。
+    const handSection = page.locator('h3:has-text("手牌")').locator('..').locator('..');
+    await expect(handSection.getByLabel(/杠杆 1\.0×，下一回合 2\.0×/)).toBeVisible({ timeout: 5_000 });
+    await expect(handSection.getByText('杠杆 1.0×→2.0×', { exact: true })).toBeVisible();
     for (let round = 2; round <= 2; round++) {
       await page.getByRole('button', { name: /等待/ }).click();
       await dismissSettlement(page);
     }
-    const handSection = page.locator('h3:has-text("手牌")').locator('..').locator('..');
-    await expect(handSection.getByLabel(/本季杠杆 2\.0×/)).toBeVisible({ timeout: 10_000 });
-    await expect(handSection.getByText(/下回合结算|→[0-9]+\.[0-9]×/)).toHaveCount(0);
+    await expect(handSection.getByLabel(/杠杆 2\.0×/)).toBeVisible({ timeout: 10_000 });
+    await expect(handSection.getByText(/下回合结算/)).toHaveCount(0);
   });
 
   test('游戏结束与重新开始', async ({ page }) => {

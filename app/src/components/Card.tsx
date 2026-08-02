@@ -25,6 +25,7 @@ interface CardProps {
   handInfo?: {
     buyScore: number;
     leverage: number;
+    settlementLeverage?: number;
     isLeverage: boolean;
     holdEarnings: number;
     profit: number;
@@ -73,13 +74,24 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
         </div>
       </div>
 
-      {handInfo?.isLeverage && (
+      {handInfo && (
         <div
-          className="px-2.5 pb-1 text-[10px] font-bold tabular-nums text-qi-critical"
-          title={`当前季杠杆 ${handInfo.leverage.toFixed(1)}×`}
-          aria-label={`本季杠杆 ${handInfo.leverage.toFixed(1)}×`}
+          className={`px-2.5 pb-1 text-[10px] font-bold tabular-nums ${handInfo.isLeverage ? 'text-qi-critical' : 'text-ink-light'}`}
+          title={handInfo.isLeverage
+            ? `当前季杠杆 ${handInfo.leverage.toFixed(1)}×${handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage ? `；下一回合 ${handInfo.settlementLeverage.toFixed(1)}×` : ''}`
+            : '杠杆未启用'}
+          aria-label={handInfo.isLeverage
+            ? `杠杆 ${handInfo.leverage.toFixed(1)}×${handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage ? `，下一回合 ${handInfo.settlementLeverage.toFixed(1)}×` : ''}`
+            : '杠杆未启用'}
         >
-          本季杠杆 {handInfo.leverage.toFixed(1)}×
+          {handInfo.isLeverage ? (
+            <>
+              杠杆 {handInfo.leverage.toFixed(1)}×
+              {handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage > handInfo.leverage && (
+                <span className="ml-1">→{handInfo.settlementLeverage.toFixed(1)}×</span>
+              )}
+            </>
+          ) : '杠杆未启用'}
         </div>
       )}
 
