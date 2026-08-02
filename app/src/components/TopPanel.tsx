@@ -16,7 +16,6 @@ export function TopPanel() {
   const currentRound = useGameStore((s) => s.currentRound);
   const totalRounds = useGameStore((s) => s.totalRounds);
   const roundInSeason = useGameStore((s) => s.roundInSeason);
-  const seasonLength = useGameStore((s) => s.seasonLength);
   const score = useGameStore((s) => s.score);
   const scoreDelta = useGameStore((s) => s.scoreDelta);
 
@@ -45,7 +44,7 @@ export function TopPanel() {
         </h1>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-light tabular-nums">
           <span className="font-bold text-ink">第 {currentRound}/{totalRounds} 回合</span>
-          <span>季内 {roundInSeason}/{seasonLength}</span>
+          <span>本季第 {roundInSeason} 回合</span>
         </div>
         <div className="mt-1 h-1 w-32 overflow-hidden rounded-full bg-wood-light/50" aria-label={`游戏进度 ${currentRound}/${totalRounds}`}>
           <div className="h-full rounded-full bg-gold/80" style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />
