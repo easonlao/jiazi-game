@@ -29,14 +29,11 @@ export function HandCards() {
             if (!slot) return <EmptySlot key={i} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getFollowingSeason()) : score;
-            // 卡面趋势固定展示“当季 → 下一季”；持仓预览则必须使用行动确认后实际结算的季节。
-            const settlementScore = turnManager
-              ? turnManager.getCardScore(slot.card, turnManager.getSettlementSeason())
-              : nextScore;
             const profit = slot.getProfit(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
-            // 卡面显示当前回合倍率；持有收益/气耗仍按点击结束后下一回合结算倍率预览。
+            // 持仓卡面展示当前回合已经生效的收益/气耗；下一回合倍率只通过杠杆箭头提示，
+            // 点击「等待」后的实际变化统一放在结算确认弹窗中展示。
             const currentLeverage =
               slot.useLeverage
                 ? (turnManager ? turnManager.getLeverageMultiplier() : 1)
@@ -45,8 +42,8 @@ export function HandCards() {
               slot.useLeverage
                 ? (turnManager ? turnManager.getSettlementLeverageMultiplier() : 1)
                 : 1;
-            const holdEarning = turnManager ? turnManager.previewHoldEarning(settlementScore, settlementLeverage) : 0;
-            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(settlementScore, settlementLeverage) : 0;
+            const holdEarning = turnManager ? turnManager.previewHoldEarning(score, currentLeverage) : 0;
+            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(score, currentLeverage) : 0;
 
             return (
               <Card

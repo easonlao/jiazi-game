@@ -204,6 +204,24 @@ describe('TurnManager 行动前结算预览', () => {
     expect(leveraged.getQi()).toBeLessThan(normal.getQi());
   });
 
+  it('当前回合卡面与气条不提前显示下一回合升档气耗', async () => {
+    const manager = await startedGame(113);
+    (manager as any).seasonCycle.loadState(0, 1, [12, 12, 12, 12]);
+    const card = manager.getPublicCards()[0]!;
+    const score = manager.getCardScore(card, manager.getCurrentSeason());
+    const baseQiCost = Math.max(0.5, 1.5 + 0.4 * score);
+
+    expect(manager.executeBuy(0, true)).toBe(true); // 进入春季第 2 回合，当前仍为 1.0x
+    expect(manager.getCurrentRoundInSeason()).toBe(2);
+    expect(manager.getLeverageMultiplier()).toBe(1.0);
+    expect(manager.getSettlementLeverageMultiplier()).toBe(2.0);
+    expect(manager.getCurrentHoldQiCost()).toBeCloseTo(baseQiCost);
+
+    const waitPreview = manager.previewSettlement({ type: 'wait' });
+    expect(waitPreview!.holdItems[0]!.qiCost).toBeCloseTo(baseQiCost + 2.0);
+    expect(waitPreview!.holdItems[0]!.qiCost).toBeGreaterThan(manager.getCurrentHoldQiCost());
+  });
+
   it('未激活杠杆的持仓在季内升档和换季后始终保持 1.0x', async () => {
     const manager = await startedGame(108);
     (manager as any).seasonCycle.loadState(0, 1, [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);

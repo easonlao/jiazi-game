@@ -11,6 +11,7 @@ export function QiBar() {
   const maxQi = useGameStore((s) => s.maxQi);
   const currentRound = useGameStore((s) => s.currentRound);
   const totalRounds = useGameStore((s) => s.totalRounds);
+  const turnManager = useGameStore((s) => s.turnManager);
   const previewWaitQi = useGameStore((s) => s.previewWaitQi);
   const qiDelta = useGameStore((s) => s.qiDelta);
 
@@ -30,6 +31,7 @@ export function QiBar() {
 
   const ratio = Math.max(0, Math.min(1, qi / maxQi));
   const { afterQi, holdQiCost, willQiDeplete, willMarginCall } = previewWaitQi();
+  const currentHoldQiCost = turnManager?.getCurrentHoldQiCost() ?? 0;
   const isFinalRound = currentRound >= totalRounds;
 
   // 当前气量归零即显示"气尽"（不依赖爆仓事件残留）
@@ -80,11 +82,17 @@ export function QiBar() {
         <div className="mb-1.5 text-xs text-ink-light">
           结束游戏，不再进行持仓结算
         </div>
-      ) : holdQiCost > 0 ? (
+      ) : currentHoldQiCost > 0 ? (
         <div className="mb-1.5 space-y-0.5">
           <div className="text-xs text-ink-light">
-            持仓每回合 <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 气</span>
+            本回合持仓 <span className="text-qi-critical font-bold">-{currentHoldQiCost.toFixed(1)} 气</span>
           </div>
+
+          {holdQiCost > 0 && Math.abs(holdQiCost - currentHoldQiCost) >= 0.05 && (
+            <div className="text-[11px] text-ink-light">
+              点「等待」后预计持仓 <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 气</span>
+            </div>
+          )}
 
           {willMarginCall ? (
             <>

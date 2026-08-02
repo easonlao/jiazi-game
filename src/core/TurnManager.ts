@@ -824,6 +824,17 @@ export class TurnManager {
     return this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason());
   }
 
+  /** 获取当前回合已经生效的持仓气耗（用于 HUD/卡面，不是等待预览）。 */
+  getCurrentHoldQiCost(): number {
+    const currentSeason = this.getCurrentSeason();
+    const currentLeverage = this.getLeverageMultiplier();
+    return this.handManager.getHand().reduce((total, slot) => {
+      if (!slot) return total;
+      const leverage = slot.useLeverage ? currentLeverage : 1;
+      return total + this.previewHoldQiCost(this.getCardScore(slot.card, currentSeason), leverage);
+    }, 0);
+  }
+
   /** 获取下一回合结算时会处于的季节（跨季预览用） */
   getSettlementSeason(): Season {
     return this.seasonCycle.getNextSeason();
