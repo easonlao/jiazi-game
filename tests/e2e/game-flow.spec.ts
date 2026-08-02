@@ -218,7 +218,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
       await dismissSettlement(page);
     }
     const handSection = page.locator('h3:has-text("手牌")').locator('..').locator('..');
-    await expect(handSection.getByText(/杠杆 ×2\.0/)).toBeVisible({ timeout: 10_000 });
+    await expect(handSection.getByText(/当前杠杆 ×2\.0/)).toBeVisible({ timeout: 10_000 });
   });
 
   test('游戏结束与重新开始', async ({ page }) => {

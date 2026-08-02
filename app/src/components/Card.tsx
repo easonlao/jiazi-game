@@ -25,6 +25,7 @@ interface CardProps {
   handInfo?: {
     buyScore: number;
     leverage: number;
+    settlementLeverage?: number;
     isLeverage: boolean;
     holdEarnings: number;
     profit: number;
@@ -85,9 +86,16 @@ export function Card({ card, score, nextScore, selected, onClick, handInfo, buyC
         {handInfo && (
           <div className="flex flex-col items-end gap-1 text-[10px] leading-none text-ink-light">
             {handInfo.isLeverage && (
-              <span className="rounded bg-qi-critical/10 px-1.5 py-1 text-qi-critical font-bold tabular-nums">
-                杠杆 ×{handInfo.leverage.toFixed(1)}
-              </span>
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="rounded bg-qi-critical/10 px-1.5 py-1 text-qi-critical font-bold tabular-nums">
+                  当前杠杆 ×{handInfo.leverage.toFixed(1)}
+                </span>
+                {handInfo.settlementLeverage !== undefined && handInfo.settlementLeverage !== handInfo.leverage && (
+                  <span className="text-[9px] text-ink-light tabular-nums">
+                    下回合结算 ×{handInfo.settlementLeverage.toFixed(1)}
+                  </span>
+                )}
+              </div>
             )}
             <span>买入评分 {handInfo.buyScore.toFixed(1)}</span>
           </div>

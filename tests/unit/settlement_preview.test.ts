@@ -20,6 +20,18 @@ function visibleState(manager: TurnManager) {
 }
 
 describe('TurnManager 行动前结算预览', () => {
+  it('季内第5回合卡面当前倍率与下一回合结算倍率口径明确', async () => {
+    const manager = await startedGame(99);
+    (manager as any).seasonCycle.loadState(2, 5, [12, 12, 12, 12]);
+    expect(manager.getLeverageMultiplier()).toBe(2.0);
+    expect(manager.getSettlementLeverageMultiplier()).toBe(2.5);
+
+    // 若第5回合恰为季末，卡面仍显示当前2.0x，同时明确下一回合已换季重置为1.0x。
+    (manager as any).seasonCycle.loadState(2, 5, [12, 12, 5, 12]);
+    expect(manager.getLeverageMultiplier()).toBe(2.0);
+    expect(manager.getSettlementLeverageMultiplier()).toBe(1.0);
+  });
+
   it('卡面趋势季固定取下一季，结算预览仍取下一回合季节', async () => {
     const manager = await startedGame(100);
     (manager as any).seasonCycle.loadState(0, 1, [12, 12, 12, 12]);

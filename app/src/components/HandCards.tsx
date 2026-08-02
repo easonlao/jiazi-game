@@ -34,13 +34,17 @@ export function HandCards() {
             const profit = slot.getProfit(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
-            // 动态杠杆：买入时开了杠杆的牌，倍数随回合自动增长
-            const dynamicLeverage =
+            // 卡面显示当前回合倍率；持有收益/气耗仍按点击结束后下一回合结算倍率预览。
+            const currentLeverage =
+              slot.useLeverage
+                ? (turnManager ? turnManager.getLeverageMultiplier() : 1)
+                : 1;
+            const settlementLeverage =
               slot.useLeverage
                 ? (turnManager ? turnManager.getSettlementLeverageMultiplier() : 1)
                 : 1;
-            const holdEarning = turnManager ? turnManager.previewHoldEarning(nextScore, dynamicLeverage) : 0;
-            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(nextScore, dynamicLeverage) : 0;
+            const holdEarning = turnManager ? turnManager.previewHoldEarning(nextScore, settlementLeverage) : 0;
+            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(nextScore, settlementLeverage) : 0;
 
             return (
               <Card
@@ -56,7 +60,8 @@ export function HandCards() {
                 }
                 handInfo={{
                   buyScore: slot.buyScore,
-                  leverage: dynamicLeverage,
+                  leverage: currentLeverage,
+                  settlementLeverage,
                   isLeverage: slot.useLeverage,
                   holdEarnings: slot.holdEarnings,
                   profit,
