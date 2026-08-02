@@ -29,8 +29,8 @@ describe('经济规则验收（最终 core 候选配置）', () => {
   it('core 杠杆额外持气耗按实际倍率计费', () => {
     const lc = new LeverageCalculator(DEFAULT_BALANCE_CONFIG);
     const base = Math.max(0.5, 1.5 + 0.4 * 0);
-    expect(lc.calculateHoldQiCost(0, 2)).toBeCloseTo(base + 2);
-    expect(lc.calculateHoldQiCost(0, 3.5)).toBeCloseTo(base + 3.5);
+    expect(lc.calculateHoldQiCost(0, 2)).toBeCloseTo(base + 4);
+    expect(lc.calculateHoldQiCost(0, 3.5)).toBeCloseTo(base + 7);
   });
 
   it('第 60 回合禁止买入', async () => {

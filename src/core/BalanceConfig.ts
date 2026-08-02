@@ -81,7 +81,7 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   holdQiBase: 1.5,
   holdQiScoreFactor: 0.4,
   holdQiMin: 0.5,
-  leverageQiCostPerX: 1,
+  leverageQiCostPerX: 2,
 };
 
 /** 兼容旧调用方的候选配置别名；生产入口与默认配置完全一致。 */

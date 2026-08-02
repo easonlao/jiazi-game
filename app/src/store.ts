@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import {
   TurnManager,
+  LeaderboardService,
   type GameState,
   type SettlementDetail,
   type SettlementPreview,
   type SettlementPreviewAction,
   type JiaziCard,
+  type LeaderboardEntry,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -80,6 +82,17 @@ interface GameStore {
   startGame: () => void;
   reset: () => void;
 
+  // 存档恢复
+  hasSave: boolean;
+  loadGameFromSave: () => boolean;
+  startNewGame: () => void;
+
+  // 排行榜
+  leaderboardEntries: LeaderboardEntry[];
+  leaderboardOpen: boolean;
+  openLeaderboard: () => void;
+  closeLeaderboard: () => void;
+
   // 操作
   selectPublicCard: (index: number) => void;
   selectHandCard: (index: number) => void;
@@ -153,6 +166,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   settlementPreview: null,
   toast: null,
   tick: 0,
+  hasSave: false,
+  leaderboardEntries: [],
+  leaderboardOpen: false,
 
   // FX 事件（初始为 null，_sync diff 后才会产生）
   seasonEvent: null,
@@ -250,11 +266,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
       tm.setOnGameEnd((finalScore) => {
         set((s) => ({ tick: s.tick + 1 }));
+        // 记录到排行榜
+        const lb = new LeaderboardService();
+        lb.addEntry(finalScore);
+        set({ leaderboardEntries: lb.getEntries() });
+        // 游戏结束清除存档
+        tm.clearSave();
+        set({ hasSave: false });
         get().showToast(`游戏结束！最终得分：${finalScore}`);
       });
 
       set({ turnManager: tm });
       get()._sync();
+
+      // 检测是否有未完成的存档
+      const hasSave = tm.hasSave();
+      set({ hasSave });
     } catch (e) {
       console.error('[store] 初始化失败:', e);
     } finally {
@@ -265,9 +292,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
   startGame() {
     const tm = get().turnManager;
     if (!tm) return;
+    // 开始新游戏前清除旧存档
+    tm.clearSave();
+    set({ hasSave: false });
     tm.startGame();
     get()._sync();
     set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null });
+  },
+
+  loadGameFromSave() {
+    const tm = get().turnManager;
+    if (!tm) return false;
+    const ok = tm.loadGame();
+    if (ok) {
+      // 先同步当前状态到加载后的值，避免 diffFxEvents 误触发季节/回合动画
+      set({
+        season: tm.getCurrentSeason(),
+        currentRound: tm.getCurrentRound(),
+        qi: tm.getQi(),
+        score: tm.getScore(),
+        marginCallCount: tm.getMarginCallCount(),
+      });
+      get()._sync();
+      set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, hasSave: false });
+    }
+    return ok;
+  },
+
+  startNewGame() {
+    get().startGame();
+  },
+
+  openLeaderboard() {
+    const lb = new LeaderboardService();
+    set({ leaderboardEntries: lb.getEntries(), leaderboardOpen: true });
+  },
+
+  closeLeaderboard() {
+    set({ leaderboardOpen: false });
   },
 
   reset() {
@@ -417,6 +479,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     set(patch);
     get()._sync();
+
+    // 每次行动后自动存档
+    tm.saveGame();
+
     return true;
   },
 
@@ -432,7 +498,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const cards = get().publicCards;
     if (!tm || cardIndex < 0 || cardIndex >= cards.length) return 0;
     const card = cards[cardIndex];
-    const score = tm.getCardScore(card, tm.getSettlementSeason());
+    const score = tm.getCardScore(card, tm.getCurrentSeason());
     const leverage = get().useLeverage ? tm.getSettlementLeverageMultiplier() : 1;
     return tm.previewHoldEarning(score, leverage);
   },
@@ -442,7 +508,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const cards = get().publicCards;
     if (!tm || cardIndex < 0 || cardIndex >= cards.length) return 0;
     const card = cards[cardIndex];
-    const score = tm.getCardScore(card, tm.getSettlementSeason());
+    const score = tm.getCardScore(card, tm.getCurrentSeason());
     const leverage = get().useLeverage ? tm.getSettlementLeverageMultiplier() : 1;
     return tm.previewHoldQiCost(score, leverage);
   },

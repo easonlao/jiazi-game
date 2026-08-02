@@ -31,3 +31,6 @@ export type { RandomSource } from './RandomSource';
 
 export { GameSaveService } from './GameSaveService';
 export type { GameSnapshot, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
+
+export { LeaderboardService } from './LeaderboardService';
+export type { LeaderboardEntry } from './LeaderboardService';

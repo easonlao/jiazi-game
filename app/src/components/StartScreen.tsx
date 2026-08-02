@@ -2,13 +2,17 @@ import { useGameStore } from '../store';
 
 interface StartScreenProps {
   turnManager: ReturnType<typeof useGameStore.getState>['turnManager'];
+  hasSave: boolean;
   onStart: () => void;
+  onContinue: () => void;
+  onLeaderboard: () => void;
 }
 
 /**
  * 启动加载/开始页：标题、玩法简介、开始按钮或加载中状态。
+ * 检测到存档时显示"继续游戏"，否则显示"开始游戏"。
  */
-export function StartScreen({ turnManager, onStart }: StartScreenProps) {
+export function StartScreen({ turnManager, hasSave, onStart, onContinue, onLeaderboard }: StartScreenProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
       <div className="text-center shrink-0">
@@ -24,12 +28,37 @@ export function StartScreen({ turnManager, onStart }: StartScreenProps) {
       </div>
 
       {turnManager ? (
-        <button
-          onClick={onStart}
-          className="px-8 py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 shrink-0"
-        >
-          开始游戏
-        </button>
+        <div className="flex flex-col gap-2 w-full max-w-xs">
+          {hasSave ? (
+            <>
+              <button
+                onClick={onContinue}
+                className="w-full py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95"
+              >
+                继续游戏
+              </button>
+              <button
+                onClick={onStart}
+                className="w-full py-3 rounded-xl border-2 border-wood-mid text-ink text-base font-bold font-serif hover:bg-wood-light transition-colors active:scale-95"
+              >
+                新游戏
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onStart}
+              className="w-full py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95"
+            >
+              开始游戏
+            </button>
+          )}
+          <button
+            onClick={onLeaderboard}
+            className="w-full py-2.5 rounded-xl border border-wood-light text-ink-light text-sm font-serif hover:bg-wood-light transition-colors active:scale-95"
+          >
+            排行榜
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-wood-mid border-t-transparent rounded-full animate-spin" />

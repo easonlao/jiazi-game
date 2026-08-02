@@ -12,6 +12,7 @@ import { Toast } from './components/Toast';
 import { HelpModal } from './components/HelpCenter';
 import { StartScreen } from './components/StartScreen';
 import { GameOverModal } from './components/GameOverModal';
+import { LeaderboardModal } from './components/LeaderboardModal';
 import { useScreenShake } from './hooks/useScreenShake';
 
 export default function App() {
@@ -20,8 +21,13 @@ export default function App() {
   const tick = useGameStore((s) => s.tick);
   const initialize = useGameStore((s) => s.initialize);
   const startGame = useGameStore((s) => s.startGame);
+  const loadGameFromSave = useGameStore((s) => s.loadGameFromSave);
+  const openLeaderboard = useGameStore((s) => s.openLeaderboard);
+  const closeLeaderboard = useGameStore((s) => s.closeLeaderboard);
   const showToast = useGameStore((s) => s.showToast);
   const marginCallEvent = useGameStore((s) => s.marginCallEvent);
+  const hasSave = useGameStore((s) => s.hasSave);
+  const leaderboardOpen = useGameStore((s) => s.leaderboardOpen);
   const [helpOpen, setHelpOpen] = useState(false);
 
   const gameRef = useRef<HTMLDivElement>(null);
@@ -54,10 +60,16 @@ export default function App() {
         {isLoading ? (
           <StartScreen
             turnManager={turnManager}
+            hasSave={hasSave}
             onStart={() => {
               startGame();
               showToast('游戏开始');
             }}
+            onContinue={() => {
+              loadGameFromSave();
+              showToast('继续游戏');
+            }}
+            onLeaderboard={openLeaderboard}
           />
         ) : (
           <>
@@ -84,6 +96,7 @@ export default function App() {
           </>
         )}
         <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+        {leaderboardOpen && <LeaderboardModal />}
       </div>
     </div>
   );

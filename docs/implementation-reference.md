@@ -39,7 +39,7 @@
 | 持仓收益系数 | 1.2 | `ScoreManager.HOLD_BONUS` |
 | 卖出价差系数 | 4 | `ScoreManager.SPREAD_MULTIPLIER` |
 | 持仓基础气耗 | `max(0.5, 1.5 + 0.4 × 当季评分)` | `holdQiBase`、`holdQiScoreFactor`、`holdQiMin` |
-| 杠杆额外持仓气耗 | `杠杆倍率 × 1`（仅倍率大于 1 时） | `leverageQiCostPerX` |
+| 杠杆额外持仓气耗 | `杠杆倍率 × 2`（仅倍率大于 1 时） | `leverageQiCostPerX` |
 | 强平返还系数 | 0.5 | `forcedLiquidationQiReturnFactor` |
 | 强平正收益折算 | 0.8 | `forcedLiquidationScoreMultiplier` |
 | 强平扣分系数 | 6 | `marginCallPenaltyPerScore` |
@@ -49,7 +49,7 @@
 ```text
 买入气耗 = ceil(11 × (1 + 0.05 × 买入时当季评分) + (是否杠杆 ? 8 : 0))
 锁定气 = 买入气耗 - 2
-持仓气耗 = max(0.5, 1.5 + 0.4 × 当前结算季评分) + (杠杆 > 1 ? 杠杆 × 1 : 0)
+持仓气耗 = max(0.5, 1.5 + 0.4 × 当前结算季评分) + (杠杆 > 1 ? 杠杆 × 2 : 0)
 持仓收益 = 1.2 × 当前结算季评分 × 有效杠杆
 卖出得分 = (当前评分 - 买入评分) × 4 × 有效杠杆
 ```
@@ -194,3 +194,9 @@ npm run test:e2e                # Playwright 浏览器流程
 ```
 
 提交前还应执行 `git diff --check`，确认工作树只包含本次文档和已确认的代码变更。
+
+## 参数变更记录
+
+| 日期 | 调整参数 | 旧值 | 新值 | 原因 | 证据 |
+|---|---|---|---|---|---|
+| 2026-08-02 | `leverageQiCostPerX` | 1 | 2 | 原配置下杠杆持仓气耗过低，激进策略可无风险持有多张杠杆卡；B 方案提高杠杆持仓成本，使激进策略面临更高爆仓风险，平衡策略收益最优，形成有效收益/风险权衡 | 多策略模拟（40局×3策略×5方案）对比分析 |
