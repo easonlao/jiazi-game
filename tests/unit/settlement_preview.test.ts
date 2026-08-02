@@ -43,6 +43,25 @@ describe('TurnManager 行动前结算预览', () => {
     expect(manager.getSettlementSeason()).toBe('winter');
   });
 
+  it('非季末持仓预览使用下一回合实际季节评分，而非固定下一季趋势评分', async () => {
+    const manager = await startedGame(111);
+    (manager as any).seasonCycle.loadState(0, 1, [12, 12, 12, 12]);
+    const cardIndex = manager.getPublicCards().findIndex((card) =>
+      card.getSeasonScore('spring') !== card.getSeasonScore('summer'),
+    );
+    expect(cardIndex).toBeGreaterThanOrEqual(0);
+    const card = manager.getPublicCards()[cardIndex]!;
+    const settlementScore = card.getSeasonScore('spring');
+    const trendScore = card.getSeasonScore('summer');
+
+    expect(manager.executeBuy(cardIndex, false)).toBe(true);
+    const preview = manager.previewSettlement({ type: 'wait' });
+    expect(preview).not.toBeNull();
+    expect(preview!.nextSeason).toBe('spring');
+    expect(preview!.holdItems[0]!.earning).toBeCloseTo(manager.previewHoldEarning(settlementScore, 1));
+    expect(preview!.holdItems[0]!.earning).not.toBeCloseTo(manager.previewHoldEarning(trendScore, 1));
+  });
+
   it('等待预览不改变状态或消耗随机源，普通结算与实际逐项一致', async () => {
     const previewed = await startedGame(101);
     const baseline = await startedGame(101);
@@ -157,6 +176,32 @@ describe('TurnManager 行动前结算预览', () => {
     expect(manager.executeWait()).toBe(true); // next season round 1
     expect(manager.getCurrentRoundInSeason()).toBe(1);
     expect(manager.getLastSettlementDetail()!.holdItems[0]!.leverage).toBe(1.0);
+  });
+
+  it('真实买入链路保留杠杆开关，并在升档结算时产生额外气耗', async () => {
+    const normal = await startedGame(112);
+    const leveraged = await startedGame(112);
+    const seasonLengths = [12, 12, 12, 12];
+    (normal as any).seasonCycle.loadState(0, 1, seasonLengths);
+    (leveraged as any).seasonCycle.loadState(0, 1, seasonLengths);
+    const card = normal.getPublicCards()[0]!;
+    expect(leveraged.getPublicCards()[0]!.name).toBe(card.name);
+
+    expect(normal.executeBuy(0, false)).toBe(true);
+    expect(leveraged.executeBuy(0, true)).toBe(true);
+    expect(normal.getHand()[0]!.useLeverage).toBe(false);
+    expect(leveraged.getHand()[0]!.useLeverage).toBe(true);
+
+    // 买入后已结算第 2 回合（倍率 1.0x），再等待到第 3 回合验证升档 2.0x。
+    expect(normal.executeWait()).toBe(true);
+    expect(leveraged.executeWait()).toBe(true);
+    const normalDetail = normal.getLastSettlementDetail()!;
+    const leveragedDetail = leveraged.getLastSettlementDetail()!;
+    expect(normalDetail.holdItems[0]!.leverage).toBe(1.0);
+    expect(leveragedDetail.holdItems[0]!.leverage).toBe(2.0);
+    expect(leveragedDetail.holdItems[0]!.earning).toBeCloseTo(normalDetail.holdItems[0]!.earning * 2);
+    expect(leveragedDetail.holdItems[0]!.qiCost).toBeGreaterThan(normalDetail.holdItems[0]!.qiCost);
+    expect(leveraged.getQi()).toBeLessThan(normal.getQi());
   });
 
   it('未激活杠杆的持仓在季内升档和换季后始终保持 1.0x', async () => {

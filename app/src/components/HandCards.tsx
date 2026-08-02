@@ -8,8 +8,6 @@ export function HandCards() {
   const selectHandCard = useGameStore((s) => s.selectHandCard);
   const gameState = useGameStore((s) => s.gameState);
   const previewSellInfo = useGameStore((s) => s.previewSellInfo);
-  const previewHoldEarning = useGameStore((s) => s.previewHoldEarning);
-  const previewHoldQiCost = useGameStore((s) => s.previewHoldQiCost);
   const season = useGameStore((s) => s.season);
   const turnManager = useGameStore((s) => s.turnManager);
 
@@ -31,6 +29,10 @@ export function HandCards() {
             if (!slot) return <EmptySlot key={i} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getFollowingSeason()) : score;
+            // 卡面趋势固定展示“当季 → 下一季”；持仓预览则必须使用行动确认后实际结算的季节。
+            const settlementScore = turnManager
+              ? turnManager.getCardScore(slot.card, turnManager.getSettlementSeason())
+              : nextScore;
             const profit = slot.getProfit(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
@@ -43,8 +45,8 @@ export function HandCards() {
               slot.useLeverage
                 ? (turnManager ? turnManager.getSettlementLeverageMultiplier() : 1)
                 : 1;
-            const holdEarning = turnManager ? turnManager.previewHoldEarning(nextScore, settlementLeverage) : 0;
-            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(nextScore, settlementLeverage) : 0;
+            const holdEarning = turnManager ? turnManager.previewHoldEarning(settlementScore, settlementLeverage) : 0;
+            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(settlementScore, settlementLeverage) : 0;
 
             return (
               <Card
