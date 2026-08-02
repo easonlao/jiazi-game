@@ -12,6 +12,9 @@ export function SettlementPreviewModal() {
   if (!preview) return null;
 
   const targetLabel = preview.actionCardName ? `：${preview.actionCardName}` : '';
+  const scoreBeforeAction = preview.scoreAfterAction - preview.actionScoreChange;
+  const estimatedScoreDelta = preview.actionScoreChange + preview.holdEarnings;
+  const deterministicTotal = scoreBeforeAction + estimatedScoreDelta;
   const actionLabel = preview.action.type === 'buy'
     ? `买入${targetLabel}${preview.actionUsesLeverage ? '（杠杆仓位）' : ''}`
     : preview.action.type === 'sell'
@@ -41,6 +44,24 @@ export function SettlementPreviewModal() {
                   {preview.actionScoreChange !== 0 && <span className={preview.actionScoreChange > 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.actionScoreChange)}分</span>}
                 </span>
               </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-gold/40 bg-gold/5 px-3 py-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-ink-light">本回合预计得分增量</span>
+              <span className={`font-bold tabular-nums ${estimatedScoreDelta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
+                {signed(estimatedScoreDelta)}分
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between border-t border-gold/20 pt-1">
+              <span className="text-ink-light">{preview.willMarginCall ? '强平前累计总分' : '预计累计总分'}</span>
+              <span className="font-bold tabular-nums text-gold">
+                {preview.finalScore !== null ? preview.finalScore.toFixed(1) : deterministicTotal.toFixed(1)} 分
+              </span>
+            </div>
+            {preview.willMarginCall && (
+              <p className="mt-1 text-[10px] text-qi-critical">强平扣分取决于随机平仓仓位，最终总分将在结算后确定。</p>
             )}
           </div>
 

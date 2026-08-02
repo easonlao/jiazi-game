@@ -237,8 +237,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (nextMarginCallCount > prevMarginCallCount && settlement?.marginCallTriggered) {
       patch.marginCallEvent = { id: ++fxSeq, detail: settlement };
     }
-    // 分数变化
-    if (nextScore !== prevScore) {
+    // 每次进入新回合都记录本回合分数增量；即使为 0，也清除上一回合的旧提示。
+    if (nextRound !== prevRound || nextScore !== prevScore) {
       patch.scoreDelta = { id: ++fxSeq, delta: nextScore - prevScore };
     }
     // 气量变化

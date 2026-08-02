@@ -59,6 +59,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 验证游戏 UI 组件出现
     await expect(page.getByText('公共牌池')).toBeVisible();
     await expect(page.getByText('手牌')).toBeVisible();
+    await expect(page.getByText('第 1/60 回合', { exact: true })).toBeVisible();
+    await expect(page.getByText('季内 1/')).toBeVisible();
     // 验证操作按钮可见（使用 role 定位，避免子文本干扰）
     await expect(page.getByRole('button', { name: /买入/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /卖出/ })).toBeVisible();
@@ -96,6 +98,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 提交前先出现结算预览；返回不会执行操作。
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
+    await expect(page.getByText('本回合预计得分增量', { exact: true })).toBeVisible();
+    await expect(page.getByText('预计累计总分', { exact: true })).toBeVisible();
     await expect(page.locator('.modal-backdrop')).toHaveCount(1);
     await page.getByRole('button', { name: '返回修改' }).click();
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeHidden();
@@ -126,6 +130,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 验证 Toast 出现「等待」
     await expect(page.getByText('等待（下回合额外回气）')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('第 2/60 回合', { exact: true })).toBeVisible();
+    await expect(page.getByText(/本回合 [+-]?[0-9]+\.[0-9] 分/)).toBeVisible();
   });
 
   test('买入+等待+卖出完整流程', async ({ page }) => {
