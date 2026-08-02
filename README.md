@@ -11,6 +11,8 @@
   <img src="https://img.shields.io/badge/platform-Web-orange" alt="Web Platform">
 </p>
 
+> 当前代码事实、精确数值、回合顺序和已知文档漂移见 [`docs/implementation-reference.md`](docs/implementation-reference.md)。本 README 保持为面向玩家的简介，不作为运行时规则真源。
+
 ---
 
 ## 游戏简介
@@ -113,7 +115,7 @@ npm run dev
 
 ## 游戏界面
 
-界面入口位于 `app/`，根目录的 `npm run dev`、`npm run build` 和 `npm run preview` 均统一使用该 React 应用。
+界面入口位于 `app/`，根目录的 `npm run dev`、`npm run build` 和 `npm run preview` 均统一使用该 React 应用。核心规则位于 `src/core/`。
 
 ---
 
