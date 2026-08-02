@@ -67,9 +67,9 @@ describe('Codex 审查 P1 回归：季节段下限 3-12', () => {
 });
 
 describe('Codex 审查 P1 回归：强平罚分系数配置化', () => {
-  it('默认与候选配置均声明 marginCallPenaltyPerScore = 6', () => {
-    expect(DEFAULT_BALANCE_CONFIG.marginCallPenaltyPerScore).toBe(6);
-    expect(CANDIDATE_BALANCE_CONFIG.marginCallPenaltyPerScore).toBe(6);
+  it('默认与候选配置均声明 marginCallPenaltyPerScore = 3', () => {
+    expect(DEFAULT_BALANCE_CONFIG.marginCallPenaltyPerScore).toBe(3);
+    expect(CANDIDATE_BALANCE_CONFIG.marginCallPenaltyPerScore).toBe(3);
   });
 
   it('非 6 系数配置：强平说明文本与实际扣分同源（读同一配置值）', async () => {

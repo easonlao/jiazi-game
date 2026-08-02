@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SeededRandomSource, TurnManager } from '../../src/core/index';
+import { Element } from '../../src/core/JiaziCard';
 
 async function startedGame(seed: number) {
   const manager = new TurnManager(undefined, new SeededRandomSource(seed));
@@ -166,11 +167,14 @@ describe('TurnManager 行动前结算预览', () => {
     expect(embedded.qiCost).toBeCloseTo(baseQiCost);
 
     // 第 3 回合升至 2.0x，收益和气耗都随之变化。
+    // 土牌用专属杠杆气耗系数 5，非土牌用全局 2（见 BalanceConfig.earthLeverageQiCostPerX）。
     expect(manager.executeWait()).toBe(true); // season round 3
     const upgraded = manager.getLastSettlementDetail()!.holdItems[0]!;
+    const isEarth = boughtCard.tianGanElement === Element.EARTH;
+    const qiPerX = isEarth ? 5 : 2;
     expect(upgraded.leverage).toBe(2.0);
     expect(upgraded.earning).toBeCloseTo(1.2 * cardScore * 2.0);
-    expect(upgraded.qiCost).toBeCloseTo(baseQiCost + 2.0 * 2);
+    expect(upgraded.qiCost).toBeCloseTo(baseQiCost + 2.0 * qiPerX);
 
     // 换季后重新从季内第 1 回合开始，杠杆回到 1.0x。
     expect(manager.executeWait()).toBe(true); // next season round 1

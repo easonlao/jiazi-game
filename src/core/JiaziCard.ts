@@ -100,12 +100,36 @@ export class JiaziCard {
   }
 
   /**
-   * 获取最终季节评分：以该卡四季原始均值为中心，再施加阴阳波动系数。
+   * 获取最终季节评分。
+   *
+   * 土牌（方案E）：天干保底 + 藏干波动——天干部分保留绝对水平（稳定收益），
+   * 藏干部分中心化保留波动（优势季节分化），让土牌有"择时加杠杆"的操作选择。
+   * 非土牌：以四季原始均值为中心，再施加阴阳波动系数（原逻辑）。
+   *
    * 评分基线/系数从 BalanceConfig 传入；不传时使用默认配置，保证 UI 与核心一致。
    */
   getSeasonScore(season: string, config: ScoreConfig = DEFAULT_SCORE_CONFIG): number {
     if (!this.isSeason(season)) return 0;
     const seasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+    const seasonElementMap: Record<Season, Element> = {
+      spring: Element.WOOD,
+      summer: Element.FIRE,
+      autumn: Element.METAL,
+      winter: Element.WATER,
+    };
+    const seasonElement = seasonElementMap[season];
+
+    // 土牌：天干保底(0.5权重,恒定) + 藏干波动(中心化,权重0.5) + 关系分(0.2)
+    if (this.tianGanElement === Element.EARTH) {
+      const stemScore = this.scoreElementInSeason(this.tianGanElement, seasonElement);
+      const branchScore = this.scoreHiddenStemsInSeason(seasonElement);
+      const branchScores = seasons.map((s) => this.scoreHiddenStemsInSeason(seasonElementMap[s]));
+      const branchMean = branchScores.reduce((sum, value) => sum + value, 0) / branchScores.length;
+      const relationScore = this.scoreStemBranchRelation();
+      return this.roundScore(stemScore * 0.5 + (branchScore - branchMean) * 0.5 + relationScore * 0.2);
+    }
+
+    // 非土牌：原均值中心化逻辑
     const rawScores = seasons.map((item) => this.getRawSeasonScore(item));
     const rawMean = rawScores.reduce((sum, value) => sum + value, 0) / rawScores.length;
     const factor = this.yinYang === YinYang.YANG
@@ -131,8 +155,8 @@ export class JiaziCard {
   }
 
   private scoreElementInSeason(element: Element, seasonElement: Element): number {
-    // 土牌永远稳定
-    if (element === Element.EARTH) return 1.0;
+    // 土牌：承接当前季节旺气，幅度为旺气的0.4倍（环境镜像设计）
+    if (element === Element.EARTH) return 1.6;
 
     // 当季：+4
     if (element === seasonElement) return 4.0;

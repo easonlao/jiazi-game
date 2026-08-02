@@ -92,6 +92,6 @@ describe('FX 事件生命周期（游戏结束与重新开始）', () => {
     expect(useGameStore.getState().scoreDelta).toBeNull();
     expect(useGameStore.getState().qiDelta?.delta).toBe(10); // 合法首回合回气，而非残留的旧差值
     // 新一局必须能正常抽出公共牌，否则界面只剩季节、无牌可买，游戏卡死
-    expect(useGameStore.getState().publicCards.length).toBe(2);
+    expect(useGameStore.getState().publicCards.length).toBe(3);
   });
 });

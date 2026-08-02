@@ -8,6 +8,8 @@ export interface HoldingCalculationInput {
   cardName: string;
   cardScore: number;
   useLeverage: boolean;
+  /** 土牌使用专属杠杆气耗系数，需要标记元素类型 */
+  isEarth?: boolean;
 }
 
 export interface HoldingCalculationItem {
@@ -25,7 +27,7 @@ export interface HoldingCalculationResult {
 
 export interface HoldingCalculationFunctions {
   calculateHoldEarnings: (cardScore: number, leverage: number) => number;
-  calculateHoldQiCost: (cardScore: number, leverage: number) => number;
+  calculateHoldQiCost: (cardScore: number, leverage: number, isEarth?: boolean) => number;
 }
 
 /**
@@ -42,7 +44,7 @@ export function calculateHoldingSettlement(
     return {
       cardName: holding.cardName,
       earning: calculators.calculateHoldEarnings(holding.cardScore, leverage),
-      qiCost: calculators.calculateHoldQiCost(holding.cardScore, leverage),
+      qiCost: calculators.calculateHoldQiCost(holding.cardScore, leverage, holding.isEarth),
       leverage,
     };
   });

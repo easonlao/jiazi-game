@@ -5,13 +5,13 @@ import { MathRandomSource, RandomSource } from './RandomSource';
  * 牌池管理器
  * 
  * 维护游戏中的共享卡牌堆（Deck）以及每回合刷新到公共展示区域供买入的选择卡牌。
- * 遵循游戏设计中关于每回合从牌堆随机抽取 2 张并在决策后未买入卡牌回洗归还牌堆的规则。
+ * 遵循游戏设计中关于每回合从牌堆随机抽取 3 张并在决策后未买入卡牌回洗归还牌堆的规则。
  * 随机源可注入（测试/模拟器用固定 seed），默认 Math.random。
  * 
  * @see {@link design/gdd/system-card-pool.md} 牌池系统设计文档
  */
 export class CardPoolManager {
-  private static readonly DRAW_COUNT = 2;
+  private static readonly DRAW_COUNT = 3;
 
   private deck: JiaziCard[];
   private publicCards: JiaziCard[];

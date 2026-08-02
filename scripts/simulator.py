@@ -37,13 +37,14 @@ LQC = 8
 BUY_ENTRY_FEE = 2
 FORCED_QI_RETURN_FACTOR = 0.5
 FORCED_SCORE_MULTIPLIER = 0.8
-MARGIN_CALL_PENALTY_PER_SCORE = 6
+MARGIN_CALL_PENALTY_PER_SCORE = 3
 HOLD_BONUS = 1.2
 SELL_MULTIPLIER = 4
 HOLD_QI_BASE = 1.5
 HOLD_QI_SCORE_FACTOR = 0.4
 HOLD_QI_MIN = 0.5
 LEVERAGE_QI_COST_PER_X = 1
+EARTH_LEVERAGE_QI_COST_PER_X = 5
 
 
 @dataclass(frozen=True)
@@ -166,7 +167,7 @@ def load_cards() -> list[Card]:
 
 def score_element_in_season(element: str, season_element: str) -> float:
     if element == "earth":
-        return 1.0
+        return 1.6
     if element == season_element:
         return 4.0
     if (element in WOOD_FIRE and season_element in WOOD_FIRE) or (
@@ -288,7 +289,8 @@ def get_score_model(cards: list[Card], mode: str, beta: float, gamma: float) -> 
 
 
 def generate_season_lengths(random: Mulberry32) -> list[int]:
-    n = random.int(5, 21)
+    # 段数必须是 4 的倍数 {8,12,16,20}，否则季节序列固定从春开始会结构性偏春
+    n = random.int(2, 6) * 4
     lengths = [3] * n
     remaining = TOTAL_ROUNDS - 3 * n
     underfull = list(range(n))
@@ -327,8 +329,8 @@ class CardPool:
     def draw(self) -> None:
         if self.public:
             self.discarded.extend(self.public)
-        self.public = self.deck[:2]
-        del self.deck[:2]
+        self.public = self.deck[:3]
+        del self.deck[:3]
 
     def return_cards(self, cards: Iterable[Card]) -> None:
         for card in cards:
@@ -423,9 +425,13 @@ class GameState:
             cost += self.economy.lqc
         return math.ceil(cost)
 
-    def hold_qi_cost(self, score: float, leverage: float) -> float:
+    def hold_qi_cost(self, score: float, leverage: float, is_earth: bool = False) -> float:
         base = max(HOLD_QI_MIN, HOLD_QI_BASE + HOLD_QI_SCORE_FACTOR * score)
-        return base + self.economy.qi_charge(leverage)
+        qi_charge = self.economy.qi_charge(leverage)
+        # 土牌专属杠杆气耗：与核心 earthLeverageQiCostPerX=5 一致，非土牌用 qi_cost_per_x
+        if leverage > 1 and is_earth:
+            qi_charge = leverage * EARTH_LEVERAGE_QI_COST_PER_X
+        return base + qi_charge
 
     def settle(self) -> dict:
         detail = {"round": self.current_round, "season": self.season, "hold_earnings": 0.0,
@@ -436,7 +442,7 @@ class GameState:
             leverage = self.leverage_for_round() if slot.use_leverage else 1.0
             score = self.card_score(slot.card)
             earning = HOLD_BONUS * score * self.economy.earning_multiplier(leverage)
-            qi_cost = self.hold_qi_cost(score, leverage)
+            qi_cost = self.hold_qi_cost(score, leverage, slot.card.tian_gan_element == "earth")
             self.score += earning
             self.total_hold_earnings += earning
             slot.hold_earnings += earning

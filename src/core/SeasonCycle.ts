@@ -28,11 +28,14 @@ export class SeasonCycle {
 
   /**
    * 生成随机季节长度：每段严格 3-12，总和恰好 totalRounds(60)。
-   * 算法：段数 n ∈ [5, 20]（3n ≤ 60 ≤ 12n），先每段铺 3，再从未满（<12）段中
+   * 算法：段数 n ∈ {8, 12, 16, 20}（4 的倍数），先每段铺 3，再从未满（<12）段中
    * 随机选择 +1 分摊剩余，保证每次必成功分配，无需 guard 兜底。
+   *
+   * 注意：段数必须是 4 的倍数——否则季节序列固定从春开始会结构性偏春
+   * （如 n=7 时"春夏秋冬春夏秋"冬只有 1 段），长期期望下木火收益天然高于金水。
    */
   private generateSeasonLengths(): void {
-    const n = this.random.int(5, 21); // [5, 20]
+    const n = this.random.int(2, 6) * 4; // [2,6) → {8, 12, 16, 20}
     const lengths = new Array<number>(n).fill(3);
     let remaining = this.totalRounds - 3 * n;
 

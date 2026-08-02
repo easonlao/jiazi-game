@@ -22,20 +22,20 @@ describe('CardPoolManager', () => {
     cpm.initialize(cards);
     
     const drawn = cpm.drawCards();
-    expect(drawn.length).toBe(2);
-    expect(cpm.getPublicCards().length).toBe(2);
-    expect(cpm.getDeckSize()).toBe(2);
+    expect(drawn.length).toBe(3);
+    expect(cpm.getPublicCards().length).toBe(3);
+    expect(cpm.getDeckSize()).toBe(1);
   });
 
   it('购买公共牌并回收未选中卡牌', () => {
     const cpm = new CardPoolManager();
     cpm.initialize(cards);
-    cpm.drawCards(); // 剩下 2 张在牌堆，2 张在展示池
+    cpm.drawCards(); // 剩下 1 张在牌堆，3 张在展示池
 
     const publicCardsBefore = [...cpm.getPublicCards()];
     const bought = cpm.buyCard(0);
     expect(bought).toBe(publicCardsBefore[0]);
-    // 未选择的 publicCardsBefore[1] 应该回洗入牌堆
+    // 未选择的 2 张应该回洗入牌堆
     expect(cpm.getPublicCards().length).toBe(0);
     expect(cpm.getDeckSize()).toBe(3); // 初始4张，买走1张，剩下3张
   });

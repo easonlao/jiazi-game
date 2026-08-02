@@ -109,12 +109,13 @@ export class ScoreManager {
 
   /**
    * 应用爆仓强平扣分惩罚
-   * @param penaltyAmount 扣分额度（由调用方计算：杠杆 × |爆仓时卡牌评分| × 6）
+   * @param penaltyAmount 扣分额度（由调用方计算：杠杆 × |爆仓时卡牌评分| × marginCallPenaltyPerScore）
    *
    * 注意：不扣减 totalSellEarnings，因为惩罚不是卖出交易，不应当混淆统计口径。
+   * 分数可以为负（与持仓亏损一致），不设下限截断。
    */
   applyMarginCallPenalty(penaltyAmount: number): void {
-    this.score = Math.max(0, this.score - penaltyAmount);
+    this.score -= penaltyAmount;
   }
 
   /**

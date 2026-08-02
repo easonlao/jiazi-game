@@ -1,4 +1,4 @@
-import { JiaziCard } from './JiaziCard';
+import { JiaziCard, Element } from './JiaziCard';
 import { CardDataBank } from './CardDataBank';
 import { SeasonCycle, Season } from './SeasonCycle';
 import { QiManager } from './QiManager';
@@ -259,11 +259,12 @@ export class TurnManager {
         cardName: slot.card.name,
         cardScore: this.getCardScore(slot.card, currentSeason),
         useLeverage: slot.useLeverage,
+        isEarth: slot.card.tianGanElement === Element.EARTH,
       })),
       currentLeverage,
       {
         calculateHoldEarnings: (cardScore, leverage) => this.scoreManager.calculateHoldEarnings(cardScore, leverage),
-        calculateHoldQiCost: (cardScore, leverage) => this.leverageCalculator.calculateHoldQiCost(cardScore, leverage),
+        calculateHoldQiCost: (cardScore, leverage, isEarth) => this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth),
       },
     );
 
@@ -807,7 +808,11 @@ export class TurnManager {
     return this.handManager.getHand().reduce((total, slot) => {
       if (!slot) return total;
       const leverage = slot.useLeverage ? currentLeverage : 1;
-      return total + this.previewHoldQiCost(this.getCardScore(slot.card, currentSeason), leverage);
+      return total + this.previewHoldQiCost(
+        this.getCardScore(slot.card, currentSeason),
+        leverage,
+        slot.card.tianGanElement === Element.EARTH,
+      );
     }, 0);
   }
 
@@ -854,8 +859,8 @@ export class TurnManager {
   }
 
   /** 预览持仓卡牌每回合的气消耗 */
-  previewHoldQiCost(cardScore: number, leverage: number): number {
-    return this.leverageCalculator.calculateHoldQiCost(cardScore, leverage);
+  previewHoldQiCost(cardScore: number, leverage: number, isEarth: boolean = false): number {
+    return this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth);
   }
 
   /** 预览卖出卡牌的得分结算 */
@@ -986,11 +991,12 @@ export class TurnManager {
         cardName: slot.card.name,
         cardScore: this.getCardScore(slot.card, nextSeason),
         useLeverage: slot.useLeverage,
+        isEarth: slot.card.tianGanElement === Element.EARTH,
       })),
       settlementLeverage,
       {
         calculateHoldEarnings: (cardScore, leverage) => this.scoreManager.calculateHoldEarnings(cardScore, leverage),
-        calculateHoldQiCost: (cardScore, leverage) => this.leverageCalculator.calculateHoldQiCost(cardScore, leverage),
+        calculateHoldQiCost: (cardScore, leverage, isEarth) => this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth),
       },
     );
     const qiAfterHold = qiAfterAction - holdingSettlement.holdQiCost;

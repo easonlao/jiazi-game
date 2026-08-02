@@ -52,6 +52,11 @@ export interface BalanceConfig {
   holdQiMin: number;
   /** 杠杆每倍额外气耗（仅当倍率大于 1 时）：extra = leverage * leverageQiCostPerX */
   leverageQiCostPerX: number;
+  /**
+   * 土牌专属杠杆气耗系数：土牌无季节风险，可安全长持杠杆，成本需更高
+   * （否则"买入土牌杠杆躺着不动"成为无脑最优）。非土牌用 leverageQiCostPerX。
+   */
+  earthLeverageQiCostPerX: number;
 }
 
 /** 当前默认配置（模拟验证候选） */
@@ -70,7 +75,7 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   buyEntryFee: 2,
   forcedLiquidationQiReturnFactor: 0.5,
   forcedLiquidationScoreMultiplier: 0.8,
-  marginCallPenaltyPerScore: 6,
+  marginCallPenaltyPerScore: 3,
   leverageTable: [
     [2, 1.0],
     [5, 2.0],
@@ -82,6 +87,7 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   holdQiScoreFactor: 0.4,
   holdQiMin: 0.5,
   leverageQiCostPerX: 2,
+  earthLeverageQiCostPerX: 5,
 };
 
 /** 兼容旧调用方的候选配置别名；生产入口与默认配置完全一致。 */
