@@ -252,7 +252,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
       await dismissSettlement(page);
     }
     await expect(handSection.getByLabel(/杠杆 2\.0×/)).toBeVisible({ timeout: 10_000 });
-    await expect(handSection.getByText(/下回合结算/)).toHaveCount(0);
+    await expect(handSection.getByText('杠杆 1.0×→2.0×', { exact: true })).toHaveCount(0);
   });
 
   test('游戏结束与重新开始', async ({ page }) => {

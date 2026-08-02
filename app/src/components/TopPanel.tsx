@@ -10,6 +10,13 @@ interface Floater {
   delta: number;
 }
 
+const SEASON_THEME: Record<string, { text: string; bar: string }> = {
+  spring: { text: 'text-emerald-700', bar: 'bg-emerald-500/80' },
+  summer: { text: 'text-red-700', bar: 'bg-red-500/80' },
+  autumn: { text: 'text-amber-700', bar: 'bg-amber-500/80' },
+  winter: { text: 'text-sky-700', bar: 'bg-sky-500/80' },
+};
+
 /** 分数变化飘字：金色 +X.X / 红色 -X.X */
 export function TopPanel() {
   const season = useGameStore((s) => s.season);
@@ -18,6 +25,7 @@ export function TopPanel() {
   const roundInSeason = useGameStore((s) => s.roundInSeason);
   const score = useGameStore((s) => s.score);
   const scoreDelta = useGameStore((s) => s.scoreDelta);
+  const seasonTheme = SEASON_THEME[season] ?? SEASON_THEME.spring;
 
   const [floaters, setFloaters] = useState<Floater[]>([]);
   const lastEventId = useRef(0);
@@ -36,7 +44,7 @@ export function TopPanel() {
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-2 bg-[#faf6ee] border-b border-wood-light">
       <div className="min-w-0">
-        <h1 className="text-lg font-bold font-serif text-ink">
+        <h1 className={`text-lg font-bold font-serif ${seasonTheme.text}`}>
         {/* key 变化触发切换动画，提示回合推进 */}
         <span key={currentRound} className="inline-block" style={roundAnimStyle}>
           {seasonDisplay(season)}季
@@ -47,11 +55,11 @@ export function TopPanel() {
           <span>本季第 {roundInSeason} 回合</span>
         </div>
         <div className="mt-0.5 h-1 w-32 overflow-hidden rounded-full bg-wood-light/50" aria-label={`游戏进度 ${currentRound}/${totalRounds}`}>
-          <div className="h-full rounded-full bg-gold/80" style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />
+          <div className={`h-full rounded-full ${seasonTheme.bar}`} style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />
         </div>
       </div>
-      <div className="relative min-h-[34px] shrink-0 text-right">
-        <div className="text-base font-bold text-gold tabular-nums">
+      <div className="relative min-h-[34px] shrink-0 rounded-lg border border-gold/35 bg-gold/5 px-2 py-0.5 text-right">
+        <div className="text-xl font-black leading-6 text-gold tabular-nums">
           {score.toFixed(1)} 分
         </div>
         <div className="text-[10px] text-ink-light">累计总分</div>
