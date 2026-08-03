@@ -22,7 +22,9 @@ type Snapshot = {
   marginCallCount: number;
 };
 
-const seasonLengths = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3];
+// 2026-08-03：季节最小段长 4（SeasonCycle 方案B），旧 20×3 非法。
+// 12 段 × 5 = 60，合法且接近真实分布（段数 4 的倍数保证四季均衡）。
+const seasonLengths = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
 const trace: TraceAction[] = [
   { type: 'buy', cardIndex: 0, leverage: false },
   { type: 'wait' },
@@ -81,8 +83,9 @@ async function runTypeScriptTraceAsync(): Promise<Snapshot[]> {
   return snapshots;
 }
 
-function runPythonTrace(): { snapshots: Snapshot[]; shadowDiscardedCount: number } {
-  const result = execFileSync('python', ['scripts/simulator.py', '--trace-stdin'], {
+function runPythonTrace(): { snapshots: Snapshot[] } {
+  // 2026-08-03：官方 simulator.py 已归档，改用 docs/analysis/three_strategy_mix.py 的 trace 模式
+  const result = execFileSync('python', ['../docs/analysis/three_strategy_mix.py', '--trace-stdin'], {
     cwd: process.cwd(),
     input: JSON.stringify({ seed: 20260801, season_lengths: seasonLengths, actions: trace }),
     encoding: 'utf-8',
@@ -110,8 +113,7 @@ describe('Python simulator ↔ TypeScript TurnManager parity', () => {
       expect(actual.publicIds).toEqual(expected.publicIds);
       expect(actual.marginCallCount).toBe(expected.marginCallCount);
     }
-    // 这是 Python 的 shadow accounting，不是假设核心已经守恒；它只说明核心
-    // 卖出后覆盖公共区的现状已由 deck/public 快照逐步复现。
-    expect(pythonTrace.shadowDiscardedCount).toBeGreaterThan(0);
+    // 触发过强平是 trace 覆盖爆仓分支的最低要求。
+    expect(pythonTrace.snapshots.some((snapshot) => snapshot.marginCallCount > 0)).toBe(true);
   });
 });
