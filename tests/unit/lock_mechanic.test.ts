@@ -24,22 +24,49 @@ async function makeTm(seed = 42) {
 }
 
 describe('锁定机制（核心逻辑）', () => {
-  it('锁定一张公共牌：扣 5 气、记录锁定 ID', async () => {
+  it('锁定不立即扣气（锁定费在回合结束统一结算）', async () => {
     const tm = await makeTm();
     const qiBefore = tm.getQi();
     expect(tm.executeLockCard(0)).toBe(true);
     expect(tm.getLockedCardIds()).toHaveLength(1);
-    expect(tm.getQi()).toBe(qiBefore - 5);
+    // 锁定动作本身不扣气（防止同回合锁→解锁白扣）
+    expect(tm.getQi()).toBe(qiBefore);
     expect(tm.isCardLocked(tm.getPublicCards()[0].id)).toBe(true);
+  });
+
+  it('锁定后执行回合动作：锁定费按锁定张数统一结算', async () => {
+    // 对照组：无锁定，等待一回合（回气10）
+    const tmNoLock = await makeTm(7);
+    (tmNoLock as any).qiManager.setQi(20);
+    tmNoLock.executeWait();
+    const qiNoLock = tmNoLock.getQi();
+
+    // 实验组：锁定1张，等待一回合（回气10 + 扣锁定费5）
+    const tmLock = await makeTm(7);
+    (tmLock as any).qiManager.setQi(20);
+    tmLock.executeLockCard(0);
+    tmLock.executeWait();
+    const qiLock = tmLock.getQi();
+
+    // 锁定版比无锁版少 5 气 = 锁定费
+    expect(qiNoLock - qiLock).toBe(TurnManager.LOCK_COST_PER_CARD);
+    expect(tmLock.getLockedCardIds()).toHaveLength(1); // 气充足，锁定保留
+  });
+
+  it('同回合锁定再解锁：不产生任何扣费', async () => {
+    const tm = await makeTm();
+    const qiBefore = tm.getQi();
+    tm.executeLockCard(0);
+    tm.executeUnlockCard(0);
+    expect(tm.getQi()).toBe(qiBefore);
+    expect(tm.getLockedCardIds()).toHaveLength(0);
   });
 
   it('锁定上限 2 张：第 3 张拒绝', async () => {
     const tm = await makeTm();
-    // 直接构造 3 张公共牌（锁定2张后第3张应失败）
     expect(tm.executeLockCard(0)).toBe(true);
     expect(tm.executeLockCard(1)).toBe(true);
     expect(tm.executeLockCard(0)).toBe(false); // 已锁
-    // 无法构造第3张（最多2张公共牌可锁），验证重复锁同一张也拒绝
     expect(tm.executeLockCard(1)).toBe(false);
   });
 
@@ -58,7 +85,6 @@ describe('锁定机制（核心逻辑）', () => {
     tm.executeLockCard(0);
     const lockedId = tm.getPublicCards()[0].id;
     tm.executeWait();
-    // 下一回合锁定牌仍在公共区
     const publicIds = tm.getPublicCards().map((c) => c.id);
     expect(publicIds).toContain(lockedId);
     expect(tm.getLockedCardIds()).toContain(lockedId);
@@ -69,18 +95,25 @@ describe('锁定机制（核心逻辑）', () => {
     tm.executeLockCard(0);
     const card = tm.getPublicCards()[0];
     const cardId = card.id;
-    // 买入锁定牌（需要气足够，锁了5气后通常仍够）
     const ok = tm.executeBuy(0, false);
     if (ok) {
       expect(tm.getLockedCardIds()).not.toContain(cardId);
       expect(tm.getHand().filter(Boolean)).toHaveLength(1);
     }
-    // 若气不足（极端情况）跳过断言，不影响其他用例
   });
 
   it('气不足时锁定失败', async () => {
     const tm = await makeTm();
     (tm as any).qiManager.setQi(3); // 锁定费5，气3不够
     expect(tm.executeLockCard(0)).toBe(false);
+  });
+
+  it('气不足于锁定费时：回合结算自动解锁最低分锁定牌', async () => {
+    const tm = await makeTm();
+    tm.executeLockCard(0);
+    // 把气压到不足以支付锁定费
+    (tm as any).qiManager.setQi(3);
+    tm.executeWait(); // 推进回合 → settleLockCost 扣5 → 气-2 → 自动解锁
+    expect(tm.getLockedCardIds()).toHaveLength(0);
   });
 });

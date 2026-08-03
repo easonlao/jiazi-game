@@ -589,7 +589,9 @@ export class TurnManager {
   }
 
   /**
-   * 锁定一张公共牌：占公共位 + 每张每回合扣锁定费。
+   * 锁定一张公共牌：占公共位。
+   * 锁定费不在本动作扣——在回合结束统一结算（settleLockCost，按当回合锁定张数 × LOCK_COST）。
+   * 因此同一回合内锁定再解锁不产生任何费用。
    * 上限 = MAX_LOCKED_CARDS（锁满则公共位全占，每回合 0 张新牌，游戏僵死）。
    * @param cardIndex 公共牌索引
    * @returns 是否锁定成功
@@ -601,18 +603,17 @@ export class TurnManager {
     if (!card) return false;
     if (this.lockedCardIds.includes(card.id)) return false;
     if (this.lockedCardIds.length >= TurnManager.MAX_LOCKED_CARDS) return false;
-    // 气不足无法支付本回合锁定费
+    // 气不足至少 1 回合锁定费时拒绝锁定（防止锁定后结算必然自动解锁的无效操作）
     if (this.qiManager.getQi() < TurnManager.LOCK_COST_PER_CARD) return false;
 
     this.lockedCardIds.push(card.id);
-    // 立即扣本回合锁定费
-    this.qiManager.spend(TurnManager.LOCK_COST_PER_CARD);
     this.lastAction = 'lock';
     return true;
   }
 
   /**
-   * 解锁一张公共牌：牌回牌堆，停止扣锁定费。
+   * 解锁一张公共牌：牌回牌堆。
+   * 本动作不扣气也不退气（锁定费只在回合结束结算，锁→解锁无费用）。
    * @param cardIndex 公共牌索引
    * @returns 是否解锁成功
    */
