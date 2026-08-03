@@ -28,9 +28,10 @@ describe('经济规则验收（最终 core 候选配置）', () => {
 
   it('core 杠杆额外持气耗按实际倍率计费', () => {
     const lc = new LeverageCalculator(DEFAULT_BALANCE_CONFIG);
-    const base = Math.max(0.5, 1.5 + 0.4 * 0);
-    expect(lc.calculateHoldQiCost(0, 2)).toBeCloseTo(base + 4);
-    expect(lc.calculateHoldQiCost(0, 3.5)).toBeCloseTo(base + 7);
+    // 评分×10 + 气ceil：base(0) = ceil(1.5) = 2
+    // 2.0x 额外 = ceil(2.0*2)=4 → 2+4=6；3.5x 额外 = ceil(3.5*2)=7 → 2+7=9
+    expect(lc.calculateHoldQiCost(0, 2)).toBe(6);
+    expect(lc.calculateHoldQiCost(0, 3.5)).toBe(9);
   });
 
   it('第 60 回合禁止买入', async () => {
@@ -58,20 +59,21 @@ describe('满仓维持性（公式级）', () => {
     const lc = new LeverageCalculator(CANDIDATE_BALANCE_CONFIG);
     const qi = new QiManager(undefined, CANDIDATE_BALANCE_CONFIG);
 
-    // 3 张 +3.2 分普通牌（理论最高评分）无杠杆持仓
-    const perCard = lc.calculateHoldQiCost(3.2, 1);
+    // 3 张 +32 分普通牌（评分×10后理论最高）无杠杆持仓
+    const perCard = lc.calculateHoldQiCost(32, 1);
     const totalCost = perCard * 3;
     const recovery = qi.getBaseRecovery();
 
     expect(totalCost).toBeLessThan(recovery);
-    expect(perCard).toBeCloseTo(Math.max(0.5, 1.5 + 0.4 * 3.2), 5); // 2.78
+    // ceil(1.5 + 0.04*32) = ceil(2.78) = 3
+    expect(perCard).toBe(3); // 3张=9 < 回气10
   });
 
   it('杠杆仓位按实际倍率叠加持续气压', () => {
     const lc = new LeverageCalculator(DEFAULT_BALANCE_CONFIG);
     const qi = new QiManager(undefined, DEFAULT_BALANCE_CONFIG);
 
-    const totalCost = lc.calculateHoldQiCost(3.2, 2) * 3;
+    const totalCost = lc.calculateHoldQiCost(32, 2) * 3;
     const recovery = qi.getBaseRecovery();
 
     expect(totalCost).toBeGreaterThan(recovery);

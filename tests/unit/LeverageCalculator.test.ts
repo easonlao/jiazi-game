@@ -30,21 +30,23 @@ describe('LeverageCalculator', () => {
   });
 
   it('计算持仓气耗', () => {
+    // 评分×10 整数化 + 气ceil取整（2026-08-03）
+    // holdQiScoreFactor: 0.4 → 0.04（评分×10后÷10补偿）
     // cardScore = 3, leverage = 2.0
-    // base = max(0.5, 1.5 + 0.4 * 3) = max(0.5, 2.7) = 2.7
-    // cost = base + 2.0 * 2 = 2.7 + 4 = 6.7
-    expect(lc.calculateHoldQiCost(3, 2.0)).toBeCloseTo(6.7, 1);
-    // 3.5x 的额外持气耗为 3.5 * 2 = 7
-    expect(lc.calculateHoldQiCost(0, 3.5)).toBeCloseTo(8.5, 1);
+    // base = ceil(max(0.5, 1.5 + 0.04 * 3)) = ceil(1.62) = 2
+    // cost = 2 + ceil(2.0 * 2) = 2 + 4 = 6
+    expect(lc.calculateHoldQiCost(3, 2.0)).toBe(6);
+    // 3.5x 额外持气耗 = ceil(3.5 * 2) = 7
+    // base(0) = ceil(1.5) = 2, cost = 2 + 7 = 9
+    expect(lc.calculateHoldQiCost(0, 3.5)).toBe(9);
 
     // cardScore = -5, leverage = 1.0（无杠杆）
-    // base = max(0.5, 1.5 + 0.4 * -5) = max(0.5, -0.5) = 0.5
-    // cost = base (无杠杆额外) = 0.5
-    expect(lc.calculateHoldQiCost(-5, 1.0)).toBeCloseTo(0.5, 1);
+    // base = ceil(max(0.5, 1.5 + 0.04 * -5)) = ceil(1.3) = 2
+    expect(lc.calculateHoldQiCost(-5, 1.0)).toBe(2);
 
     // cardScore = 0, leverage = 1.5
-    // base = 1.5, cost = 1.5 + 1.5 * 2 = 4.5
-    expect(lc.calculateHoldQiCost(0, 1.5)).toBeCloseTo(4.5, 1);
+    // base = ceil(1.5) = 2, cost = 2 + ceil(1.5 * 2) = 2 + 3 = 5
+    expect(lc.calculateHoldQiCost(0, 1.5)).toBe(5);
   });
 
   it('爆仓强平判定', () => {

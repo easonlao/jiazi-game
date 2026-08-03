@@ -157,14 +157,15 @@ describe('TurnManager 行动前结算预览', () => {
     (manager as any).seasonCycle.loadState(0, 1, [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
     const boughtCard = manager.getPublicCards()[0]!;
     const cardScore = boughtCard.getSeasonScore(manager.getCurrentSeason());
-    const baseQiCost = Math.max(0.5, 1.5 + 0.4 * cardScore);
+    // 评分×10 + 气ceil取整：base = ceil(max(0.5, 1.5 + 0.04*score))
+    const baseQiCost = Math.ceil(Math.max(0.5, 1.5 + 0.04 * cardScore));
     expect(manager.executeBuy(0, true)).toBe(true);
 
     // 买入发生在季内第 1 回合；买入推进到下一回合时仍为预埋 1.0x。
     const embedded = manager.getLastSettlementDetail()!.holdItems[0]!;
     expect(embedded.leverage).toBe(1.0);
     expect(embedded.earning).toBeCloseTo(1.2 * cardScore);
-    expect(embedded.qiCost).toBeCloseTo(baseQiCost);
+    expect(embedded.qiCost).toBe(baseQiCost);
 
     // 第 3 回合升至 2.0x，收益和气耗都随之变化。
     // 土牌用专属杠杆气耗系数 5，非土牌用全局 2（见 BalanceConfig.earthLeverageQiCostPerX）。
@@ -174,7 +175,7 @@ describe('TurnManager 行动前结算预览', () => {
     const qiPerX = isEarth ? 5 : 2;
     expect(upgraded.leverage).toBe(2.0);
     expect(upgraded.earning).toBeCloseTo(1.2 * cardScore * 2.0);
-    expect(upgraded.qiCost).toBeCloseTo(baseQiCost + 2.0 * qiPerX);
+    expect(upgraded.qiCost).toBe(baseQiCost + Math.ceil(2.0 * qiPerX));
 
     // 换季后重新从季内第 1 回合开始，杠杆回到 1.0x。
     expect(manager.executeWait()).toBe(true); // next season round 1
@@ -213,16 +214,17 @@ describe('TurnManager 行动前结算预览', () => {
     (manager as any).seasonCycle.loadState(0, 1, [12, 12, 12, 12]);
     const card = manager.getPublicCards()[0]!;
     const score = manager.getCardScore(card, manager.getCurrentSeason());
-    const baseQiCost = Math.max(0.5, 1.5 + 0.4 * score);
+    // 评分×10 + 气ceil：base = ceil(max(0.5, 1.5 + 0.04*score))
+    const baseQiCost = Math.ceil(Math.max(0.5, 1.5 + 0.04 * score));
 
     expect(manager.executeBuy(0, true)).toBe(true); // 进入春季第 2 回合，当前仍为 1.0x
     expect(manager.getCurrentRoundInSeason()).toBe(2);
     expect(manager.getLeverageMultiplier()).toBe(1.0);
     expect(manager.getSettlementLeverageMultiplier()).toBe(2.0);
-    expect(manager.getCurrentHoldQiCost()).toBeCloseTo(baseQiCost);
+    expect(manager.getCurrentHoldQiCost()).toBe(baseQiCost);
 
     const waitPreview = manager.previewSettlement({ type: 'wait' });
-    expect(waitPreview!.holdItems[0]!.qiCost).toBeCloseTo(baseQiCost + 4.0);
+    expect(waitPreview!.holdItems[0]!.qiCost).toBe(baseQiCost + Math.ceil(2.0 * 2)); // 非土牌 2.0x
     expect(waitPreview!.holdItems[0]!.qiCost).toBeGreaterThan(manager.getCurrentHoldQiCost());
   });
 

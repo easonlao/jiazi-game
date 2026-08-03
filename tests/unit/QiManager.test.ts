@@ -29,12 +29,13 @@ describe('QiManager', () => {
 
   it('计算买入消耗应符合公式', () => {
     const qi = new QiManager();
-    // cardScore = 3, useLeverage = false
-    // cost = Math.ceil(11 * (1 + 0.05 * 3)) = Math.ceil(11 * 1.15) = Math.ceil(12.65) = 13
-    expect(qi.calculateBuyCost(3, false)).toBe(13);
+    // 评分×10 整数化：buyCostFactor 0.05→0.005（2026-08-03）
+    // cardScore = 30（×10后）, useLeverage = false
+    // cost = Math.ceil(11 * (1 + 0.005 * 30)) = Math.ceil(11 * 1.15) = Math.ceil(12.65) = 13
+    expect(qi.calculateBuyCost(30, false)).toBe(13);
 
-    // cardScore = 3, useLeverage = true
+    // cardScore = 30, useLeverage = true
     // cost = 13 + LQC(8) = 21
-    expect(qi.calculateBuyCost(3, true)).toBe(21);
+    expect(qi.calculateBuyCost(30, true)).toBe(21);
   });
 });

@@ -96,7 +96,7 @@ export class JiaziCard {
     const branchScore = this.scoreHiddenStemsInSeason(seasonElement);
     const relationScore = this.scoreStemBranchRelation();
 
-    return this.roundScore(stemScore * 0.5 + branchScore * 0.3 + relationScore * 0.2);
+    return this.roundRawScore(stemScore * 0.5 + branchScore * 0.3 + relationScore * 0.2);
   }
 
   /**
@@ -126,7 +126,7 @@ export class JiaziCard {
       const branchScores = seasons.map((s) => this.scoreHiddenStemsInSeason(seasonElementMap[s]));
       const branchMean = branchScores.reduce((sum, value) => sum + value, 0) / branchScores.length;
       const relationScore = this.scoreStemBranchRelation();
-      return this.roundScore(stemScore * 0.5 + (branchScore - branchMean) * 0.5 + relationScore * 0.2);
+      return this.roundScore10(stemScore * 0.5 + (branchScore - branchMean) * 0.5 + relationScore * 0.2);
     }
 
     // 非土牌：原均值中心化逻辑
@@ -135,7 +135,7 @@ export class JiaziCard {
     const factor = this.yinYang === YinYang.YANG
       ? config.yangPolarityFactor
       : config.yinPolarityFactor;
-    return this.roundScore(config.scoreBeta + factor * (this.getRawSeasonScore(season) - rawMean));
+    return this.roundScore10(config.scoreBeta + factor * (this.getRawSeasonScore(season) - rawMean));
   }
 
   private isSeason(season: string): season is Season {
@@ -155,8 +155,8 @@ export class JiaziCard {
   }
 
   private scoreElementInSeason(element: Element, seasonElement: Element): number {
-    // 土牌：承接当前季节旺气，幅度为旺气的0.4倍（环境镜像设计）
-    if (element === Element.EARTH) return 1.6;
+    // 土牌：承接当前季节旺气，幅度为旺气的0.2倍（环境镜像设计，0.8 = 4×0.2）
+    if (element === Element.EARTH) return 0.8;
 
     // 当季：+4
     if (element === seasonElement) return 4.0;
@@ -281,5 +281,15 @@ export class JiaziCard {
 
   private roundScore(score: number): number {
     return Math.round(score * 100) / 100;
+  }
+
+  /** raw 内部计算：保留 2 位小数精度 */
+  private roundRawScore(score: number): number {
+    return Math.round(score * 100) / 100;
+  }
+
+  /** 最终评分输出：×10 取整（整数分制，-35~+35，观感/心算友好） */
+  private roundScore10(score: number): number {
+    return Math.round(score * 10);
   }
 }

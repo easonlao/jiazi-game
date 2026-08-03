@@ -360,7 +360,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
     const tm = new TurnManager();
     await tm.initialize();
 
-    // 构造旧版存档：手牌没有 lockedQi 字段
+    // 构造存档：手牌没有 lockedQi 字段（评分×10 后 buyScore 用新尺度 20）
     const stateData = {
       currentRound: 1,
       state: 'player_action',
@@ -377,7 +377,7 @@ describe('TurnManager - 爆仓强平边界与控制流测试', () => {
       hand: [
         {
           cardId: 1,
-          buyScore: 2.0,
+          buyScore: 20,
           leverage: 1.5,
           buyRound: 1,
           holdEarnings: 0

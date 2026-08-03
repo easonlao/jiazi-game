@@ -32,7 +32,7 @@ BASE_RECOVERY = 10
 WAIT_BONUS = 10
 SELL_COST = 4
 BASE_BUY_COST = 11
-BUY_COST_FACTOR = 0.05
+BUY_COST_FACTOR = 0.005
 LQC = 8
 BUY_ENTRY_FEE = 2
 FORCED_QI_RETURN_FACTOR = 0.5
@@ -41,7 +41,7 @@ MARGIN_CALL_PENALTY_PER_SCORE = 3
 HOLD_BONUS = 1.2
 SELL_MULTIPLIER = 4
 HOLD_QI_BASE = 1.5
-HOLD_QI_SCORE_FACTOR = 0.4
+HOLD_QI_SCORE_FACTOR = 0.04
 HOLD_QI_MIN = 0.5
 LEVERAGE_QI_COST_PER_X = 1
 EARTH_LEVERAGE_QI_COST_PER_X = 5
@@ -167,7 +167,7 @@ def load_cards() -> list[Card]:
 
 def score_element_in_season(element: str, season_element: str) -> float:
     if element == "earth":
-        return 1.6
+        return 0.8
     if element == season_element:
         return 4.0
     if (element in WOOD_FIRE and season_element in WOOD_FIRE) or (
@@ -255,7 +255,8 @@ class ScoreModel:
                 self.values[(card.id, season)] = js_round_decimal(value)
 
     def score(self, card: Card, season: str) -> float:
-        return self.values[(card.id, season)]
+        # 评分×10 整数化：与核心 getSeasonScore 一致（-35~+35 整数）
+        return round(self.values[(card.id, season)] * 10)
 
     def card_rows(self, cards: Iterable[Card]) -> list[dict]:
         cards = list(cards)
@@ -426,12 +427,13 @@ class GameState:
         return math.ceil(cost)
 
     def hold_qi_cost(self, score: float, leverage: float, is_earth: bool = False) -> float:
-        base = max(HOLD_QI_MIN, HOLD_QI_BASE + HOLD_QI_SCORE_FACTOR * score)
+        # 气整数化：base 与杠杆额外均 ceil 取整（与核心 LeverageCalculator 一致）
+        base = math.ceil(max(HOLD_QI_MIN, HOLD_QI_BASE + HOLD_QI_SCORE_FACTOR * score))
         qi_charge = self.economy.qi_charge(leverage)
         # 土牌专属杠杆气耗：与核心 earthLeverageQiCostPerX=5 一致，非土牌用 qi_cost_per_x
         if leverage > 1 and is_earth:
             qi_charge = leverage * EARTH_LEVERAGE_QI_COST_PER_X
-        return base + qi_charge
+        return base + math.ceil(qi_charge)
 
     def settle(self) -> dict:
         detail = {"round": self.current_round, "season": self.season, "hold_earnings": 0.0,

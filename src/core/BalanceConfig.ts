@@ -70,7 +70,8 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   waitBonus: 10,
   sellCost: 4,
   baseBuyCost: 11,
-  buyCostFactor: 0.05,
+  /** 评分×10 整数化后系数÷10 补偿：0.05 → 0.005（保持气经济不变） */
+  buyCostFactor: 0.005,
   lqc: 8,
   buyEntryFee: 2,
   forcedLiquidationQiReturnFactor: 0.5,
@@ -84,7 +85,8 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
     [12, 3.5],
   ],
   holdQiBase: 1.5,
-  holdQiScoreFactor: 0.4,
+  /** 评分×10 整数化后系数÷10 补偿：0.4 → 0.04（保持气经济不变） */
+  holdQiScoreFactor: 0.04,
   holdQiMin: 0.5,
   leverageQiCostPerX: 2,
   earthLeverageQiCostPerX: 5,

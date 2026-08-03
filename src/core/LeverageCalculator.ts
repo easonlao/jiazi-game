@@ -26,23 +26,24 @@ export class LeverageCalculator {
   }
 
   /**
-   * 计算持仓气耗
+   * 计算持仓气耗（气整数化：基础与杠杆额外均向上取整）
    *
-   * 基础气耗 = max(holdQiMin, holdQiBase + holdQiScoreFactor * cardScore)
-   * 杠杆额外气耗 = leverage × (isEarth ? earthLeverageQiCostPerX : leverageQiCostPerX)
+   * 基础气耗 = ceil(max(holdQiMin, holdQiBase + holdQiScoreFactor * cardScore))
+   * 杠杆额外气耗 = ceil(leverage × (isEarth ? earthLeverageQiCostPerX : leverageQiCostPerX))
    *
    * 设计意图：杠杆同时放大收益和持仓压力，让高杠杆位置有真实的持续风险。
    * 土牌无季节风险、可安全长持杠杆，用更高的专属系数补偿——否则"买入土牌杠杆躺着不动"
    * 成为无脑最优（2026-08-02 蒙特卡洛：土牌专属系数 2→5 后，土牌杠杆 290→129，策略空间打开）。
+   * 向上取整保证气为整数（2026-08-03 验证：ceil 对平衡零影响——气是"足够"的资源）。
    */
   calculateHoldQiCost(cardScore: number, leverage: number, isEarth: boolean = false): number {
-    const baseCost = Math.max(
+    const baseCost = Math.ceil(Math.max(
       this.cfg.holdQiMin,
       this.cfg.holdQiBase + this.cfg.holdQiScoreFactor * cardScore
-    );
+    ));
     if (leverage <= 1) return baseCost;
     const perX = isEarth ? this.cfg.earthLeverageQiCostPerX : this.cfg.leverageQiCostPerX;
-    return baseCost + leverage * perX;
+    return baseCost + Math.ceil(leverage * perX);
   }
 
   /** 检查是否需要强制平仓 */

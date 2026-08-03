@@ -21,9 +21,9 @@ describe('QiManager - 气耗管理边界测试', () => {
   it('应该正确计算买入消耗', () => {
     const qiManager = new QiManager(50);
     
-    // 买入消耗 = Math.ceil(11 * (1 + 0.05 * 评分))
-    // 评分4.0时：Math.ceil(11 * (1 + 0.05 * 4.0)) = Math.ceil(13.2) = 14
-    const cost = qiManager.calculateBuyCost(4.0);
+    // 买入消耗 = Math.ceil(11 * (1 + 0.005 * 评分))（评分×10整数化，系数÷10）
+    // 评分40（×10后4.0）时：Math.ceil(11 * (1 + 0.005 * 40)) = Math.ceil(13.2) = 14
+    const cost = qiManager.calculateBuyCost(40);
     expect(cost).toBe(14);
   });
 
