@@ -62,12 +62,19 @@ export class CardPoolManager {
   }
 
   /**
-   * 从剩余牌堆最上方抽取 2 张放入公共展示池
+   * 从剩余牌堆最上方抽取卡牌放入公共展示池。
+   * 锁定机制：锁定牌保留在公共区，抽牌数 = DRAW_COUNT - 锁定数（保证公共位不超上限）。
+   * @param lockedCardIds 当前锁定的卡牌 ID 列表（锁定牌留在公共区）
    * @returns 抽出的公共卡牌列表
    */
-  drawCards(): JiaziCard[] {
-    const drawCount = Math.min(CardPoolManager.DRAW_COUNT, this.deck.length);
-    this.publicCards = this.deck.splice(0, drawCount);
+  drawCards(lockedCardIds: number[] = []): JiaziCard[] {
+    const lockedCards = this.publicCards.filter((card) => lockedCardIds.includes(card.id));
+    const drawCount = Math.min(
+      CardPoolManager.DRAW_COUNT - lockedCards.length,
+      this.deck.length
+    );
+    const newCards = this.deck.splice(0, Math.max(0, drawCount));
+    this.publicCards = [...lockedCards, ...newCards];
     return this.publicCards;
   }
 

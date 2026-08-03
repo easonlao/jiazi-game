@@ -16,7 +16,7 @@ import { GameSaveService, type GameSnapshot } from './GameSaveService';
 export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'game_over';
 
 /** 玩家操作类型 */
-export type ActionType = 'buy' | 'sell' | 'wait';
+export type ActionType = 'buy' | 'sell' | 'wait' | 'lock' | 'unlock';
 
 export interface MarginCallDetail {
   cardName: string;
@@ -128,6 +128,13 @@ export class TurnManager {
   private useLeverage: boolean;
   private marginCallCount: number;
 
+  /** 锁定中的公共牌 ID 列表（锁定机制：占公共位，每张每回合扣 5 气） */
+  private lockedCardIds: number[] = [];
+  /** 锁定费常量：每张锁定牌每回合消耗气 */
+  static readonly LOCK_COST_PER_CARD = 5;
+  /** 锁定张数上限：展示牌数 - 1（锁满则公共位全占，每回合 0 张新牌，游戏僵死） */
+  static readonly MAX_LOCKED_CARDS = 2;
+
   // 局内反馈与统计
   private lastSettlementDetail: SettlementDetail | null = null;
   private totalBuys: number = 0;
@@ -227,8 +234,11 @@ export class TurnManager {
     // 1. 持仓结算
     this.settleHoldings();
 
-    // 2. 抽牌
-    this.cardPoolManager.drawCards();
+    // 1.5 锁定费结算：每张锁定牌每回合扣 LOCK_COST，气不足自动解锁（先解评分最低的）
+    this.settleLockCost();
+
+    // 2. 抽牌（锁定牌保留在公共区，抽 drawCount - 锁定数 张新牌）
+    this.cardPoolManager.drawCards(this.lockedCardIds);
 
     // 3. 气回复
     this.recoverQi();
@@ -292,6 +302,40 @@ export class TurnManager {
         this.lastSettlementDetail.marginCallTriggered = true;
         this.lastSettlementDetail.marginCallDetails = details;
       }
+    }
+  }
+
+  /**
+   * 锁定费结算：每张锁定牌每回合扣 LOCK_COST_PER_CARD 气。
+   * 气不足时自动解锁（先解评分最低的），锁定牌回牌堆。
+   */
+  private settleLockCost(): void {
+    if (this.lockedCardIds.length === 0) return;
+    const currentSeason = this.seasonCycle.getCurrentSeason();
+    const totalCost = this.lockedCardIds.length * TurnManager.LOCK_COST_PER_CARD;
+
+    // 扣锁定费（允许扣到负数，随后检查解锁）
+    this.qiManager.deductQi(totalCost);
+
+    // 气不足：从评分最低的锁定牌开始自动解锁，直到气回正
+    while (this.lockedCardIds.length > 0 && this.qiManager.getQi() <= 0) {
+      const publicCards = this.cardPoolManager.getPublicCards();
+      let worstId: number | null = null;
+      let worstScore = Number.POSITIVE_INFINITY;
+      for (const id of this.lockedCardIds) {
+        const card = publicCards.find((c) => c.id === id);
+        if (!card) continue;
+        const score = this.getCardScore(card, currentSeason);
+        if (score < worstScore) {
+          worstScore = score;
+          worstId = id;
+        }
+      }
+      if (worstId === null) break;
+      this.lockedCardIds = this.lockedCardIds.filter((id) => id !== worstId);
+      const card = publicCards.find((c) => c.id === worstId);
+      if (card) this.cardPoolManager.returnCards([card]);
+      this.qiManager.recover(TurnManager.LOCK_COST_PER_CARD);
     }
   }
 
@@ -458,8 +502,12 @@ export class TurnManager {
 
     if (slotIndex === -1) return false;
 
-    // 未选的牌回牌堆
-    const remainingCards = this.cardPoolManager.getPublicCards().filter((_, i) => i !== cardIndex);
+    // 买的是锁定牌则自动解锁（牌已入手，不再占用公共位）
+    this.lockedCardIds = this.lockedCardIds.filter((id) => id !== card.id);
+
+    // 未选的牌回牌堆（锁定中的牌保留）
+    const remainingCards = this.cardPoolManager.getPublicCards()
+      .filter((_, i) => i !== cardIndex && !this.lockedCardIds.includes(card.id));
     this.cardPoolManager.returnCards(remainingCards);
 
     this.lastAction = 'buy';
@@ -528,14 +576,67 @@ export class TurnManager {
   executeWait(): boolean {
     if (this.state !== 'player_action') return false;
 
-    // 公共牌回牌堆
+    // 公共牌回牌堆（锁定中的牌保留在公共区）
     const publicCards = this.cardPoolManager.getPublicCards();
-    this.cardPoolManager.returnCards(publicCards);
+    const lockedCards = publicCards.filter((card) => this.lockedCardIds.includes(card.id));
+    const unLockedCards = publicCards.filter((card) => !this.lockedCardIds.includes(card.id));
+    this.cardPoolManager.returnCards(unLockedCards);
 
     this.lastAction = 'wait';
     this.totalWaits++;
     this.advanceTurn();
     return true;
+  }
+
+  /**
+   * 锁定一张公共牌：占公共位 + 每张每回合扣锁定费。
+   * 上限 = MAX_LOCKED_CARDS（锁满则公共位全占，每回合 0 张新牌，游戏僵死）。
+   * @param cardIndex 公共牌索引
+   * @returns 是否锁定成功
+   */
+  executeLockCard(cardIndex: number): boolean {
+    if (this.state !== 'player_action') return false;
+    const publicCards = this.cardPoolManager.getPublicCards();
+    const card = publicCards[cardIndex];
+    if (!card) return false;
+    if (this.lockedCardIds.includes(card.id)) return false;
+    if (this.lockedCardIds.length >= TurnManager.MAX_LOCKED_CARDS) return false;
+    // 气不足无法支付本回合锁定费
+    if (this.qiManager.getQi() < TurnManager.LOCK_COST_PER_CARD) return false;
+
+    this.lockedCardIds.push(card.id);
+    // 立即扣本回合锁定费
+    this.qiManager.spend(TurnManager.LOCK_COST_PER_CARD);
+    this.lastAction = 'lock';
+    return true;
+  }
+
+  /**
+   * 解锁一张公共牌：牌回牌堆，停止扣锁定费。
+   * @param cardIndex 公共牌索引
+   * @returns 是否解锁成功
+   */
+  executeUnlockCard(cardIndex: number): boolean {
+    if (this.state !== 'player_action') return false;
+    const publicCards = this.cardPoolManager.getPublicCards();
+    const card = publicCards[cardIndex];
+    if (!card) return false;
+    if (!this.lockedCardIds.includes(card.id)) return false;
+
+    this.lockedCardIds = this.lockedCardIds.filter((id) => id !== card.id);
+    this.cardPoolManager.returnCards([card]);
+    this.lastAction = 'unlock';
+    return true;
+  }
+
+  /** 获取当前锁定的公共牌 ID 列表 */
+  getLockedCardIds(): number[] {
+    return [...this.lockedCardIds];
+  }
+
+  /** 判断一张公共牌是否处于锁定状态 */
+  isCardLocked(cardId: number): boolean {
+    return this.lockedCardIds.includes(cardId);
   }
 
   /**
@@ -607,7 +708,8 @@ export class TurnManager {
       pool: {
         deckIds: this.cardPoolManager.getDeck().map(c => c.id),
         publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
-      }
+      },
+      lockedCardIds: [...this.lockedCardIds],
     };
   }
 
@@ -661,6 +763,9 @@ export class TurnManager {
       return card;
     });
     this.cardPoolManager.loadState(restoredDeck, restoredPublic);
+
+    // 7. 还原锁定状态（兼容旧存档：lockedCardIds 缺失则空）
+    this.lockedCardIds = data.lockedCardIds ? [...data.lockedCardIds] : [];
   }
 
   /**

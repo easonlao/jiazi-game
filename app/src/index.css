@@ -252,3 +252,18 @@ html, body, #root {
   50% { border-color: rgba(196, 181, 160, 0.25); }
 }
 .slot-breathe { animation: slotBreathe 2.4s ease-in-out infinite; }
+
+/* ═══ 卡牌锁定交互动画 ═══ */
+/* 锁按钮点击：缩放回弹 */
+.lock-btn:active { transform: scale(0.85); }
+/* 锁定成功：锁图标弹入 + 轻微旋转 */
+.lock-svg { transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.lock-svg-active { animation: lockSnap 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes lockSnap {
+  0% { transform: scale(0.4) rotate(-25deg); opacity: 0.3; }
+  60% { transform: scale(1.25) rotate(6deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+/* 锁定状态：卡牌轻微琥珀描边提示 */
+.card-in:has(.lock-btn) { position: relative; }
+.card-in:has(.lock-svg-active) { box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.5); }

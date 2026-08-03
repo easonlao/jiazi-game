@@ -56,6 +56,8 @@ interface GameStore {
   selectedPublicCard: number;
   selectedHandCard: number;
   useLeverage: boolean;
+  /** 锁定中的公共牌 ID（锁定机制：占公共位 + 每张每回合 5 气） */
+  lockedCardIds: number[];
   /** 行动尚未提交时的冻结选择；只在确认后调用核心 execute。 */
   pendingAction: SettlementPreviewAction | null;
   settlementPreview: SettlementPreview | null;
@@ -100,6 +102,7 @@ interface GameStore {
   executeBuy: () => boolean;
   executeSell: () => boolean;
   executeWait: () => boolean;
+  toggleLockCard: (index: number) => void;
   requestBuyPreview: () => void;
   requestSellPreview: () => void;
   requestWaitPreview: () => void;
@@ -162,6 +165,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   selectedPublicCard: -1,
   selectedHandCard: -1,
   useLeverage: false,
+  lockedCardIds: [],
   pendingAction: null,
   settlementPreview: null,
   toast: null,
@@ -219,6 +223,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       totalWaits: tm.getTotalWaits(),
       totalLeverageBuys: tm.getTotalLeverageBuys(),
       marginCallCount: nextMarginCallCount,
+      lockedCardIds: tm.getLockedCardIds(),
     });
 
     // ── FX 事件 diff：委托给 fx-events 模块 ──
@@ -421,6 +426,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
     return ok;
+  },
+
+  toggleLockCard(index) {
+    const tm = get().turnManager;
+    if (!tm) return;
+    const card = tm.getPublicCards()[index];
+    if (!card) return;
+    const isLocked = tm.isCardLocked(card.id);
+    const ok = isLocked ? tm.executeUnlockCard(index) : tm.executeLockCard(index);
+    if (ok) {
+      get()._sync();
+      get().showToast(isLocked ? '已解锁' : `已锁定（每回合 -${5} 气）`);
+    } else {
+      get().showToast(isLocked ? '解锁失败' : '锁定失败（最多锁 2 张 / 气不足）');
+    }
   },
 
   requestBuyPreview() {

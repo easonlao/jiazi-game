@@ -46,6 +46,8 @@ export interface GameSnapshot {
   season: SeasonSnapshot;
   hand: (HandSlotSnapshot | null)[];
   pool: CardPoolSnapshot;
+  /** 锁定中的公共牌 ID 列表（锁定机制） */
+  lockedCardIds?: number[];
 }
 
 const SAVE_KEY = 'jiazi_game_save';

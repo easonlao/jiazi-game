@@ -9,6 +9,8 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
   const selectPublicCard = useGameStore((s) => s.selectPublicCard);
   const gameState = useGameStore((s) => s.gameState);
   const turnManager = useGameStore((s) => s.turnManager);
+  const lockedCardIds = useGameStore((s) => s.lockedCardIds);
+  const toggleLockCard = useGameStore((s) => s.toggleLockCard);
 
   if (gameState === 'init') {
     return (
@@ -50,6 +52,8 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
               selected={selectedPublicCard === i}
               onSelect={() => selectPublicCard(i)}
               disabled={gameState !== 'player_action'}
+              locked={lockedCardIds.includes(card.id)}
+              onToggleLock={gameState === 'player_action' ? () => toggleLockCard(i) : undefined}
             />
           );
         })}
@@ -64,12 +68,16 @@ function PublicCardItem({
   selected,
   onSelect,
   disabled,
+  locked,
+  onToggleLock,
 }: {
   card: JiaziCard;
   index: number;
   selected: boolean;
   onSelect: () => void;
   disabled: boolean;
+  locked: boolean;
+  onToggleLock?: () => void;
 }) {
   const previewBuyCost = useGameStore((s) => s.previewBuyCost);
   const previewHoldEarning = useGameStore((s) => s.previewHoldEarning);
@@ -97,6 +105,8 @@ function PublicCardItem({
       canAfford={canAfford}
       holdEarning={holdEarning}
       holdQiCost={holdQiCost}
+      locked={locked}
+      onToggleLock={onToggleLock}
     />
   );
 }
