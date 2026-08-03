@@ -290,10 +290,11 @@ def get_score_model(cards: list[Card], mode: str, beta: float, gamma: float) -> 
 
 
 def generate_season_lengths(random: Mulberry32) -> list[int]:
-    # 段数必须是 4 的倍数 {8,12,16,20}，否则季节序列固定从春开始会结构性偏春
-    n = random.int(2, 6) * 4
-    lengths = [3] * n
-    remaining = TOTAL_ROUNDS - 3 * n
+    # 段数必须是 4 的倍数 {8,12}，否则季节序列固定从春开始会结构性偏春
+    # 2026-08-03 方案B：min_len 3→4（旧 {8,12,16,20}/min3 导致 3 回合段占 52%）
+    n = random.int(2, 3) * 4
+    lengths = [4] * n
+    remaining = TOTAL_ROUNDS - 4 * n
     underfull = list(range(n))
     while remaining:
         pick = random.int(0, len(underfull))
@@ -370,9 +371,15 @@ class GameState:
         gamma: float = 0.15,
         record_history: bool = False,
         economy: LeverageEconomy | None = None,
+        skip_season_generate: bool = False,
     ):
         self.random = Mulberry32(seed)
-        self.season_lengths = generate_season_lengths(self.random)
+        # skip_season_generate：trace 模式跳过（season_lengths 随后覆盖），
+        # 避免 generate_season_lengths 的随机消耗改变牌池 shuffle 序列（与 TS 端 skipSeasonGenerate 对齐）
+        if skip_season_generate:
+            self.season_lengths = []
+        else:
+            self.season_lengths = generate_season_lengths(self.random)
         self.season_index = 0
         self.round_in_season = 1
         self.current_round = 1
@@ -473,7 +480,8 @@ class GameState:
         self.score += final_sell
         self.total_sell_earnings += final_sell
         penalty = js_round(leverage * abs(current_score) * MARGIN_CALL_PENALTY_PER_SCORE)
-        self.score = max(0.0, self.score - penalty)
+        # 分数可为负，不截断（与 TS ScoreManager.applyMarginCallPenalty 一致，2026-08-02 修复）
+        self.score -= penalty
         self.hold_durations.append(self.current_round - slot.buy_round)
         self.hand[target] = None
         self.pool.return_cards([slot.card])
@@ -1548,7 +1556,8 @@ def snapshot(game: GameState) -> dict:
 def run_trace(payload: dict) -> dict:
     """运行一个由测试传入的固定动作 trace，供 Vitest 跨语言核对。"""
     # trace 与产品默认配置对齐：中心化评分 + 阴阳波动，beta=0.02。
-    game = GameState(int(payload["seed"]), "centered_polarity", 0.02, 0.10)
+    # skip_season_generate：season_lengths 由 payload 传入并随后覆盖，跳过随机生成以对齐 TS 端随机序列
+    game = GameState(int(payload["seed"]), "centered_polarity", 0.02, 0.10, skip_season_generate=True)
     if payload.get("season_lengths") is not None:
         lengths = [int(value) for value in payload["season_lengths"]]
         if sum(lengths) != TOTAL_ROUNDS or not all(3 <= value <= 12 for value in lengths):

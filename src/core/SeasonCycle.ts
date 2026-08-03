@@ -21,23 +21,30 @@ export class SeasonCycle {
   private totalRounds: number = 60;
   private readonly random: RandomSource;
 
-  constructor(random?: RandomSource) {
+  constructor(random?: RandomSource, skipGenerate: boolean = false) {
     this.random = random ?? new MathRandomSource();
-    this.generateSeasonLengths();
+    // skipGenerate：测试/存档恢复用（配合 loadState 覆盖长度，避免 generateSeasonLengths
+    // 消耗随机数影响后续牌池序列——见 simulator_parity 测试对固定 seed 的依赖）
+    if (!skipGenerate) {
+      this.generateSeasonLengths();
+    }
   }
 
   /**
-   * 生成随机季节长度：每段严格 3-12，总和恰好 totalRounds(60)。
-   * 算法：段数 n ∈ {8, 12, 16, 20}（4 的倍数），先每段铺 3，再从未满（<12）段中
+   * 生成随机季节长度：每段严格 4-12，总和恰好 totalRounds(60)。
+   * 算法：段数 n ∈ {8, 12}（4 的倍数，保证四季均衡），先每段铺 4，再从未满（<12）段中
    * 随机选择 +1 分摊剩余，保证每次必成功分配，无需 guard 兜底。
    *
+   * 2026-08-03 调整（方案B）：段数池 {8,12,16,20}→{8,12}、min_len 3→4——
+   * 旧算法 n=20 时剩余 0 导致整局全 3 回合（3 回合段占 52%，换季太快无操作空间）。
+   * 新分布：3 回合归零、4-7 回合操作带占 81%、9+ 回合保留 11%（爆发窗口）、平均段长 6.0。
    * 注意：段数必须是 4 的倍数——否则季节序列固定从春开始会结构性偏春
    * （如 n=7 时"春夏秋冬春夏秋"冬只有 1 段），长期期望下木火收益天然高于金水。
    */
   private generateSeasonLengths(): void {
-    const n = this.random.int(2, 6) * 4; // [2,6) → {8, 12, 16, 20}
-    const lengths = new Array<number>(n).fill(3);
-    let remaining = this.totalRounds - 3 * n;
+    const n = this.random.int(2, 3) * 4; // [2,3) → {8, 12}
+    const lengths = new Array<number>(n).fill(4);
+    let remaining = this.totalRounds - 4 * n;
 
     // 未满段索引池：只从中选，杜绝指向已满段的无效尝试
     const underfull: number[] = [];

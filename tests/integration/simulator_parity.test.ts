@@ -58,7 +58,9 @@ function normalizeSnapshot(manager: TurnManager): Snapshot {
 async function runTypeScriptTraceAsync(): Promise<Snapshot[]> {
   const cardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => cardData }));
-  const manager = new TurnManager(undefined, new SeededRandomSource(20260801));
+  // skipSeasonGenerate：跳过 SeasonCycle 的随机消耗（避免 generateSeasonLengths 的
+  // while 循环改变后续牌池序列，导致与 Python 端（直接用传入 lengths）随机序列不匹配）
+  const manager = new TurnManager(undefined, new SeededRandomSource(20260801), { skipSeasonGenerate: true });
   await manager.initialize();
   (manager as any).seasonCycle.loadState(0, 1, seasonLengths);
   manager.startGame();

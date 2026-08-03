@@ -150,13 +150,13 @@ export class TurnManager {
   // 存档服务（序列化与 LocalStorage 边界）
   private readonly saveService: GameSaveService;
 
-  constructor(config?: BalanceConfig, random?: RandomSource) {
+  constructor(config?: BalanceConfig, random?: RandomSource, options?: { skipSeasonGenerate?: boolean }) {
     const balanceConfig = config ?? DEFAULT_BALANCE_CONFIG;
     const randomSource = random ?? new MathRandomSource();
     this.balanceConfig = balanceConfig;
     this.random = randomSource;
     this.cardDataBank = new CardDataBank();
-    this.seasonCycle = new SeasonCycle(randomSource);
+    this.seasonCycle = new SeasonCycle(randomSource, options?.skipSeasonGenerate ?? false);
     this.qiManager = new QiManager(undefined, balanceConfig);
     this.scoreManager = new ScoreManager();
     this.leverageCalculator = new LeverageCalculator(balanceConfig);
