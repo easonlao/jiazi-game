@@ -505,9 +505,14 @@ export class TurnManager {
     // 买的是锁定牌则自动解锁（牌已入手，不再占用公共位）
     this.lockedCardIds = this.lockedCardIds.filter((id) => id !== card.id);
 
-    // 未选的牌回牌堆（锁定中的牌保留）
+    // 未选的牌回牌堆（锁定中的牌保留）。
+    // 注意：filter 回调第二个参数才是当前元素，必须用元素自身的 id 判断是否锁定，
+    // 不能用外层闭包变量 `card.id`（那是要买的牌，不是当前元素）——
+    // 否则当买的是非锁定牌时，`!lockedCardIds.includes(card.id)` 永远为 true，
+    // 会把所有锁定的牌错误地回牌堆，导致 deck 与 publicCards 同时持有同一张锁定牌的引用，
+    // 下一次 drawCards 可能从 deck 抽到这张牌的副本，使 publicCards 出现「两张同 id 锁定牌」（用户截图里的 bug）。
     const remainingCards = this.cardPoolManager.getPublicCards()
-      .filter((_, i) => i !== cardIndex && !this.lockedCardIds.includes(card.id));
+      .filter((c, i) => i !== cardIndex && !this.lockedCardIds.includes(c.id));
     this.cardPoolManager.returnCards(remainingCards);
 
     this.lastAction = 'buy';
