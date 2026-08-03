@@ -84,8 +84,9 @@ async function runTypeScriptTraceAsync(): Promise<Snapshot[]> {
 }
 
 function runPythonTrace(): { snapshots: Snapshot[] } {
-  // 2026-08-03：官方 simulator.py 已归档，改用 docs/analysis/three_strategy_mix.py 的 trace 模式
-  const result = execFileSync('python', ['../docs/analysis/three_strategy_mix.py', '--trace-stdin'], {
+  // 2026-08-03：官方 simulator.py 已归档，改用 scripts/three_strategy_mix.py 的 trace 模式
+  //（docs/analysis 不进 git，CI 只能拿到 repo 内副本；改 docs 版后运行 npm run sync:simulator）
+  const result = execFileSync('python', ['scripts/three_strategy_mix.py', '--trace-stdin'], {
     cwd: process.cwd(),
     input: JSON.stringify({ seed: 20260801, season_lengths: seasonLengths, actions: trace }),
     encoding: 'utf-8',
