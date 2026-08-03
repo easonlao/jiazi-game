@@ -92,7 +92,8 @@
 ### 本地运行
 
 **前置要求**：
-- [Node.js](https://nodejs.org/) 18+ 
+- [Node.js](https://nodejs.org/) 18+
+- [pnpm](https://pnpm.io/) 9（与 CI 一致；`pnpm-lock.yaml` 是唯一 lockfile）
 
 **步骤**：
 
@@ -102,13 +103,22 @@ git clone https://github.com/easonlao/jiazi-game.git
 cd jiazi-game
 
 # 2. 安装依赖
-npm install
+pnpm install
 
 # 3. 启动开发服务器
-npm run dev
+pnpm dev
 
 # 4. 打开浏览器访问
 # http://127.0.0.1:5173
+```
+
+**测试与模拟器**：
+
+```bash
+pnpm test              # 全量单测（Vitest）
+pnpm test:simulator    # 模拟器规则对照测试
+pnpm export:config     # 从 TS 源码导出 balance_config.json（改参数后执行）
+pnpm sync:simulator    # 同步模拟器引擎到 repo/scripts（改 docs 版引擎后执行）
 ```
 
 ---
