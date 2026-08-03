@@ -8,8 +8,8 @@
     "dev": "npm --prefix app run dev",
     "preview": "npm --prefix app run preview",
     "test": "vitest",
-    "test:simulator": "python scripts/test_simulator.py",
-    "baseline": "python scripts/simulator.py --json",
+    "test:simulator": "python ../docs/analysis/test_simulator.py",
+    "export:config": "node scripts/export-config.mjs",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
