@@ -11,7 +11,8 @@
     "test:simulator": "python ../docs/analysis/test_simulator.py",
     "export:config": "node scripts/export-config.mjs",
     "sync:simulator": "python scripts/sync-simulator.py",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:preview": "E2E_TARGET=preview playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
