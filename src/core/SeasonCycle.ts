@@ -24,7 +24,7 @@ export class SeasonCycle {
   constructor(random?: RandomSource, skipGenerate: boolean = false) {
     this.random = random ?? new MathRandomSource();
     // skipGenerate：测试/存档恢复用（配合 loadState 覆盖长度，避免 generateSeasonLengths
-    // 消耗随机数影响后续牌池序列——见 simulator_parity 测试对固定 seed 的依赖）
+    // 消耗随机数影响后续牌池序列——见测试对固定 seed 的依赖）
     if (!skipGenerate) {
       this.generateSeasonLengths();
     }
