@@ -1,10 +1,16 @@
 /**
- * 存档序列化与 LocalStorage 边界。
+ * 存档序列化与持久化边界。
  *
  * TurnManager 只暴露 exportSnapshot / importSnapshot 两个原子方法负责状态还原，
  * 不关心序列化格式与存储介质；GameSaveService 负责可序列化快照的读写、格式校验
  * 与坏档清理，使存档协议与游戏状态机解耦。
+ *
+ * 存储介质通过构造注入 StorageProvider（平台无关）；未注入时回退到浏览器
+ * globalThis.localStorage（web 平台默认）。微信小游戏等无 localStorage 的平台
+ * 需显式传入对应实现。
  */
+
+import type { StorageProvider } from './StorageProvider';
 
 /** 可序列化的手牌槽位快照。 */
 export interface HandSlotSnapshot {
@@ -53,18 +59,28 @@ export interface GameSnapshot {
 const SAVE_KEY = 'jiazi_game_save';
 
 /**
- * 存档服务：负责 LocalStorage 读写、格式校验与坏档清理。
+ * 存档服务：负责持久化读写、格式校验与坏档清理。
  * 实际的状态还原委托给 TurnManager.importSnapshot。
  */
 export class GameSaveService {
+  private readonly storage: StorageProvider;
+
   /**
-   * 一键保存游戏状态至 LocalStorage。
+   * @param provider 存储实现；省略时回退浏览器 localStorage（web 平台）
+   */
+  constructor(provider?: StorageProvider) {
+    // globalThis 引用而非裸标识符：测试环境通过 mock globalThis.localStorage 提供实现
+    this.storage = provider ?? (globalThis as { localStorage?: StorageProvider }).localStorage!;
+  }
+
+  /**
+   * 一键保存游戏状态。
    * @returns 是否保存成功
    */
   save(exporter: () => GameSnapshot): boolean {
     try {
       const snapshot = exporter();
-      localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot));
+      this.storage.setItem(SAVE_KEY, JSON.stringify(snapshot));
       console.log('[GameSaveService] 存档成功');
       return true;
     } catch (e) {
@@ -74,7 +90,7 @@ export class GameSaveService {
   }
 
   /**
-   * 从 LocalStorage 读取并还原存档。
+   * 读取并还原存档。
    * @returns 是否读档成功
    */
   load(
@@ -82,7 +98,7 @@ export class GameSaveService {
     onStateRestore?: () => void,
   ): boolean {
     try {
-      const raw = localStorage.getItem(SAVE_KEY);
+      const raw = this.storage.getItem(SAVE_KEY);
       if (!raw) {
         console.log('[GameSaveService] 找不到存档');
         return false;
@@ -121,17 +137,17 @@ export class GameSaveService {
   }
 
   /**
-   * 检查 LocalStorage 中是否已存在有游戏存档。
+   * 检查是否已存在有游戏存档。
    * @returns 是否有存档
    */
   hasSave(): boolean {
-    return localStorage.getItem(SAVE_KEY) !== null;
+    return this.storage.getItem(SAVE_KEY) !== null;
   }
 
   /**
    * 清除已有的存档。
    */
   clear(): void {
-    localStorage.removeItem(SAVE_KEY);
+    this.storage.removeItem(SAVE_KEY);
   }
 }

@@ -16,6 +16,7 @@ import {
   type FxDeltaEvent,
   type FxRoundEvent,
 } from './store/fx-events';
+import { localStorageProvider } from './platform/localStorageProvider';
 
 // 重新导出 FX 事件类型，供 hooks/useScreenShake 等消费者使用
 export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent };
@@ -253,7 +254,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (_initializing) return;
     _initializing = true;
     try {
-      const tm = new TurnManager();
+      const tm = new TurnManager(undefined, undefined, { storage: localStorageProvider });
       await tm.initialize();
 
       tm.setOnStateChange(() => {
@@ -272,7 +273,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tm.setOnGameEnd((finalScore) => {
         set((s) => ({ tick: s.tick + 1 }));
         // 记录到排行榜
-        const lb = new LeaderboardService();
+        const lb = new LeaderboardService(localStorageProvider);
         lb.addEntry(finalScore);
         set({ leaderboardEntries: lb.getEntries() });
         // 游戏结束清除存档
@@ -329,7 +330,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   openLeaderboard() {
-    const lb = new LeaderboardService();
+    const lb = new LeaderboardService(localStorageProvider);
     set({ leaderboardEntries: lb.getEntries(), leaderboardOpen: true });
   },
 
@@ -571,31 +572,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
       };
     }
 
-    const hand = get().hand;
-    // 结算发生在下回合：气耗必须按下回合的实际杠杆倍数 + 结算季评分计算，
-    // 否则杠杆爬坡或跨季换牌时预测会与实际情况不一致
-    const settlementLeverage = tm.getSettlementLeverageMultiplier();
-    const settlementSeason = tm.getSettlementSeason();
-    let holdQiCost = 0;
-    let hasLeverage = false;
-    for (const slot of hand) {
-      if (!slot) continue;
-      if (slot.useLeverage) hasLeverage = true;
-      const effLeverage = slot.useLeverage ? settlementLeverage : 1;
-      holdQiCost += tm.previewHoldQiCost(tm.getCardScore(slot.card, settlementSeason), effLeverage);
+    // 委托核心 previewSettlement（wait 分支）——与真实结算共用同一组计算器，
+    // 消灭此前 store 手写推演与核心逻辑的双份漂移风险（Bug A/E 同型）。
+    const preview = tm.previewSettlement({ type: 'wait' });
+    if (!preview) {
+      return {
+        afterQi: get().qi, holdQiCost: 0, midQi: get().qi,
+         willQiDeplete: false, willMarginCall: false, hasLeverage: false,
+      };
     }
-    // 真实时序：扣持仓气耗 → 判定爆仓/强平 → 回气。
-    // midQi 即扣气后的中间气量；若 midQi ≤ 0 会触发强平：
-    //   - 有杠杆牌 → 强平返还 floor(lockedQi × 0.5) 且扣分，最终气取决于被随机强平的仓位（不确定值）
-    //   - 无杠杆牌 → 核心不强平，气保持 ≤ 0 直到回气
-    // 因此 willMarginCall=true 时 afterQi 只是下限估算，不是确定结果。
-    const midQi = get().qi - holdQiCost;
+
+    const midQi = preview.qiAfterHold ?? get().qi;
+    const holdQiCost = preview.holdQiCost;
     const willQiDeplete = midQi <= 0;
-    const willMarginCall = willQiDeplete && hasLeverage;
-    const afterQi = Math.min(
+    const willMarginCall = preview.willMarginCall;
+    const hasLeverage = preview.marginCallCandidateNames.length > 0;
+    // 强平时 finalQi 为 null（最终气取决于被随机强平的仓位，不确定值）；
+    // 这里给出下限估算保持字段类型稳定，UI 在 willMarginCall 分支不展示该值。
+    const afterQi = preview.finalQi ?? Math.min(
       tm.getMaxQi(),
-      midQi + tm.getBaseRecovery() + tm.getWaitBonus()
+      midQi + preview.baseQiRecover + preview.waitQiRecover,
     );
+
     return { afterQi, holdQiCost, midQi, willQiDeplete, willMarginCall, hasLeverage };
   },
 }));

@@ -11,6 +11,9 @@ import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig';
 import { MathRandomSource, RandomSource } from './RandomSource';
 import { calculateHoldingSettlement } from './SettlementPreviewCalculator';
 import { GameSaveService, type GameSnapshot } from './GameSaveService';
+import type { StorageProvider } from './StorageProvider';
+import { LockManager } from './LockManager';
+import { MarginCallEngine } from './MarginCallEngine';
 
 /** 游戏主状态 */
 export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'game_over';
@@ -128,12 +131,14 @@ export class TurnManager {
   private useLeverage: boolean;
   private marginCallCount: number;
 
-  /** 锁定中的公共牌 ID 列表（锁定机制：占公共位，每张每回合扣 5 气） */
-  private lockedCardIds: number[] = [];
-  /** 锁定费常量：每张锁定牌每回合消耗气 */
-  static readonly LOCK_COST_PER_CARD = 5;
+  /** 锁定中的公共牌管理（锁定机制见 LockManager） */
+  private readonly lockManager: LockManager;
+  /** 强平引擎（爆仓时对杠杆仓位强制平仓） */
+  private readonly marginCallEngine: MarginCallEngine;
+  /** 锁定费常量：每张锁定牌每回合消耗气（转发 LockManager，单一真源） */
+  static readonly LOCK_COST_PER_CARD = LockManager.LOCK_COST_PER_CARD;
   /** 锁定张数上限：展示牌数 - 1（锁满则公共位全占，每回合 0 张新牌，游戏僵死） */
-  static readonly MAX_LOCKED_CARDS = 2;
+  static readonly MAX_LOCKED_CARDS = LockManager.MAX_LOCKED_CARDS;
 
   // 局内反馈与统计
   private lastSettlementDetail: SettlementDetail | null = null;
@@ -150,7 +155,11 @@ export class TurnManager {
   // 存档服务（序列化与 LocalStorage 边界）
   private readonly saveService: GameSaveService;
 
-  constructor(config?: BalanceConfig, random?: RandomSource, options?: { skipSeasonGenerate?: boolean }) {
+  constructor(
+    config?: BalanceConfig,
+    random?: RandomSource,
+    options?: { skipSeasonGenerate?: boolean; storage?: StorageProvider },
+  ) {
     const balanceConfig = config ?? DEFAULT_BALANCE_CONFIG;
     const randomSource = random ?? new MathRandomSource();
     this.balanceConfig = balanceConfig;
@@ -170,13 +179,34 @@ export class TurnManager {
     this.useLeverage = false;
     this.marginCallCount = 0;
 
+    this.lockManager = new LockManager({
+      qiManager: this.qiManager,
+      cardPoolManager: this.cardPoolManager,
+      getCardScore: (card, season) => this.getCardScore(card, season),
+    });
+    this.marginCallEngine = new MarginCallEngine({
+      qiManager: this.qiManager,
+      handManager: this.handManager,
+      cardPoolManager: this.cardPoolManager,
+      scoreManager: this.scoreManager,
+      leverageCalculator: this.leverageCalculator,
+      seasonCycle: this.seasonCycle,
+      random: this.random,
+      balanceConfig: this.balanceConfig,
+      getCardScore: (card, season) => this.getCardScore(card, season),
+      getTotalLockedQi: () => this.getTotalLockedQi(),
+      onMarginCall: () => {
+        this.marginCallCount++;
+      },
+    });
+
     this.lastSettlementDetail = null;
     this.totalBuys = 0;
     this.totalSells = 0;
     this.totalWaits = 0;
     this.totalLeverageBuys = 0;
 
-    this.saveService = new GameSaveService();
+    this.saveService = new GameSaveService(options?.storage);
   }
 
   /** 所有核心结算和预览共用的最终评分入口。 */
@@ -235,10 +265,10 @@ export class TurnManager {
     this.settleHoldings();
 
     // 1.5 锁定费结算：每张锁定牌每回合扣 LOCK_COST，气不足自动解锁（先解评分最低的）
-    this.settleLockCost();
+    this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason());
 
     // 2. 抽牌（锁定牌保留在公共区，抽 drawCount - 锁定数 张新牌）
-    this.cardPoolManager.drawCards(this.lockedCardIds);
+    this.cardPoolManager.drawCards(this.lockManager.getLockedCardIds());
 
     // 3. 气回复
     this.recoverQi();
@@ -297,7 +327,7 @@ export class TurnManager {
 
     // 结算完成后进行爆仓判定
     if (this.leverageCalculator.checkMarginCall(this.qiManager.getQi())) {
-      const details = this.handleMarginCall();
+      const details = this.marginCallEngine.execute();
       if (this.lastSettlementDetail && details.length > 0) {
         this.lastSettlementDetail.marginCallTriggered = true;
         this.lastSettlementDetail.marginCallDetails = details;
@@ -305,123 +335,6 @@ export class TurnManager {
     }
   }
 
-  /**
-   * 锁定费结算：每张锁定牌每回合扣 LOCK_COST_PER_CARD 气。
-   * 气不足时自动解锁（先解评分最低的），锁定牌回牌堆。
-   */
-  private settleLockCost(): void {
-    if (this.lockedCardIds.length === 0) return;
-    const currentSeason = this.seasonCycle.getCurrentSeason();
-    const totalCost = this.lockedCardIds.length * TurnManager.LOCK_COST_PER_CARD;
-
-    // 扣锁定费（允许扣到负数，随后检查解锁）
-    this.qiManager.deductQi(totalCost);
-
-    // 气不足：从评分最低的锁定牌开始自动解锁，直到气回正
-    while (this.lockedCardIds.length > 0 && this.qiManager.getQi() <= 0) {
-      const publicCards = this.cardPoolManager.getPublicCards();
-      let worstId: number | null = null;
-      let worstScore = Number.POSITIVE_INFINITY;
-      for (const id of this.lockedCardIds) {
-        const card = publicCards.find((c) => c.id === id);
-        if (!card) continue;
-        const score = this.getCardScore(card, currentSeason);
-        if (score < worstScore) {
-          worstScore = score;
-          worstId = id;
-        }
-      }
-      if (worstId === null) break;
-      this.lockedCardIds = this.lockedCardIds.filter((id) => id !== worstId);
-      const card = publicCards.find((c) => c.id === worstId);
-      if (card) this.cardPoolManager.returnCards([card]);
-      this.qiManager.recover(TurnManager.LOCK_COST_PER_CARD);
-    }
-  }
-
-  /**
-   * 处理玩家爆仓情况：寻找玩家手牌中的杠杆卡牌并强行平仓出售
-   * 强平会循环随机平仓杠杆牌，正常结算卖出积分，但强平不消耗气，亦不提供卖出即时回气
-   *
-   * 爆仓扣分公式：杠杆倍数 × |爆仓时卡牌评分| × balanceConfig.marginCallPenaltyPerScore
-   * 设计意图：惩罚与杠杆倍数和卡牌价值正相关——高杠杆 + 极端分数 = 剧痛。
-   * 示例：3 倍杠杆买入 +4 分牌，爆仓时评分 -2，扣分 = 3 × 2 × 当前配置的 marginCallPenaltyPerScore。
-   */
-  private handleMarginCall(): MarginCallDetail[] {
-    console.log('[TurnManager] 爆仓！气耗尽');
-    const details: MarginCallDetail[] = [];
-
-    while (this.qiManager.getQi() <= 0) {
-      const hand = this.handManager.getHand();
-      const leverageIndices: number[] = [];
-
-      // 收集所有手牌中带有杠杆的插槽索引
-      for (let i = 0; i < hand.length; i++) {
-        if (hand[i] && hand[i]!.useLeverage) {
-          leverageIndices.push(i);
-        }
-      }
-
-      // 若已无杠杆牌，强平终止（仅剩的普通无杠杆牌允许气为 0 持有，下回合被迫等待）
-      if (leverageIndices.length === 0) {
-        break;
-      }
-
-      // 随机选择一张杠杆牌进行强平（使用注入随机源，保证固定 seed 可复现）
-      const targetIndex = leverageIndices[this.random.int(0, leverageIndices.length)];
-      const slot = hand[targetIndex]!;
-
-      // 强平移除卡牌 (直接 sell，不扣���卖出气耗，亦不提供卖出即时回气)，并将卡牌回洗入牌堆
-      const liquidatedSlot = this.handManager.sell(targetIndex);
-      if (liquidatedSlot) {
-        this.cardPoolManager.returnCards([liquidatedSlot.card]);
-      }
-      const newTotalLocked = this.getTotalLockedQi();
-      this.marginCallCount++;
-
-      // 爆仓时取当前实际杠杆倍数（动态）
-      const effectiveLeverage =
-        slot.useLeverage
-          ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
-          : 1;
-
-      // 正常获得卖出分数（强平惩罚：正收益打 8 折，负收益 100% 承担）
-      const currentScore = this.getCardScore(slot.card, this.seasonCycle.getCurrentSeason());
-      const baseSellScore = this.scoreManager.calculateSellScore(
-        currentScore,
-        slot.buyScore,
-        effectiveLeverage
-      );
-      const multiplier = this.qiManager.getForcedLiquidationScoreMultiplier();
-      const finalSellScore = baseSellScore > 0 ? Math.floor(baseSellScore * multiplier) : baseSellScore;
-      this.scoreManager.addSellEarnings(finalSellScore);
-
-      // 爆仓扣分：当前杠杆 × |爆仓时卡牌评分| × 系数（来自 BalanceConfig）
-      const marginCallPenalty = Math.round(
-        effectiveLeverage * Math.abs(currentScore) * this.balanceConfig.marginCallPenaltyPerScore
-      );
-      this.scoreManager.applyMarginCallPenalty(marginCallPenalty);
-
-      // 强平返还部分占用气
-      const forcedLiquidationQiReturn = Math.floor(slot.lockedQi * this.qiManager.getForcedLiquidationQiReturnFactor());
-      this.qiManager.recover(forcedLiquidationQiReturn, newTotalLocked);
-
-      // 记录强平细节（扣分系数来自配置，避免调参后展示与实扣不一致）
-      const penaltyCoeff = this.balanceConfig.marginCallPenaltyPerScore;
-      details.push({
-        cardName: slot.card.name,
-        sellScore: finalSellScore,
-        reason: `气量归零强制平仓，杠杆 ${effectiveLeverage}x，卡牌评分 ${currentScore}，扣分 ${marginCallPenalty}（杠杆 × |评分| × ${penaltyCoeff}）`
-      });
-
-      console.log(`[TurnManager] 爆仓强平：移除卡牌 ${slot.card.name}，结算收益 ${finalSellScore} 分，扣分 ${marginCallPenalty}（${effectiveLeverage} × |${currentScore}| × ${penaltyCoeff}），退回占用气 ${forcedLiquidationQiReturn}`);
-
-      // 强平成功后退出，不再提供低保缓冲——玩家必须自行管理气量，感受到爆仓的持续压力
-      break;
-    }
-
-    return details;
-  }
 
   /**
    * 自然回复玩家的气，若上回合选择等待则提供额外奖励
@@ -503,16 +416,16 @@ export class TurnManager {
     if (slotIndex === -1) return false;
 
     // 买的是锁定牌则自动解锁（牌已入手，不再占用公共位）
-    this.lockedCardIds = this.lockedCardIds.filter((id) => id !== card.id);
+    this.lockManager.onCardBought(card.id);
 
     // 未选的牌回牌堆（锁定中的牌保留）。
     // 注意：filter 回调第二个参数才是当前元素，必须用元素自身的 id 判断是否锁定，
     // 不能用外层闭包变量 `card.id`（那是要买的牌，不是当前元素）——
-    // 否则当买的是非锁定牌时，`!lockedCardIds.includes(card.id)` 永远为 true，
+    // 否则当买的是非锁定牌时，`!isCardLocked(card.id)` 永远为 true，
     // 会把所有锁定的牌错误地回牌堆，导致 deck 与 publicCards 同时持有同一张锁定牌的引用，
     // 下一次 drawCards 可能从 deck 抽到这张牌的副本，使 publicCards 出现「两张同 id 锁定牌」（用户截图里的 bug）。
     const remainingCards = this.cardPoolManager.getPublicCards()
-      .filter((c, i) => i !== cardIndex && !this.lockedCardIds.includes(c.id));
+      .filter((c, i) => i !== cardIndex && !this.lockManager.isCardLocked(c.id));
     this.cardPoolManager.returnCards(remainingCards);
 
     this.lastAction = 'buy';
@@ -583,9 +496,8 @@ export class TurnManager {
 
     // 公共牌回牌堆（锁定中的牌保留在公共区）
     const publicCards = this.cardPoolManager.getPublicCards();
-    const lockedCards = publicCards.filter((card) => this.lockedCardIds.includes(card.id));
-    const unLockedCards = publicCards.filter((card) => !this.lockedCardIds.includes(card.id));
-    this.cardPoolManager.returnCards(unLockedCards);
+    const { unlocked } = this.lockManager.partitionLocked(publicCards);
+    this.cardPoolManager.returnCards(unlocked);
 
     this.lastAction = 'wait';
     this.totalWaits++;
@@ -603,17 +515,13 @@ export class TurnManager {
    */
   executeLockCard(cardIndex: number): boolean {
     if (this.state !== 'player_action') return false;
-    const publicCards = this.cardPoolManager.getPublicCards();
-    const card = publicCards[cardIndex];
-    if (!card) return false;
-    if (this.lockedCardIds.includes(card.id)) return false;
-    if (this.lockedCardIds.length >= TurnManager.MAX_LOCKED_CARDS) return false;
-    // 气不足至少 1 回合锁定费时拒绝锁定（防止锁定后结算必然自动解锁的无效操作）
-    if (this.qiManager.getQi() < TurnManager.LOCK_COST_PER_CARD) return false;
-
-    this.lockedCardIds.push(card.id);
-    this.lastAction = 'lock';
-    return true;
+    const ok = this.lockManager.tryLock(
+      this.cardPoolManager.getPublicCards(),
+      cardIndex,
+      this.qiManager.getQi(),
+    );
+    if (ok) this.lastAction = 'lock';
+    return ok;
   }
 
   /**
@@ -624,25 +532,22 @@ export class TurnManager {
    */
   executeUnlockCard(cardIndex: number): boolean {
     if (this.state !== 'player_action') return false;
-    const publicCards = this.cardPoolManager.getPublicCards();
-    const card = publicCards[cardIndex];
-    if (!card) return false;
-    if (!this.lockedCardIds.includes(card.id)) return false;
-
-    this.lockedCardIds = this.lockedCardIds.filter((id) => id !== card.id);
-    this.cardPoolManager.returnCards([card]);
-    this.lastAction = 'unlock';
-    return true;
+    const ok = this.lockManager.tryUnlock(
+      this.cardPoolManager.getPublicCards(),
+      cardIndex,
+    );
+    if (ok) this.lastAction = 'unlock';
+    return ok;
   }
 
   /** 获取当前锁定的公共牌 ID 列表 */
   getLockedCardIds(): number[] {
-    return [...this.lockedCardIds];
+    return this.lockManager.getLockedCardIds();
   }
 
   /** 判断一张公共牌是否处于锁定状态 */
   isCardLocked(cardId: number): boolean {
-    return this.lockedCardIds.includes(cardId);
+    return this.lockManager.isCardLocked(cardId);
   }
 
   /**
@@ -715,7 +620,7 @@ export class TurnManager {
         deckIds: this.cardPoolManager.getDeck().map(c => c.id),
         publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
       },
-      lockedCardIds: [...this.lockedCardIds],
+      lockedCardIds: this.lockManager.getLockedCardIds(),
     };
   }
 
@@ -771,7 +676,7 @@ export class TurnManager {
     this.cardPoolManager.loadState(restoredDeck, restoredPublic);
 
     // 7. 还原锁定状态（兼容旧存档：lockedCardIds 缺失则空）
-    this.lockedCardIds = data.lockedCardIds ? [...data.lockedCardIds] : [];
+    this.lockManager.restoreLockedCardIds(data.lockedCardIds ? [...data.lockedCardIds] : []);
   }
 
   /**
@@ -1183,6 +1088,7 @@ export class TurnManager {
     this.qiManager.reset();
     this.scoreManager.reset();
     this.handManager.reset();
+    this.lockManager.reset();
     // 重置牌池后必须重新装填全套卡牌：CardPoolManager.reset 只清空牌堆，
     // 若不重建，新一局 startGame → drawCards 会从空牌堆抽不出公共牌，
     // 导致界面只剩季节、无牌可买（游戏卡死）。

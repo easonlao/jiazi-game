@@ -34,3 +34,11 @@ export type { GameSnapshot, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot }
 
 export { LeaderboardService } from './LeaderboardService';
 export type { LeaderboardEntry } from './LeaderboardService';
+
+export type { StorageProvider } from './StorageProvider';
+
+export { LockManager } from './LockManager';
+export type { LockManagerDeps } from './LockManager';
+
+export { MarginCallEngine } from './MarginCallEngine';
+export type { MarginCallEngineDeps } from './MarginCallEngine';

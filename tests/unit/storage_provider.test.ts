@@ -1,0 +1,81 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { GameSaveService, LeaderboardService, TurnManager, type StorageProvider } from '../../src/core/index';
+import type { GameSnapshot } from '../../src/core/GameSaveService';
+
+/** 内存 StorageProvider：验证 core 持久化不依赖浏览器 localStorage */
+class MemoryStorage implements StorageProvider {
+  private store = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.store.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.store.set(key, value);
+  }
+
+  removeItem(key: string): void {
+    this.store.delete(key);
+  }
+
+  snapshot(): Record<string, string> {
+    return Object.fromEntries(this.store);
+  }
+}
+
+describe('StorageProvider 注入', () => {
+  let storage: MemoryStorage;
+
+  beforeEach(() => {
+    storage = new MemoryStorage();
+  });
+
+  it('GameSaveService 注入内存实现可 save/load/hasSave/clear', () => {
+    const svc = new GameSaveService(storage);
+    const snap: GameSnapshot = {
+      currentRound: 3,
+      state: 'player_action',
+      lastAction: 'buy',
+      qi: 60,
+      score: 120,
+      totalHoldEarnings: 0,
+      totalSellEarnings: 0,
+      totalBuys: 1,
+      totalSells: 0,
+      totalWaits: 0,
+      totalLeverageBuys: 0,
+      season: { index: 0, roundInSeason: 3, lengths: [8, 12, 8, 12] },
+      hand: [null, null, null],
+      pool: { deckIds: [], publicIds: [] },
+    };
+
+    expect(svc.hasSave()).toBe(false);
+    expect(svc.save(() => snap)).toBe(true);
+    expect(svc.hasSave()).toBe(true);
+    expect(svc.load(() => {})).toBe(true);
+    svc.clear();
+    expect(svc.hasSave()).toBe(false);
+    // 写入落在注入的存储而非全局 localStorage
+    expect(storage.snapshot()).toEqual({});
+  });
+
+  it('LeaderboardService 注入内存实现可记录与读取', () => {
+    const lb = new LeaderboardService(storage);
+    lb.addEntry(100);
+    lb.addEntry(80);
+    lb.addEntry(120);
+    const entries = lb.getEntries();
+    expect(entries.map((e) => e.score)).toEqual([120, 100, 80]);
+    lb.clear();
+    expect(lb.getEntries()).toEqual([]);
+  });
+
+  it('TurnManager 注入存储后存档写入注入的存储（而非全局 localStorage）', async () => {
+    const tm = new TurnManager(undefined, undefined, { storage });
+    await tm.initialize();
+    tm.startGame();
+    tm.executeWait();
+    tm.saveGame();
+    expect(Object.keys(storage.snapshot()).length).toBeGreaterThan(0);
+  });
+});
