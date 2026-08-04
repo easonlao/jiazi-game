@@ -39,10 +39,16 @@ jobs:
       #      虚拟存储时撞上 vite 的 package.json 里非标准字段 "dep-types": "link:./src/types"，
       #      报 EUNSUPPORTEDPROTOCOL（23:45 失败）
       # 改用 npx 直调：wrangler 独立装进 npm 缓存，不触碰项目依赖树，与 pnpm workspace 解耦。
-      # 长期可选：把 wrangler 加入 devDependencies（pnpm add -D -w wrangler），
-      # 则 wrangler-action 检测到已安装可跳过自动安装，但需先在系统终端更新 lockfile。
+      #
+      # 2026-08-04 补充：CI secrets（CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID）值开头带
+      # UTF-8 BOM（U+FEFF），wrangler 构造 API 请求时 ByteString 转换报错
+      # "character at index 7 has a value of 65279"（本地同版本 wrangler 用已存凭据可成功）。
+      # 部署前用 tr 删除 BOM 字节（EF BB BF）作防御；根治请清理 GitHub secrets 源值。
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@3.90.0 pages deploy app/dist --project-name=jiazi-game --branch=main
+        run: |
+          export CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '\357\273\277')"
+          export CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\357\273\277')"
+          npx --yes wrangler@3.90.0 pages deploy app/dist --project-name=jiazi-game --branch=main
