@@ -1,3 +1,5 @@
+import type { Season } from './SeasonCycle';
+
 /** 五行元素 */
 export enum Element {
   WOOD = 'wood',
@@ -12,8 +14,6 @@ export enum YinYang {
   YIN = 'yin',
   YANG = 'yang',
 }
-
-type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 
 export interface ScoreConfig {
   scoreBeta: number;
