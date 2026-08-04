@@ -438,9 +438,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const ok = isLocked ? tm.executeUnlockCard(index) : tm.executeLockCard(index);
     if (ok) {
       get()._sync();
-      get().showToast(isLocked ? '已解锁' : `已锁定（每回合 -${5} 气）`);
+      get().showToast(isLocked ? '已解锁' : `已锁定（每回合 -${TurnManager.LOCK_COST_PER_CARD} 气）`);
     } else {
-      get().showToast(isLocked ? '解锁失败' : '锁定失败（最多锁 2 张 / 气不足）');
+      get().showToast(isLocked ? '解锁失败' : `锁定失败（最多锁 ${TurnManager.MAX_LOCKED_CARDS} 张 / 气不足）`);
     }
   },
 
