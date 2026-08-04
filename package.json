@@ -9,8 +9,8 @@
     "preview": "npm --prefix app run preview",
     "test": "vitest",
     "test:simulator": "python ../docs/analysis/test_simulator.py",
-    "export:config": "node scripts/export-config.mjs",
-    "sync:simulator": "python scripts/sync-simulator.py",
+    "export:config": "node ../docs/analysis/tools/export-config.mjs",
+    "sync:simulator": "python ../docs/analysis/tools/sync-simulator.py",
     "test:e2e": "playwright test",
     "test:e2e:preview": "E2E_TARGET=preview playwright test"
   },
