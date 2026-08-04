@@ -1,14 +1,19 @@
 {
-  // 仅供 IDE 识别 src/core 的 TypeScript 配置。
+  // 仅供 IDE 识别 src/core、tests/ 与配置文件（vitest/playwright）的 TypeScript 配置。
   // 真正的构建入口在 app/（`app/tsconfig.json` + `vite build`），单测走 vitest.config.ts。
-  // 不要在这里加构建相关的 outDir/rootDir，那会误导读者以为构建从这里走。
+  // 本文件纯类型检查（noEmit），不要在这里加构建相关的 outDir/rootDir，那会误导读者以为构建从这里走。
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      "@core/*": ["./src/core/*"]
+    },
+    "noEmit": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "playwright.config.ts"]
 }

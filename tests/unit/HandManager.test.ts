@@ -27,25 +27,25 @@ describe('HandManager', () => {
     const hm = new HandManager();
     
     // 买入第一张
-    const index1 = hm.buy(mockCard, 3, 1.0, 1);
+    const index1 = hm.buy(mockCard, 3, false, 1.0, 1, 1);
     expect(index1).toBe(0);
     expect(hm.getHandSize()).toBe(1);
     expect(hm.canSell()).toBe(true);
 
     // 买入第二张和第三张
-    hm.buy(mockCard, 3, 1.0, 1);
-    hm.buy(mockCard, 3, 1.0, 1);
+    hm.buy(mockCard, 3, false, 1.0, 1, 1);
+    hm.buy(mockCard, 3, false, 1.0, 1, 1);
     expect(hm.getHandSize()).toBe(3);
     expect(hm.canBuy()).toBe(false);
 
     // 第四张买入应该失败
-    const index4 = hm.buy(mockCard, 3, 1.0, 1);
+    const index4 = hm.buy(mockCard, 3, false, 1.0, 1, 1);
     expect(index4).toBe(-1);
   });
 
   it('卖出卡牌及强置槽位', () => {
     const hm = new HandManager();
-    hm.buy(mockCard, 3, 1.0, 1);
+    hm.buy(mockCard, 3, false, 1.0, 1, 1);
 
     const slot = hm.sell(0);
     expect(slot).not.toBeNull();
@@ -57,9 +57,9 @@ describe('HandManager', () => {
   it('加载外部手牌数据 (loadHand)', () => {
     const hm = new HandManager();
     const restoredSlots = [
-      new HandSlot(mockCard, 3, true, 1.5, 1),
+      new HandSlot(mockCard, 3, true, 1.5, 1, 1),
       null,
-      new HandSlot(mockCard, 2, false, 1.0, 2)
+      new HandSlot(mockCard, 2, false, 1.0, 2, 1)
     ];
     hm.loadHand(restoredSlots);
     
