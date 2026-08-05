@@ -1,8 +1,9 @@
 /**
  * MarginCallEngine 直接单测（Phase 3 抽取后，此前仅经 TurnManager 间接覆盖）。
  *
- * 强平引擎依赖多模块 + 随机源 + 回调。这里用轻量 mock 隔离，
- * 聚焦强平循环的领域逻辑：随机选牌、扣分、返气、终止条件。
+ * 强平引擎依赖多模块 + 回调。这里用轻量 mock 隔离，
+ * 聚焦强平循环的领域逻辑：选「评分最高」牌、无卖出收益、扣分、返气、终止条件。
+ * 2026-08-05 用户设计确认：选牌随机 → 评分最高（正分最大）；强平不卖出（直接无收益 + 反噬罚分）。
  */
 import { describe, it, expect, vi } from 'vitest';
 import { MarginCallEngine } from '../../src/core/MarginCallEngine';
@@ -52,7 +53,6 @@ function makeDeps(initialQi: number, slots: (MockSlot | null)[], cardScores: Rec
   const qiManager = {
     getQi: () => state.qi,
     recover: vi.fn((n: number) => { state.qi += n; }),
-    getForcedLiquidationScoreMultiplier: () => 0.8,
     getForcedLiquidationQiReturnFactor: () => 0.5,
   };
   const handManager = {
@@ -79,9 +79,6 @@ function makeDeps(initialQi: number, slots: (MockSlot | null)[], cardScores: Rec
     getCurrentRoundInSeason: () => 3,
     getCurrentSeason: () => 'spring',
   };
-  const random = {
-    int: vi.fn(() => 0), // 固定选第一张，保证确定性
-  };
   const getCardScore = vi.fn((card: JiaziCard) => cardScores[card.id] ?? 0);
   const getTotalLockedQi = vi.fn(() => 10);
   const onMarginCall = vi.fn(() => { state.marginCallCount++; });
@@ -93,14 +90,13 @@ function makeDeps(initialQi: number, slots: (MockSlot | null)[], cardScores: Rec
     scoreManager: scoreManager as any,
     leverageCalculator: leverageCalculator as any,
     seasonCycle: seasonCycle as any,
-    random: random as any,
     balanceConfig: DEFAULT_BALANCE_CONFIG,
     getCardScore: getCardScore as any,
     getTotalLockedQi: getTotalLockedQi as any,
     onMarginCall: onMarginCall as any,
   });
 
-  return { engine, state, qiManager, handManager, cardPoolManager, scoreManager, random, onMarginCall };
+  return { engine, state, qiManager, handManager, cardPoolManager, scoreManager, onMarginCall, getCardScore };
 }
 
 describe('MarginCallEngine 直接单测', () => {
@@ -112,7 +108,7 @@ describe('MarginCallEngine 直接单测', () => {
     expect(state.marginCallCount).toBe(0);
   });
 
-  it('气归零且有杠杆牌：强平一张，扣分 + 返气 + 牌回堆 + 计数', () => {
+  it('气归零且有杠杆牌：强平一张，无卖出收益 + 扣分 + 返气 + 牌回堆 + 计数', () => {
     const { engine, state, onMarginCall, scoreManager, cardPoolManager } = makeDeps(
       0,
       [makeSlot(makeCard(1, '甲子'), true, 10)],
@@ -123,8 +119,10 @@ describe('MarginCallEngine 直接单测', () => {
     // 强平一次
     expect(onMarginCall).toHaveBeenCalledTimes(1);
     expect(state.marginCallCount).toBe(1);
-    // 卖出收益 = (5-0)*4*2 = 40，正收益 × 0.8 → 32
-    expect(state.sellEarnings).toBe(32);
+    // 被反噬的牌无卖出收益（2026-08-05 用户确认：不卖出结算）
+    expect(state.sellEarnings).toBe(0);
+    expect(scoreManager.addSellEarnings).not.toHaveBeenCalled();
+    expect(scoreManager.calculateSellScore).not.toHaveBeenCalled();
     // 强平扣分 = 2 × |5| × 3 = 30
     expect(scoreManager.applyMarginCallPenalty).toHaveBeenCalledWith(30);
     // 返气 = floor(10 × 0.5) = 5
@@ -135,6 +133,7 @@ describe('MarginCallEngine 直接单测', () => {
     // 明细含卡名与原因
     expect(details).toHaveLength(1);
     expect(details[0].cardName).toBe('甲子');
+    expect(details[0].sellScore).toBe(0);
     expect(details[0].reason).toContain('杠杆 2x');
   });
 
@@ -174,8 +173,8 @@ describe('MarginCallEngine 直接单测', () => {
     expect(details).toHaveLength(1);
   });
 
-  it('固定随机源：选择与注入的 random.int 一致', () => {
-    const { engine, random } = makeDeps(
+  it('选「评分最高」的杠杆牌强平（正分最大；不选低分牌）', () => {
+    const { engine, state, handManager, getCardScore } = makeDeps(
       0,
       [
         makeSlot(makeCard(1, '甲子'), true, 10),
@@ -184,7 +183,24 @@ describe('MarginCallEngine 直接单测', () => {
       { 1: 5, 2: 3 },
     );
     engine.execute();
-    // random.int(0, 2) → mock 固定返回 0 → 选中第一张（1 号牌）
-    expect(random.int).toHaveBeenCalledWith(0, 2);
+    // 1 号牌评分 5 > 2 号牌评分 3 → 强平 1 号牌（评分最高者）
+    expect(getCardScore).toHaveBeenCalled();
+    expect(handManager.sell).toHaveBeenCalledWith(0); // 索引 0 = 甲子（评分 5）
+    expect(state.returnedCards.map(c => c.id)).toEqual([1]);
+  });
+
+  it('选评分最高：负分与正分并存时选正分最大者', () => {
+    const { engine, handManager } = makeDeps(
+      0,
+      [
+        makeSlot(makeCard(1, '甲子'), true, 10),
+        makeSlot(makeCard(2, '乙丑'), true, 10),
+        makeSlot(makeCard(3, '丙寅'), true, 10),
+      ],
+      { 1: -20, 2: 8, 3: -5 },
+    );
+    engine.execute();
+    // 评分最高 = 2 号牌（+8），而非 |评分| 最大的 1 号牌（|-20|）
+    expect(handManager.sell).toHaveBeenCalledWith(1);
   });
 });

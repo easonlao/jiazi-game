@@ -151,13 +151,6 @@ export class QiManager {
   }
 
   /**
-   * 获取强平得分折价系数
-   */
-  getForcedLiquidationScoreMultiplier(): number {
-    return this.cfg.forcedLiquidationScoreMultiplier;
-  }
-
-  /**
    * 重置气资源管理器至初始状态
    */
   reset(): void {

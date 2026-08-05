@@ -193,7 +193,6 @@ export class TurnManager {
       scoreManager: this.scoreManager,
       leverageCalculator: this.leverageCalculator,
       seasonCycle: this.seasonCycle,
-      random: this.random,
       balanceConfig: this.balanceConfig,
       getCardScore: (card, season) => this.getCardScore(card, season),
       getTotalLockedQi: () => this.getTotalLockedQi(),

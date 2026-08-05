@@ -33,8 +33,6 @@ export interface BalanceConfig {
   buyEntryFee: number;
   /** 强平占用气退还系数 */
   forcedLiquidationQiReturnFactor: number;
-  /** 强平得分折价系数（正收益打折） */
-  forcedLiquidationScoreMultiplier: number;
 
   /** 强平扣分系数：penalty = 杠杆 × |爆仓时评分| × marginCallPenaltyPerScore */
   marginCallPenaltyPerScore: number;
@@ -73,7 +71,6 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   lqc: 8,
   buyEntryFee: 2,
   forcedLiquidationQiReturnFactor: 0.5,
-  forcedLiquidationScoreMultiplier: 0.8,
   marginCallPenaltyPerScore: 3,
   leverageTable: [
     [2, 1.0],
