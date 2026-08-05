@@ -16,13 +16,11 @@ export enum YinYang {
 }
 
 export interface ScoreConfig {
-  scoreBeta: number;
   yangPolarityFactor: number;
   yinPolarityFactor: number;
 }
 
 export const DEFAULT_SCORE_CONFIG: ScoreConfig = {
-  scoreBeta: 0.02,
   yangPolarityFactor: 1.1,
   yinPolarityFactor: 0.9,
 };
@@ -135,7 +133,7 @@ export class JiaziCard {
     const factor = this.yinYang === YinYang.YANG
       ? config.yangPolarityFactor
       : config.yinPolarityFactor;
-    return this.roundScore10(config.scoreBeta + factor * (this.getRawSeasonScore(season) - rawMean));
+    return this.roundScore10(factor * (this.getRawSeasonScore(season) - rawMean));
   }
 
   private isSeason(season: string): season is Season {

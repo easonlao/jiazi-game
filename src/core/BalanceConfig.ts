@@ -9,8 +9,7 @@
 export type LeverageTable = [number, number][];
 
 export interface BalanceConfig {
-  /** 评分基线与阴阳波动系数：最终分 = beta + polarity * (raw - 四季均值) */
-  scoreBeta: number;
+  /** 阴阳波动系数：最终分 = polarity * (raw - 四季均值) */
   yangPolarityFactor: number;
   yinPolarityFactor: number;
   // 气
@@ -61,7 +60,6 @@ export interface BalanceConfig {
 
 /** 当前默认配置（模拟验证候选） */
 export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
-  scoreBeta: 0.02,
   yangPolarityFactor: 1.1,
   yinPolarityFactor: 0.9,
   maxQi: 80,
