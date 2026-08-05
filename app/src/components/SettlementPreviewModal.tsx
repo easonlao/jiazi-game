@@ -20,7 +20,6 @@ function signed(value: number) {
  */
 export function SettlementPreviewModal() {
   const preview = useGameStore((s) => s.settlementPreview);
-  const lastSettlement = useGameStore((s) => s.lastSettlement);
   const turnManager = useGameStore((s) => s.turnManager);
   const publicCards = useGameStore((s) => s.publicCards);
   const cancel = useGameStore((s) => s.cancelSettlementPreview);
@@ -54,10 +53,6 @@ export function SettlementPreviewModal() {
   const scoreAfterAction = preview.scoreAfterAction;
   const qiBeforeAction = preview.qiAfterAction - preview.actionQiChange;
   const qiAfterAction = preview.qiAfterAction;
-  // 本回合持仓已扣耗气（上回合结算已发生；无持仓或首回合时为空）
-  const holdQiSpentThisRound = lastSettlement?.holdQiCost && lastSettlement.holdQiCost > 0
-    ? lastSettlement.holdQiCost
-    : 0;
 
   return (
     <div className="modal-backdrop absolute inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm">
@@ -88,7 +83,7 @@ export function SettlementPreviewModal() {
             {boughtHold && (
               <div className="mt-1.5 border-t border-wood-light/50 pt-1.5">
                 <div className="flex justify-between">
-                  <span>炼化预估（当前天时）</span>
+                  <span>买入后炼化（本回合天时）</span>
                   <span className="flex gap-3">
                     <span className={boughtHold.earning >= 0 ? 'font-bold text-qi-full' : 'font-bold text-qi-critical'}>
                       {signed(boughtHold.earning)}修为/回合
@@ -96,7 +91,7 @@ export function SettlementPreviewModal() {
                     <span className="text-qi-critical">-{boughtHold.qiCost.toFixed(1)}心神/回合</span>
                   </span>
                 </div>
-                <p className="text-[10px] text-ink-light/70 mt-0.5">基于当前天时与燃灵倍率；天时流转后可能变化。</p>
+                <p className="text-[10px] text-ink-light/70 mt-0.5">按当前天时结算；天时流转后随评分变化。</p>
               </div>
             )}
           </div>
@@ -159,26 +154,20 @@ export function SettlementPreviewModal() {
             </div>
           ) : (
             <>
-              {/* 心神账单：本回合已扣持仓耗气 → 当前 → 行动 → 行动后可用 */}
+              {/* 心神账单：当前可用 → 扣出本回合使用 → 剩余（直观顺序） */}
               <div className="space-y-1 text-xs text-ink-light">
-                {holdQiSpentThisRound > 0 && (
-                  <div className="flex justify-between">
-                    <span>本回合持仓耗气</span>
-                    <span className="text-qi-critical">-{holdQiSpentThisRound.toFixed(1)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between">
-                  <span>当前心神</span>
+                  <span>当前可用心神</span>
                   <span className="tabular-nums">{qiBeforeAction.toFixed(1)}</span>
                 </div>
                 {preview.actionQiChange !== 0 && (
                   <div className="flex justify-between">
-                    <span>{preview.action.type === 'sell' ? '释灵流转' : preview.action.type === 'buy' ? '纳灵消耗' : '行动变化'}</span>
+                    <span>{preview.action.type === 'sell' ? '本回合流转（释灵）' : preview.action.type === 'buy' ? '本回合使用（纳灵）' : '行动变化'}</span>
                     <span className={preview.actionQiChange > 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.actionQiChange)}</span>
                   </div>
                 )}
                 <div className="flex justify-between border-t border-wood-light/40 pt-1">
-                  <span className="font-medium text-ink">行动后可用心神</span>
+                  <span className="font-medium text-ink">剩余心神</span>
                   <span className={`font-bold tabular-nums ${qiAfterAction <= 0 ? 'text-qi-critical' : 'text-ink'}`}>
                     {qiAfterAction.toFixed(1)}
                   </span>
