@@ -4,12 +4,7 @@ import type { SettlementDetail } from '@core/index';
 
 /**
  * 反噬独立全屏动画（z-80，盖过回合幕布 z-70）。
- *
- * 2026-08-05 重构（用户反馈"画面太繁杂，看不清哪张卡被反噬、罚多少"）：
- * - 精简为 3 层：一次红闪 + "反噬"印章 + 被反噬卡大卡片
- * - 去掉：红色脉冲、屏幕震动、副标题长文案（信息被装饰淹没）
- * - 被反噬卡改大卡片：卡名大字 + 评分/杠杆小字 + 惩罚特大数字（penaltyScore 结构化字段）
- * - 每张被反噬的牌独立卡片，不截断，一眼看清"哪张牌、罚多少"
+ * 反噬发生时独占视觉焦点：全屏红闪 + 脉冲 + "反噬"印章大字 + 被反噬灵气逐条滑入。
  * 约 2.3s 后撤去，露出其下已就位的结算弹窗明细。
  */
 export function MarginCallOverlay() {
@@ -32,40 +27,39 @@ export function MarginCallOverlay() {
 
   if (!visible || !detail) return null;
 
-  const items = detail.marginCallDetails ?? [];
-
   return (
     <div key={animKey} className="absolute inset-0 z-[80] pointer-events-none overflow-hidden" aria-hidden>
       {/* 全屏红色闪光（一次，最快最刺眼） */}
       <div className="mc-flash absolute inset-0 bg-qi-critical" />
+      {/* 红色警报脉冲（两次呼吸，持续施压） */}
+      <div className="mc-pulse absolute inset-0 bg-qi-critical" />
 
-      {/* 中央：印章 + 被反噬卡大卡片 */}
+      {/* 中央爆仓印章 */}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="text-center px-5 w-full max-w-[340px]">
-          <div className="mc-stamp inline-block px-8 py-3 bg-qi-critical text-white rounded-xl border-2 border-red-200/60">
-            <span className="text-3xl font-bold font-serif tracking-[0.25em]">反噬</span>
+        <div className="text-center px-6">
+          <div className="mc-stamp inline-block px-9 py-4 bg-qi-critical text-white rounded-xl shadow-[0_10px_40px_rgba(229,57,53,0.6)] border-2 border-red-200/60">
+            <span className="text-4xl font-bold font-serif tracking-[0.25em]">反噬</span>
           </div>
 
-          {/* 被反噬卡大卡片：卡名大字 + 评分/杠杆 + 惩罚特大数字 */}
-          <div className="mt-4 space-y-2">
-            {items.map((d, i) => (
+          <div className="mc-sub mt-4 text-sm font-bold text-red-700 tracking-widest">
+            心神耗尽 · 燃灵灵气失控反噬
+          </div>
+
+          {/* 被强平卡名单，逐条滑入 */}
+          <div className="mt-3 space-y-1.5 max-w-[260px] mx-auto">
+            {detail.marginCallDetails.map((d, i) => (
               <div
                 key={i}
-                className="mc-card rounded-xl bg-white/95 border border-red-300 px-4 py-3 text-left shadow-md"
-                style={{ animationDelay: `${0.4 + i * 0.15}s` }}
+                className="mc-card flex items-center justify-between gap-2 bg-white/90 border border-red-300 rounded-lg px-3 py-1.5 text-sm font-bold text-red-700 shadow-md"
+                style={{ animationDelay: `${0.5 + i * 0.18}s` }}
               >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xl font-bold font-serif text-red-700">{d.cardName}</span>
-                  <span className="text-[11px] text-red-500/80 shrink-0">
-                    评分 {d.cardScore > 0 ? '+' : ''}{d.cardScore} · 燃灵 {d.leverage.toFixed(1)}x
-                  </span>
-                </div>
-                <div className="mt-1 flex items-baseline gap-1.5">
-                  <span className="text-[28px] font-bold leading-none text-qi-critical tabular-nums">
-                    {d.penaltyScore > 0 ? '-' : ''}{d.penaltyScore}
-                  </span>
-                  <span className="text-xs text-red-600 font-medium">修为</span>
-                </div>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-red-400 text-xs">💥</span>
+                  {d.cardName}
+                </span>
+                <span className="text-[11px] text-red-400 font-medium truncate max-w-[130px]">
+                  {d.reason}
+                </span>
               </div>
             ))}
           </div>
