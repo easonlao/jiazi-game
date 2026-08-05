@@ -130,10 +130,13 @@ describe('MarginCallEngine 直接单测', () => {
     // 牌回牌堆
     expect(cardPoolManager.returnCards).toHaveBeenCalled();
     expect(state.returnedCards.map(c => c.id)).toEqual([1]);
-    // 明细含卡名与原因
+    // 明细含卡名与原因 + 结构化字段（2026-08-05：penaltyScore/leverage/cardScore 供 UI 大字展示）
     expect(details).toHaveLength(1);
     expect(details[0].cardName).toBe('甲子');
     expect(details[0].sellScore).toBe(0);
+    expect(details[0].penaltyScore).toBe(30); // 2 × |5| × 3
+    expect(details[0].leverage).toBe(2.0);
+    expect(details[0].cardScore).toBe(5);
     expect(details[0].reason).toContain('杠杆 2x');
   });
 
