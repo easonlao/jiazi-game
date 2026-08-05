@@ -137,7 +137,6 @@ describe('MarginCallEngine 直接单测', () => {
     expect(details[0].penaltyScore).toBe(30); // 2 × |5| × 3
     expect(details[0].leverage).toBe(2.0);
     expect(details[0].cardScore).toBe(5);
-    expect(details[0].slotIndex).toBe(0); // 被反噬牌在丹田的槽位（UI 定位崩坏来源）
     expect(details[0].reason).toContain('杠杆 2x');
   });
 

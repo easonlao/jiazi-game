@@ -208,17 +208,6 @@ html, body, #root {
 }
 .mc-card { animation: mcCardIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
-/* 丹田槽位崩坏（反噬来源感）：红闪 → 碎裂倾斜 → 淡出，与反噬 overlay 2.3s 同步（2026-08-05） */
-@keyframes mcShatterSlot {
-  0% { opacity: 1; transform: none; box-shadow: 0 0 0 rgba(229,57,53,0); }
-  15% { opacity: 1; transform: none; box-shadow: 0 0 0 4px rgba(229,57,53,0.55), 0 0 18px rgba(229,57,53,0.5); }
-  35% { opacity: 0.85; transform: rotate(-1.2deg) scale(0.96); box-shadow: 0 0 0 2px rgba(229,57,53,0.4), 0 0 12px rgba(229,57,53,0.4); }
-  55% { opacity: 0.6; transform: rotate(0.8deg) scale(0.9); }
-  75% { opacity: 0.35; transform: rotate(-0.5deg) scale(0.82); }
-  100% { opacity: 0; transform: rotate(1.5deg) scale(0.7); }
-}
-.mc-shatter-slot { animation: mcShatterSlot 2.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-
 /* 屏幕级震动（爆仓瞬间整个游戏画面抖动） */
 @keyframes screenShake {
   0%, 100% { transform: translate(0, 0); }

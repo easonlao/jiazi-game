@@ -123,7 +123,6 @@ export class MarginCallEngine {
         penaltyScore: marginCallPenalty,
         leverage: effectiveLeverage,
         cardScore: currentScore,
-        slotIndex: targetIndex,
         reason: `气量归零强制平仓，杠杆 ${effectiveLeverage}x，卡牌评分 ${currentScore}，扣分 ${marginCallPenalty}（杠杆 × |评分| × ${penaltyCoeff}）`
       });
 

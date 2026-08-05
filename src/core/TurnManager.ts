@@ -31,8 +31,6 @@ export interface MarginCallDetail {
   leverage: number;
   /** 被反噬时卡牌评分 */
   cardScore: number;
-  /** 被反噬牌在丹田的槽位索引（0-2，UI 用于定位"哪一格崩坏"） */
-  slotIndex: number;
   /** 兜底描述（含完整计算式） */
   reason: string;
 }
