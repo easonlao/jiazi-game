@@ -276,6 +276,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set((s) => ({ tick: s.tick + 1 }));
       });
       tm.setOnTurnStart(() => {
+        // 燃灵开关是"一次性行动偏好"，每回合复位防止忘关导致意外杠杆买入。
+        // 复位时若玩家此前是 ON 状态，设 pending 提示——由随后的行动反馈 Toast 统一弹出
+        // （pending 优先于"纳灵成功/释灵成功/调息"等 fallback），避免玩家误以为"点击燃灵没响应"，
+        // 也不会产生双 Toast（2026-08-05 用户反馈）。
+        const wasLeverageOn = get().useLeverage;
         set((s) => ({
           tick: s.tick + 1,
           selectedPublicCard: -1,
@@ -284,6 +289,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
           pendingAction: null,
           settlementPreview: null,
         }));
+        if (wasLeverageOn) {
+          _pendingAutoUnlockToast = '燃灵已复位（新回合）';
+        }
       });
       tm.setOnGameEnd((finalScore) => {
         set((s) => ({ tick: s.tick + 1 }));

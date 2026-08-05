@@ -50,8 +50,11 @@ export function SeasonTransition() {
   const meta = SEASON_META[data.to] ?? SEASON_META.spring;
 
   return (
-    <div key={animKey} className="absolute inset-0 z-[65] pointer-events-none overflow-hidden" aria-hidden>
+    <div key={animKey} className="absolute inset-0 z-20 pointer-events-none overflow-hidden" aria-hidden>
       {/* 中央大字：春去 · 夏来 */}
+      {/* z-20：低于 ActionBar（z-10/z-30），换季动画不覆盖底部操作栏——
+          玩家在动画期间仍能看到并操作纳灵/释灵/调息/燃灵，点击反馈不被吞，
+          也不存在"动画期间点按钮没反馈→可探测换季"的信息泄露窗口（2026-08-05） */}
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="text-center px-6">
           <div
