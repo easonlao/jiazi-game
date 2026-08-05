@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store';
 import { HandCard } from './HandCard';
 import type { HandSlot } from '@core/HandSlot';
@@ -15,16 +15,24 @@ export function HandCards() {
 
   // 反噬来源感：被反噬的丹田槽位（slotIndex）在反噬动画期间播"崩坏"效果，
   // 与中央反噬大卡片同屏——玩家看到"丹田第 N 格崩了"→ 中央弹出惩罚数字的因果链（issue 04）。
-  const shatteredSlots = useRef<Set<number>>(new Set());
+  const [shatteredSlots, setShatteredSlots] = useState<Set<number>>(new Set());
   const lastMarginCallId = useRef(0);
-  if (marginCallEvent && marginCallEvent.id !== lastMarginCallId.current) {
-    lastMarginCallId.current = marginCallEvent.id;
-    shatteredSlots.current = new Set(
-      (marginCallEvent.detail?.marginCallDetails ?? []).map((d) => d.slotIndex),
-    );
-    // 动画结束后清除崩坏标记（与反噬 overlay 2.3s 同步）
-    setTimeout(() => { shatteredSlots.current = new Set(); }, 2400);
-  }
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (marginCallEvent && marginCallEvent.id !== lastMarginCallId.current) {
+      lastMarginCallId.current = marginCallEvent.id;
+      const idxs = new Set<number>(
+        (marginCallEvent.detail?.marginCallDetails ?? []).map((d) => d.slotIndex),
+      );
+      setShatteredSlots(idxs);
+      if (clearTimer.current) clearTimeout(clearTimer.current);
+      clearTimer.current = setTimeout(() => {
+        setShatteredSlots(new Set());
+        clearTimer.current = null;
+      }, 3200);
+    }
+  }, [marginCallEvent]);
 
   const hasCards = hand.some((s) => s !== null);
 
@@ -41,7 +49,7 @@ export function HandCards() {
       ) : (
         <div className="grid grid-cols-2 gap-1.5">
           {hand.map((slot: HandSlot | null, i: number) => {
-            if (!slot) return <EmptySlot key={i} shattered={shatteredSlots.current.has(i)} />;
+            if (!slot) return <EmptySlot key={i} shattered={shatteredSlots.has(i)} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getFollowingSeason()) : score;
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
@@ -78,7 +86,7 @@ export function HandCards() {
                 holdEarning={holdEarning}
                 holdQiCost={holdQiCost}
                 sellPreview={sellPreview}
-                shattered={shatteredSlots.current.has(i)}
+                shattered={shatteredSlots.has(i)}
               />
             );
           })}

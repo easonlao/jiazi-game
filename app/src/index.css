@@ -192,17 +192,20 @@ html, body, #root {
 }
 .mc-card { animation: mcCardIn 0.36s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
-/* 丹田槽位崩坏（反噬来源感）：红闪 → 碎裂倾斜 → 淡出，与反噬 overlay 2.3s 同步（issue 04，2026-08-05） */
+/* 丹田槽位崩坏（反噬来源感）：红闪 → 碎裂倾斜 → 保留半透明残骸 → 淡出（issue 04，2026-08-05）
+   0.0-0.5s 红闪，0.5-1.7s 碎裂，1.7-2.3s 保留残骸（opacity 0.2 可见），2.3-3.0s 再淡出；
+   HandCards 在 3.2s 后才清除 shatteredSlots，避免槽位直接变空位。 */
 @keyframes mcShatterSlot {
   0% { opacity: 1; transform: none; box-shadow: 0 0 0 rgba(229, 57, 53, 0); }
-  15% { opacity: 1; transform: none; box-shadow: 0 0 0 4px rgba(229, 57, 53, 0.55), 0 0 18px rgba(229, 57, 53, 0.5); }
-  35% { opacity: 0.85; transform: rotate(-1.2deg) scale(0.96); box-shadow: 0 0 0 2px rgba(229, 57, 53, 0.4), 0 0 12px rgba(229, 57, 53, 0.4); }
-  55% { opacity: 0.6; transform: rotate(0.8deg) scale(0.9); }
-  75% { opacity: 0.35; transform: rotate(-0.5deg) scale(0.82); }
-  100% { opacity: 0; transform: rotate(1.5deg) scale(0.7); }
+  8% { opacity: 1; transform: none; box-shadow: 0 0 0 4px rgba(229, 57, 53, 0.55), 0 0 18px rgba(229, 57, 53, 0.5); }
+  22% { opacity: 0.85; transform: rotate(-1.2deg) scale(0.96); box-shadow: 0 0 0 2px rgba(229, 57, 53, 0.4), 0 0 12px rgba(229, 57, 53, 0.4); }
+  48% { opacity: 0.55; transform: rotate(0.6deg) scale(0.85); }
+  72% { opacity: 0.2; transform: rotate(-1.5deg) scale(0.78); }
+  88% { opacity: 0.2; transform: rotate(-1.5deg) scale(0.78); }
+  100% { opacity: 0; transform: rotate(-1.5deg) scale(0.78); }
 }
 /* z-85：抬到反噬 overlay（z-80）之上，红闪与中央卡都盖不住丹田崩坏——来源感才看得见（issue 04 修复遮挡） */
-.mc-shatter-slot { position: relative; z-index: 85; animation: mcShatterSlot 2.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.mc-shatter-slot { position: relative; z-index: 85; animation: mcShatterSlot 3.0s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
 /* 屏幕级震动（爆仓瞬间整个游戏画面抖动） */
 @keyframes screenShake {
