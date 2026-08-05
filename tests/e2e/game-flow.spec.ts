@@ -3,8 +3,8 @@
  *
  * 覆盖场景：
  * 1. 页面加载 → 初始化 → 开始游戏
- * 2. 买入/卖出/等待操作流
- * 3. 杠杆开关
+ * 2. 纳灵/释灵/调息操作流
+ * 3. 燃灵开关
  * 4. 行动前结算确认
  * 5. 游戏结束与重新开始
  */
@@ -51,22 +51,22 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 首页保留一段简短规则，不需要额外打开帮助
     await expect(page.getByText('甲子纪')).toBeVisible();
     await expect(page.getByText('玩法', { exact: true })).toBeVisible();
-    await expect(page.getByText(/60 回合，春夏秋冬随机换季/)).toBeVisible();
+    await expect(page.getByText(/一甲子（60 年），春夏秋冬天时流转/)).toBeVisible();
   });
 
   test('点击开始游戏进入游戏界面', async ({ page }) => {
     await startGameAndDismiss(page);
 
     // 验证游戏 UI 组件出现
-    await expect(page.getByText('公共牌池')).toBeVisible();
-    await expect(page.getByText('手牌')).toBeVisible();
-    await expect(page.getByText('第 1/60 回合', { exact: true })).toBeVisible();
-    await expect(page.getByText('本季第 1 回合', { exact: true })).toBeVisible();
+    await expect(page.getByText('周遭灵气')).toBeVisible();
+    await expect(page.getByText('丹田')).toBeVisible();
+    await expect(page.getByText('甲子第 1 年 / 60', { exact: true })).toBeVisible();
+    await expect(page.getByText('本季第 1 年', { exact: true })).toBeVisible();
     await expect(page.getByText(/季内 \d+\//)).toHaveCount(0);
     // 验证操作按钮可见（使用 role 定位，避免子文本干扰）
-    await expect(page.getByRole('button', { name: /买入/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /卖出/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /等待/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /纳灵/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /释灵/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /调息/ })).toBeVisible();
     await expect(page.getByRole('button', { name: '打开帮助' })).toBeVisible();
     await page.getByRole('button', { name: '打开帮助' }).click();
     await expect(page.getByRole('heading', { name: '玩法帮助' })).toBeVisible();
@@ -88,55 +88,55 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     expect(pairs.some((match) => match[1] !== match[2])).toBe(true);
   });
 
-  test('买入一张卡牌流程', async ({ page }) => {
+  test('纳灵一张灵气流程', async ({ page }) => {
     await startGameAndDismiss(page);
 
-    // 等待公共牌池渲染
-    await expect(page.getByText('公共牌池')).toBeVisible();
+    // 等待周遭灵气渲染
+    await expect(page.getByText('周遭灵气')).toBeVisible();
 
-    // 点击第一张公共牌（卡名会显示天干地支，如「甲子」）
-    const publicCardContainer = page.locator('h3:has-text("公共牌池")').locator('..').locator('..');
+    // 点击第一股灵气（卡名会显示天干地支，如「甲子」）
+    const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
     const firstPublicCard = publicCardContainer.locator('.card-in').first();
     await firstPublicCard.click();
 
-    // 点击买入
-    await page.getByRole('button', { name: /买入/ }).click();
+    // 点击纳灵
+    await page.getByRole('button', { name: /纳灵/ }).click();
 
     // 提交前先出现结算预览；返回不会执行操作。
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
-    await expect(page.getByText('本回合预计得分增量', { exact: true })).toBeVisible();
-    await expect(page.getByText('预计累计总分', { exact: true })).toBeVisible();
+    await expect(page.getByText('本回合预计修为增量', { exact: true })).toBeVisible();
+    await expect(page.getByText('预计累计修为', { exact: true })).toBeVisible();
     await expect(page.locator('.modal-backdrop')).toHaveCount(1);
     await page.getByRole('button', { name: '返回修改' }).click();
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeHidden();
 
     // 再次确认才真正结束回合。
-    await page.getByRole('button', { name: /买入/ }).click();
+    await page.getByRole('button', { name: /纳灵/ }).click();
     await confirmSettlementPreview(page);
     // 确认后直接进入下一回合，不再弹出第二个结算画面。
     await dismissSettlement(page);
 
-    // 验证 Toast 出现「买入成功」
-    await expect(page.getByText('买入成功', { exact: true })).toBeVisible({ timeout: 5_000 });
-    const handSection = page.locator('h3:has-text("手牌")').locator('..').locator('..');
-    await expect(handSection.getByLabel(/杠杆未启用/)).toBeVisible({ timeout: 5_000 });
+    // 验证 Toast 出现「纳灵成功」
+    await expect(page.getByText('纳灵成功', { exact: true })).toBeVisible({ timeout: 5_000 });
+    const handSection = page.locator('h3:has-text("丹田")').locator('..').locator('..');
+    await expect(handSection.getByLabel(/燃灵未启用/)).toBeVisible({ timeout: 5_000 });
   });
 
-  test('三张手牌时主界面不产生滚动', async ({ page }) => {
+  test('三丹田时主界面不产生滚动', async ({ page }) => {
     await startGameAndDismiss(page);
-    const publicCardContainer = page.locator('h3:has-text("公共牌池")').locator('..').locator('..');
+    const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
 
     for (let i = 0; i < 3; i++) {
       await publicCardContainer.locator('.card-in').first().click();
-      await page.getByRole('button', { name: /买入/ }).click();
+      await page.getByRole('button', { name: /纳灵/ }).click();
       await confirmSettlementPreview(page);
       await dismissSettlement(page);
     }
 
-    // 已知布局问题（2026-08-04 记录）：三张手牌时内容超高约 200px（scrollHeight 872 vs clientHeight 672，
+    // 已知布局问题（2026-08-04 记录）：三丹田时内容超高约 200px（scrollHeight 872 vs clientHeight 672，
     // 桌面 1280x720 下 shell 高度 672px），与 App.tsx `overflow-y-auto` 的小屏滚动设计并存。
     // 此前断言 `overflowY === 'hidden'` 已随 commit 6e5cd0a（hidden → auto）失效；
-    // 「不滚动」是 UI 待优化项（见 STATUS.md「UI 完善」），此处只验证三张手牌能正常渲染与交互。
+    // 「不滚动」是 UI 待优化项（见 STATUS.md「UI 完善」），此处只验证三丹田能正常渲染与交互。
     // 布局收敛后应恢复 scrollHeight ≤ clientHeight 断言。
     for (const viewport of [{ width: 1280, height: 720 }, { width: 428, height: 920 }]) {
       await page.setViewportSize(viewport);
@@ -145,114 +145,114 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     }
   });
 
-  test('等待一回合', async ({ page }) => {
+  test('调息一年', async ({ page }) => {
     await startGameAndDismiss(page);
 
-    // 点击等待
-    const waitBtn = page.getByRole('button', { name: /等待/ });
+    // 点击调息
+    const waitBtn = page.getByRole('button', { name: /调息/ });
     await expect(waitBtn).toBeVisible({ timeout: 5_000 });
     await waitBtn.click();
 
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
-    await expect(page.getByText('等待奖励（下回合）')).toBeVisible();
+    await expect(page.getByText('调息奖励（下年）')).toBeVisible();
     await confirmSettlementPreview(page);
 
     await dismissSettlement(page);
 
-    // 验证 Toast 出现「等待」
-    await expect(page.getByText('等待（下回合额外回气）')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('第 2/60 回合', { exact: true })).toBeVisible();
-    await expect(page.getByText(/本回合 [+-]?[0-9]+\.[0-9] 分/)).toBeVisible();
+    // 验证 Toast 出现「调息」
+    await expect(page.getByText('调息（下年额外回神）')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('甲子第 2 年 / 60', { exact: true })).toBeVisible();
+    await expect(page.getByText(/本回合 [+-]?[0-9]+\.[0-9] 修为/)).toBeVisible();
   });
 
-  test('买入+等待+卖出完整流程', async ({ page }) => {
+  test('纳灵+调息+释灵完整流程', async ({ page }) => {
     await startGameAndDismiss(page);
 
-    // ===== 第 1 回合：买入一张牌 =====
-    await expect(page.getByText('公共牌池')).toBeVisible();
-    const publicCardContainer = page.locator('h3:has-text("公共牌池")').locator('..').locator('..');
+    // ===== 第 1 年：纳灵一张灵气 =====
+    await expect(page.getByText('周遭灵气')).toBeVisible();
+    const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
     const firstPublicCard = publicCardContainer.locator('.card-in').first();
     await firstPublicCard.click();
-    await page.getByRole('button', { name: /买入/ }).click();
+    await page.getByRole('button', { name: /纳灵/ }).click();
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
 
-    // 验证手牌数增加
-    const handHeader = page.getByText(/手牌/);
+    // 验证丹田数增加
+    const handHeader = page.getByText(/丹田/);
     await expect(handHeader).toContainText('/3');
 
-    // ===== 第 2 回合：等待 =====
-    await expect(page.getByRole('button', { name: /等待/ })).toBeVisible({ timeout: 5_000 });
-    await page.getByRole('button', { name: /等待/ }).click();
+    // ===== 第 2 年：调息 =====
+    await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('button', { name: /调息/ }).click();
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
 
-    // ===== 第 3 回合：卖出持仓 =====
-    // 点击手牌中的第一张牌
-    const handCardContainer = page.locator('h3:has-text("手牌")').locator('..');
+    // ===== 第 3 年：释灵 =====
+    // 点击丹田中的第一张牌
+    const handCardContainer = page.locator('h3:has-text("丹田")').locator('..');
     const firstHandCard = handCardContainer.locator('.card-in').first();
     await expect(firstHandCard).toBeVisible({ timeout: 5_000 });
     await firstHandCard.click();
 
-    // 点击卖出
-    await page.getByRole('button', { name: /卖出/ }).click();
+    // 点击释灵
+    await page.getByRole('button', { name: /释灵/ }).click();
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
     await expect(page.getByText('实现价差', { exact: true })).toBeVisible();
-    await expect(page.getByText('气量流转', { exact: true })).toBeVisible();
-    await expect(page.getByText(/释放占用气 \+/)).toBeVisible();
+    await expect(page.getByText('心神流转', { exact: true })).toBeVisible();
+    await expect(page.getByText(/归还牵神 \+/)).toBeVisible();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
 
-    // 验证 Toast 出现「卖出成功」
-    await expect(page.getByText('卖出成功', { exact: true })).toBeVisible({ timeout: 5_000 });
+    // 验证 Toast 出现「释灵成功」
+    await expect(page.getByText('释灵成功', { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 
-  test('杠杆开关切换', async ({ page }) => {
+  test('燃灵开关切换', async ({ page }) => {
     await startGameAndDismiss(page);
 
-    // 验证杠杆按钮显示「杠杆 OFF」
-    const leverageBtn = page.getByRole('button', { name: /杠杆 OFF/ });
+    // 验证燃灵按钮显示「燃灵 OFF」
+    const leverageBtn = page.getByRole('button', { name: /燃灵 OFF/ });
     await expect(leverageBtn).toBeVisible({ timeout: 5_000 });
 
     // 点击切换
     await leverageBtn.click();
 
-    // 验证变为「杠杆 ON」
-    await expect(page.getByRole('button', { name: /杠杆 ON/ })).toBeVisible();
+    // 验证变为「燃灵 ON」
+    await expect(page.getByRole('button', { name: /燃灵 ON/ })).toBeVisible();
   });
 
-  test('杠杆买入卡牌', async ({ page }) => {
+  test('燃灵纳灵', async ({ page }) => {
     await startGameAndDismiss(page);
 
-    // 开启杠杆
-    await page.getByRole('button', { name: /杠杆 OFF/ }).click();
-    await expect(page.getByRole('button', { name: /杠杆 ON/ })).toBeVisible();
+    // 开启燃灵
+    await page.getByRole('button', { name: /燃灵 OFF/ }).click();
+    await expect(page.getByRole('button', { name: /燃灵 ON/ })).toBeVisible();
 
     // 选择公共牌
-    const publicCardContainer = page.locator('h3:has-text("公共牌池")').locator('..').locator('..');
+    const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
     const firstPublicCard = publicCardContainer.locator('.card-in').first();
     await firstPublicCard.click();
 
-    // 买入
-    await page.getByRole('button', { name: /买入/ }).click();
+    // 纳灵
+    await page.getByRole('button', { name: /纳灵/ }).click();
     await dismissSettlement(page);
 
-    // 验证买入成功
-    await expect(page.getByText('买入成功', { exact: true })).toBeVisible({ timeout: 5_000 });
+    // 验证纳灵成功
+    await expect(page.getByText('纳灵成功', { exact: true })).toBeVisible({ timeout: 5_000 });
 
-    // 买入于第 1 回合，推进到季内第 3 回合后，手牌应显示已升至 2.0x。
+    // 纳灵于第 1 年，推进到季内第 3 年后，丹田应显示已升至 2.0x。
     // 季节最短为 3 回合，因此这里不会跨季，且不依赖随机季长。
-    const handSection = page.locator('h3:has-text("手牌")').locator('..').locator('..');
-    await expect(handSection.getByLabel(/杠杆 1\.0×，下一回合 2\.0×/)).toBeVisible({ timeout: 5_000 });
-    await expect(handSection.getByText(/杆 1\.0×→2\.0×/)).toBeVisible();
+    const handSection = page.locator('h3:has-text("丹田")').locator('..').locator('..');
+    await expect(handSection.getByLabel(/燃灵 1\.0×，下一回合 2\.0×/)).toBeVisible({ timeout: 5_000 });
+    await expect(handSection.getByText(/灵 1\.0×→2\.0×/)).toBeVisible();
     for (let round = 2; round <= 2; round++) {
-      await page.getByRole('button', { name: /等待/ }).click();
+      await page.getByRole('button', { name: /调息/ }).click();
       await dismissSettlement(page);
     }
-    await expect(handSection.getByLabel(/杠杆 2\.0×/)).toBeVisible({ timeout: 10_000 });
-    await expect(handSection.getByText(/杆 1\.0×→2\.0×/)).toHaveCount(0);
+    await expect(handSection.getByLabel(/燃灵 2\.0×/)).toBeVisible({ timeout: 10_000 });
+    await expect(handSection.getByText(/灵 1\.0×→2\.0×/)).toHaveCount(0);
   });
 
   test('游戏结束与重新开始', async ({ page }) => {
@@ -260,15 +260,15 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 快速推进到第 59 回合（全部等待）
     for (let round = 1; round <= 58; round++) {
-      const waitBtn = page.getByRole('button', { name: /等待/ });
+      const waitBtn = page.getByRole('button', { name: /调息/ });
       await expect(waitBtn).toBeVisible({ timeout: 10_000 });
       await waitBtn.click();
       await dismissSettlement(page);
     }
 
     // 第 59 回合：等待按钮可见
-    await expect(page.getByRole('button', { name: /等待/ })).toBeVisible({ timeout: 10_000 });
-    await page.getByRole('button', { name: /等待/ }).click();
+    await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: /调息/ }).click();
     await dismissSettlement(page);
 
     // 第 60 回合：「结束游戏」按钮
@@ -283,7 +283,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 验证分数显示（在游戏结束弹窗内）
     const gameOverModal = page.locator('.modal-backdrop').filter({ has: page.getByRole('heading', { name: '游戏结束' }) });
-    await expect(gameOverModal.getByText(/分$/)).toBeVisible();
+    await expect(gameOverModal.getByText(/修为$/)).toBeVisible();
 
     // 验证重新开始按钮
     const restartBtn = page.getByText('重新开始', { exact: true });
@@ -296,20 +296,20 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     const newStartBtn = page.getByText('开始游戏', { exact: true });
     await expect(newStartBtn).toBeVisible({ timeout: 10_000 });
 
-    // 重新开始新一局：公共牌池必须正常抽出卡牌
+    // 重新开始新一局：周遭灵气必须正常浮现
     // （回归：牌池 reset 只清空不重建会导致新一局无牌可买，界面卡死在"春季"）
     await newStartBtn.click();
     await dismissSettlement(page);
-    await expect(page.getByText('公共牌池')).toBeVisible();
+    await expect(page.getByText('周遭灵气')).toBeVisible();
     await expect(page.locator('.card-in').first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('公共牌池为空', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('周遭暂无灵气浮现', { exact: true })).toHaveCount(0);
     // 新一局仍可正常买入
-    const newPublicCard = page.locator('h3:has-text("公共牌池")').locator('..').locator('..').locator('.card-in').first();
+    const newPublicCard = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..').locator('.card-in').first();
     await newPublicCard.click();
-    await page.getByRole('button', { name: /买入/ }).click();
+    await page.getByRole('button', { name: /纳灵/ }).click();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
-    await expect(page.getByText('买入成功', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('纳灵成功', { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 
   test('多回合混合操作（3 轮买入+等待+卖出循环）', async ({ page }) => {
@@ -317,30 +317,30 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 执行 3 轮买入+等待+卖出循环
     for (let cycle = 0; cycle < 3; cycle++) {
-      // 买入
-      const publicCardContainer = page.locator('h3:has-text("公共牌池")').locator('..').locator('..');
+      // 纳灵
+      const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
       const card = publicCardContainer.locator('.card-in').first();
       await expect(card).toBeVisible({ timeout: 10_000 });
       await card.click();
-      await page.getByRole('button', { name: /买入/ }).click();
+      await page.getByRole('button', { name: /纳灵/ }).click();
       await dismissSettlement(page);
 
       // 等待（让持仓产生收益）
-      await expect(page.getByRole('button', { name: /等待/ })).toBeVisible({ timeout: 10_000 });
-      await page.getByRole('button', { name: /等待/ }).click();
+      await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 10_000 });
+      await page.getByRole('button', { name: /调息/ }).click();
       await dismissSettlement(page);
 
       // 等待（再等一回合，更多收益）
-      await expect(page.getByRole('button', { name: /等待/ })).toBeVisible({ timeout: 10_000 });
-      await page.getByRole('button', { name: /等待/ }).click();
+      await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 10_000 });
+      await page.getByRole('button', { name: /调息/ }).click();
       await dismissSettlement(page);
 
       // 卖出
-      const handCardContainer = page.locator('h3:has-text("手牌")').locator('..');
+      const handCardContainer = page.locator('h3:has-text("丹田")').locator('..');
       const handCard = handCardContainer.locator('.card-in').first();
       await expect(handCard).toBeVisible({ timeout: 10_000 });
       await handCard.click();
-      await page.getByRole('button', { name: /卖出/ }).click();
+      await page.getByRole('button', { name: /释灵/ }).click();
       await dismissSettlement(page);
     }
 

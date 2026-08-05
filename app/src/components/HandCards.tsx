@@ -16,12 +16,12 @@ export function HandCards() {
   return (
     <div className="flex flex-col gap-1 px-4 py-1.5">
       <h3 className="text-sm font-bold font-serif text-ink">
-        手牌 {hand.filter((s) => s).length}/{hand.length}
+        丹田 {hand.filter((s) => s).length}/{hand.length}
       </h3>
 
       {!hasCards ? (
         <div className="text-center text-ink-light text-xs py-4 border border-dashed border-wood-light rounded-lg">
-          暂无持仓 · 买入公共牌开始游戏
+          三丹田空置 · 纳灵公共灵气开始炼化
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-1.5">

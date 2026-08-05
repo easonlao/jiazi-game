@@ -279,7 +279,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // 游戏结束清除存档
         tm.clearSave();
         set({ hasSave: false });
-        get().showToast(`游戏结束！最终得分：${finalScore}`);
+        get().showToast(`一甲子终了！最终修为：${finalScore}`);
       });
 
       set({ turnManager: tm });
@@ -391,9 +391,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (ok) {
       set({ selectedPublicCard: -1, useLeverage: false });
       get()._sync();
-      get().showToast('买入成功');
+      get().showToast('纳灵成功');
     } else {
-      get().showToast('买入失败（手牌满/气不足）');
+      get().showToast('纳灵失败（丹田满/心神不足）');
     }
     return ok;
   },
@@ -406,9 +406,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (ok) {
       set({ selectedHandCard: -1 });
       get()._sync();
-      get().showToast('卖出成功');
+      get().showToast('释灵成功');
     } else {
-      get().showToast('卖出失败');
+      get().showToast('释灵失败');
     }
     return ok;
   },
@@ -421,9 +421,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get()._sync();
       // 最后一回合等待 = 直接结束游戏，不产生下回合回气
       if (get().gameState === 'game_over') {
-        get().showToast('游戏结束');
+        get().showToast('一甲子终了');
       } else {
-        get().showToast('等待（下回合额外回气）');
+        get().showToast('调息（下年额外回神）');
       }
     }
     return ok;
@@ -502,12 +502,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (action.type === 'buy') {
       patch.selectedPublicCard = -1;
       patch.useLeverage = false;
-      get().showToast('买入成功');
+      get().showToast('纳灵成功');
     } else if (action.type === 'sell') {
       patch.selectedHandCard = -1;
-      get().showToast('卖出成功');
+      get().showToast('释灵成功');
     } else {
-      get().showToast(tm.getState() === 'game_over' ? '游戏结束' : '等待（下回合额外回气）');
+      get().showToast(tm.getState() === 'game_over' ? '一甲子终了' : '调息（下年额外回神）');
     }
     set(patch);
     get()._sync();

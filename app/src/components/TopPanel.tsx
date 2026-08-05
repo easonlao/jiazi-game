@@ -47,24 +47,24 @@ export function TopPanel() {
         <h1 className={`text-lg font-bold font-serif ${seasonTheme.text}`}>
         {/* key 变化触发切换动画，提示回合推进 */}
         <span key={currentRound} className="inline-block" style={roundAnimStyle}>
-          {seasonDisplay(season)}季
+          {seasonDisplay(season)} · 天时
         </span>
         </h1>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-light tabular-nums">
-          <span className="font-bold text-ink">第 {currentRound}/{totalRounds} 回合</span>
-          <span>本季第 {roundInSeason} 回合</span>
+          <span className="font-bold text-ink">甲子第 {currentRound} 年 / {totalRounds}</span>
+          <span>本季第 {roundInSeason} 年</span>
         </div>
-        <div className="mt-0.5 h-1 w-32 overflow-hidden rounded-full bg-wood-light/50" aria-label={`游戏进度 ${currentRound}/${totalRounds}`}>
+        <div className="mt-0.5 h-1 w-32 overflow-hidden rounded-full bg-wood-light/50" aria-label={`甲子进度 ${currentRound}/${totalRounds}`}>
           <div className={`h-full rounded-full ${seasonTheme.bar}`} style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />
         </div>
       </div>
       <div className="score-panel relative shrink-0 rounded-lg border border-gold/35 bg-gold/5 px-2 py-1 text-right">
         <div className="text-xl font-black leading-6 text-gold tabular-nums">
-          {score.toFixed(1)} 分
+          {score.toFixed(1)} 修为
         </div>
         {scoreDelta && (
           <div className={`mt-0.5 whitespace-nowrap text-[10px] font-bold leading-none tabular-nums ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
-            本回合 {scoreDelta.delta >= 0 ? '+' : ''}{scoreDelta.delta.toFixed(1)} 分
+            本回合 {scoreDelta.delta >= 0 ? '+' : ''}{scoreDelta.delta.toFixed(1)} 修为
           </div>
         )}
         {/* 分数飘字：多个同时出现时横向错开，避免叠字 */}

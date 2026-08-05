@@ -30,10 +30,10 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
         </div>
 
         <div className="space-y-3 overflow-y-auto px-4 py-3 text-xs leading-relaxed text-ink-light">
-          <HelpSection title="目标与回合">单局共 60 回合，春夏秋冬会随机换季。每回合结束后结算持仓，再恢复气；总分越高越好。</HelpSection>
-          <HelpSection title="一回合怎么做">先选公共牌，再选择买入、卖出或等待。买入会持有并每回合结算；卖出结算买入与当前评分的差价；等待不交易，但下回合额外回气。</HelpSection>
-          <HelpSection title="怎么看卡牌">卡名中天干、地支的颜色代表各自五行。卡面评分显示“当季 → 下一季”；评分越高，持仓收益越高，同时气耗也越高。</HelpSection>
-          <HelpSection title="杠杆与气">开启杠杆买入后，倍率按当季回合逐档提高，换季重置为 1.0×；倍率同时放大收益和持仓气耗。气归零时，杠杆仓位可能被强制卖出。</HelpSection>
+          <HelpSection title="甲子与天时">一局便是一甲子（60 年），春夏秋冬四季天时流转。每年（回合）结束，丹田中的灵气结算炼化，再回复心神；修为越高越好。</HelpSection>
+          <HelpSection title="一年怎么做">先看周遭浮现的灵气（公共牌），再选择纳灵、释灵或调息。纳灵将灵气收入丹田炼化；释灵按当前评分与纳灵时的差价结算修为；调息不纳灵不释灵，但下年额外回神。</HelpSection>
+          <HelpSection title="怎么看灵气">灵气名中天干、地支的颜色代表各自五行。卡面评分显示“当季 → 下一季”；评分越高，炼化收益越高，同时耗神也越高。</HelpSection>
+          <HelpSection title="燃灵与心神">纳灵时开启燃灵（杠杆），倍率按当季天时逐档提高，换季重置为 1.0×；倍率同时放大炼化收益和耗神。心神归零时，燃灵的灵气可能失控反噬（强平）。</HelpSection>
         </div>
       </div>
     </div>

@@ -1,8 +1,8 @@
 import { useGameStore } from '../store';
 
 /**
- * 游戏结束弹窗：展示最终得分 + 排行榜/重新开始按钮。
- * 分数已由 store 在游戏结束时自动记录到排行榜。
+ * 游戏结束弹窗：展示最终修为 + 排行榜/重新开始按钮。
+ * 修为已由 store 在游戏结束时自动记录到排行榜。
  */
 export function GameOverModal() {
   const score = useGameStore((s) => s.score);
@@ -14,7 +14,7 @@ export function GameOverModal() {
       <div className="mx-4 w-full max-w-xs bg-parchment rounded-xl shadow-2xl p-6 text-center">
         <h2 className="text-xl font-bold font-serif text-ink mb-4">游戏结束</h2>
         <p className="text-3xl font-bold text-gold mb-6">
-          {score.toFixed(1)} 分
+          {score.toFixed(1)} 修为
         </p>
 
         <div className="flex flex-col gap-2">

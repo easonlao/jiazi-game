@@ -23,7 +23,7 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
   if (publicCards.length === 0) {
     return (
       <div className="px-4 py-6 text-center text-ink-light text-sm">
-        公共牌池为空
+        周遭暂无灵气浮现
       </div>
     );
   }
@@ -31,10 +31,10 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
   return (
     <div className="flex flex-col gap-1 px-4 py-1.5">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold font-serif text-ink">公共牌池</h3>
+        <h3 className="text-sm font-bold font-serif text-ink">周遭灵气</h3>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-ink-light">
-            {gameState === 'player_action' ? '选牌后操作' : '等待回合...'}
+            {gameState === 'player_action' ? '选灵气后操作' : '天时流转中...'}
           </span>
           <HelpButton onClick={onHelp} />
         </div>

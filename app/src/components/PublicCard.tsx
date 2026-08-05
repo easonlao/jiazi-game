@@ -18,7 +18,7 @@ interface PublicCardProps {
 }
 
 /**
- * 公共牌：买入成本 + 每回合持有收益/气耗 + 锁定按钮。
+ * 公共牌：纳灵消耗 + 每回合炼化收益/耗神 + 锁定按钮。
  * 不显示杠杆徽章和卖出预览（那是手牌的职责）。
  */
 export function PublicCard({
@@ -40,7 +40,7 @@ export function PublicCard({
               e.stopPropagation();
               onToggleLock();
             }}
-            title={locked ? '点击解锁（牌回牌堆，停止扣气）' : '点击锁定（占公共位，每回合 -5 气）'}
+            title={locked ? '点击解锁（灵气回灵流，停止耗神）' : '点击锁定（留住灵气，每回合 -5 心神）'}
             aria-label={locked ? '解锁此卡牌' : '锁定此卡牌'}
             className={`
               lock-btn relative flex h-6 w-6 items-center justify-center rounded-full
@@ -70,28 +70,28 @@ export function PublicCard({
       }
     >
       {/* 上下堆叠而非两列：每行 label + 值，独享整行宽度，
-          避免 "每回合持有 +2.0分 -2.2气" 在窄屏被截断。 */}
+          避免 "每回合炼化 +2.0修为 -2.2心神" 在窄屏被截断。 */}
       <div className="divide-y divide-wood-light/35 text-xs">
         <div className="flex items-center justify-between gap-1 px-2 py-1">
-          <span className="text-[10px] text-ink-light shrink-0">买入成本</span>
+          <span className="text-[10px] text-ink-light shrink-0">纳灵消耗</span>
           <span className={`font-bold tabular-nums whitespace-nowrap ${canAfford ? 'text-qi-full' : 'text-qi-critical'}`}>
-            -{buyCost} 气
+            -{buyCost} 心神
           </span>
         </div>
         <div className="flex items-center justify-between gap-1 px-2 py-1">
-          <span className="text-[10px] text-ink-light shrink-0">每回合持有</span>
+          <span className="text-[10px] text-ink-light shrink-0">每回合炼化</span>
           <span className="font-bold tabular-nums whitespace-nowrap">
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
             </span>
-            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}气</span>
+            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}心神</span>
           </span>
         </div>
         {locked && (
           <div className="flex items-center justify-between gap-1 px-2 py-1 bg-amber-50/60">
             <span className="text-[10px] text-amber-700 shrink-0">锁定中</span>
             <span className="font-bold tabular-nums whitespace-nowrap text-amber-700">
-              每回合 -5 气
+              每回合 -5 心神
             </span>
           </div>
         )}

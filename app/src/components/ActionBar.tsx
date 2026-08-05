@@ -37,16 +37,16 @@ export function ActionBar() {
 
   return (
     <div className="z-10 flex flex-col gap-1 px-4 py-1.5 bg-[#faf6ee] border-t border-wood-light md:sticky md:bottom-0 max-md:fixed max-md:left-0 max-md:right-0 max-md:bottom-0 max-md:z-30 max-md:max-w-[428px] max-md:mx-auto">
-      {/* 最后一回合提示：核心禁止买入，需明确告知 */}
+      {/* 最后一回合提示：核心禁止纳灵，需明确告知 */}
       {isFinalRound && (
         <div className="text-[11px] text-qi-critical bg-qi-critical/10 px-2 py-1 rounded">
-          最后一回合：只能卖出或等待，买入已禁用（买入的牌没有下一回合结算）
+          最后一回合：只能释灵或调息，纳灵已禁用（纳灵入体的灵气没有下一回合炼化）
         </div>
       )}
 
       {/* 按钮行 */}
       <div className="grid grid-cols-4 gap-2">
-        {/* 买入 */}
+        {/* 纳灵（买入） */}
         <button
           onClick={requestBuyPreview}
           disabled={!canBuy || !affordBuy}
@@ -58,10 +58,10 @@ export function ActionBar() {
             }
           `}
         >
-          买入
+          纳灵
         </button>
 
-        {/* 卖出 */}
+        {/* 释灵（卖出） */}
         <button
           onClick={requestSellPreview}
           disabled={!canSell}
@@ -73,10 +73,10 @@ export function ActionBar() {
             }
           `}
         >
-          卖出
+          释灵
         </button>
 
-        {/* 杠杆开关 */}
+        {/* 燃灵开关（杠杆） */}
         <button
           onClick={toggleLeverage}
           className={`
@@ -87,7 +87,7 @@ export function ActionBar() {
             }
           `}
         >
-          杠杆{useLeverage ? ' ON' : ' OFF'}
+          燃灵{useLeverage ? ' ON' : ' OFF'}
           {useLeverage && (
             <span className="block text-[10px] font-normal">
               {`${leverageMultiplier.toFixed(1)}x`}
@@ -95,12 +95,12 @@ export function ActionBar() {
           )}
         </button>
 
-        {/* 等待：最后一回合 = 结束游戏，不产生结算/回气 */}
+        {/* 调息（等待）：最后一回合 = 结束游戏，不产生结算/回气 */}
         <button
           onClick={requestWaitPreview}
           className="py-2 rounded-lg text-sm font-bold bg-white border border-wood-mid text-wood-dark hover:bg-wood-light/20 hover:shadow-sm hover:-translate-y-0.5 active:scale-95 transition-all duration-150"
         >
-          {isFinalRound ? '结束游戏' : '等待'}
+          {isFinalRound ? '结束游戏' : '调息'}
           {!isFinalRound && (
             <span className="block text-[10px] font-normal leading-tight">
               <span className="text-qi-full">+{baseRecovery}</span>自然+<span className="text-sky-600">{waitBonus}</span>奖励

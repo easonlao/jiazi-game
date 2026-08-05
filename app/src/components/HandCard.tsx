@@ -21,7 +21,7 @@ interface HandCardProps {
 }
 
 /**
- * 手牌：杠杆徽章 + 每回合持有 + 累计持有 + 卖出预览。
+ * 手牌：燃灵徽章 + 每回合炼化 + 累计炼化 + 释灵预览。
  * 不显示买入成本（那是公共牌的职责）。
  */
 export function HandCard({
@@ -41,10 +41,10 @@ export function HandCard({
   const leverageBadge = (
     <span
       className={`text-[9px] px-1 py-0.5 rounded font-bold whitespace-nowrap ${isLeverage ? 'bg-qi-critical text-white' : 'bg-white/75 text-ink-light border border-wood-light'}`}
-      title={isLeverage ? `当前杠杆 ${leverage.toFixed(1)}×` : '未启用杠杆，按 1.0× 结算'}
+      title={isLeverage ? `当前燃灵 ${leverage.toFixed(1)}×` : '未燃灵，按 1.0× 结算'}
       aria-label={isLeverage
-        ? `杠杆 ${leverage.toFixed(1)}×${settlementLeverage !== undefined && settlementLeverage > leverage ? `，下一回合 ${settlementLeverage.toFixed(1)}×` : ''}`
-        : '杠杆未启用，当前按 1.0× 结算'}
+        ? `燃灵 ${leverage.toFixed(1)}×${settlementLeverage !== undefined && settlementLeverage > leverage ? `，下一回合 ${settlementLeverage.toFixed(1)}×` : ''}`
+        : '燃灵未启用，当前按 1.0× 结算'}
     >
       杆 {leverage.toFixed(1)}×
       {isLeverage && settlementLeverage !== undefined && settlementLeverage > leverage && (
@@ -65,31 +65,31 @@ export function HandCard({
       {/* 上下堆叠：每行 label + 值独享整行，避免窄屏文字被截断。 */}
       <div className="divide-y divide-wood-light/35 text-xs">
         <div className="flex items-center justify-between gap-1 px-2 py-1">
-          <span className="text-[10px] text-ink-light shrink-0">每回合持有</span>
+          <span className="text-[10px] text-ink-light shrink-0">每回合炼化</span>
           <span className="font-bold tabular-nums whitespace-nowrap">
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
             </span>
-            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}气</span>
+            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}心神</span>
           </span>
         </div>
         <div className="flex items-center justify-between gap-1 px-2 py-1">
-          <span className="text-[10px] text-ink-light shrink-0">累计持有</span>
+          <span className="text-[10px] text-ink-light shrink-0">累计炼化</span>
           <span className={`font-bold tabular-nums whitespace-nowrap ${holdEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
             {holdEarnings >= 0 ? '+' : ''}{holdEarnings.toFixed(1)}分
           </span>
         </div>
       </div>
 
-      {/* 只有选中手牌时才展示卖出结果，保持日常牌面干净 */}
+      {/* 只有选中手牌时才展示释灵结果，保持日常牌面干净 */}
       {sellPreview && (
         <div className="mx-2 mb-1.5 mt-1 flex items-center justify-between rounded bg-white/60 px-2 py-1 text-[10px]">
-          <span className="text-ink-light">卖出结算</span>
+          <span className="text-ink-light">释灵结算</span>
           <span className="font-bold tabular-nums whitespace-nowrap">
             <span className={sellPreview.score >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {sellPreview.score >= 0 ? '+' : ''}{sellPreview.score.toFixed(1)}分
             </span>
-            <span className="ml-1.5 text-ink-light">气{sellPreview.qiChange >= 0 ? '+' : ''}{sellPreview.qiChange.toFixed(1)}</span>
+            <span className="ml-1.5 text-ink-light">心神{sellPreview.qiChange >= 0 ? '+' : ''}{sellPreview.qiChange.toFixed(1)}</span>
           </span>
         </div>
       )}

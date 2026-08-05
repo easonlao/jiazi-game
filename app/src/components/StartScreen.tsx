@@ -22,9 +22,9 @@ export function StartScreen({ turnManager, hasSave, onStart, onContinue, onLeade
 
       <div className="w-full max-w-xs rounded-lg border border-wood-light bg-[#faf6ee] px-3 py-2.5 text-xs leading-relaxed text-ink-light">
         <h3 className="mb-1 font-serif text-sm font-bold text-ink">玩法</h3>
-        <p>60 回合，春夏秋冬随机换季；每回合可买入、卖出或等待。</p>
-        <p>持仓每回合结算收益和气耗，评分越高收益越高，气耗也越高。</p>
-        <p>杠杆会放大收益和气耗，换季重置；气不足时可能爆仓。</p>
+        <p>一甲子（60 年），春夏秋冬天时流转；每年可纳灵、释灵或调息。</p>
+        <p>丹田中的灵气每年结算炼化修为与耗神，评分越高炼化越多，耗神也越多。</p>
+        <p>燃灵会放大炼化与耗神，换季重置；心神不足时可能反噬。</p>
       </div>
 
       {turnManager ? (
