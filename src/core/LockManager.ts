@@ -112,14 +112,17 @@ export class LockManager {
   /**
    * 锁定费结算：每张锁定牌每回合扣 LOCK_COST_PER_CARD 气。
    * 气不足时自动解锁（先解评分最低的），锁定牌回牌堆。
+   * @returns 被自动解锁的牌 ID 列表（未触发自动解锁时为空数组）。
+   *           调用方应据此向玩家给出明确提示，避免"锁定牌无故消失"的体验。
    */
-  settleLockCost(currentSeason: string): void {
-    if (this.lockedCardIds.length === 0) return;
+  settleLockCost(currentSeason: string): number[] {
+    if (this.lockedCardIds.length === 0) return [];
     const totalCost = this.lockedCardIds.length * LockManager.LOCK_COST_PER_CARD;
 
     // 扣锁定费（允许扣到负数，随后检查解锁）
     this.deps.qiManager.deductQi(totalCost);
 
+    const autoUnlockedIds: number[] = [];
     // 气不足：从评分最低的锁定牌开始自动解锁，直到气回正
     while (this.lockedCardIds.length > 0 && this.deps.qiManager.getQi() <= 0) {
       const publicCards = this.deps.cardPoolManager.getPublicCards();
@@ -136,9 +139,11 @@ export class LockManager {
       }
       if (worstId === null) break;
       this.lockedCardIds = this.lockedCardIds.filter((id) => id !== worstId);
+      autoUnlockedIds.push(worstId);
       const card = publicCards.find((c) => c.id === worstId);
       if (card) this.deps.cardPoolManager.returnCards([card]);
       this.deps.qiManager.recover(LockManager.LOCK_COST_PER_CARD);
     }
+    return autoUnlockedIds;
   }
 }

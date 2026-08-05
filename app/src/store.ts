@@ -24,6 +24,21 @@ export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent };
 /** 防止 React StrictMode 下 initialize 被重复调用 */
 let _initializing = false;
 
+/**
+ * 回合末「锁定牌被自动解锁」事件的 Toast 文案（如「心神难继，灵气甲子自行散去」）。
+ * 结算触发后立即展示；随后行动流程再弹「释灵成功/纳灵成功/调息」等反馈文案时，
+ * 优先保留本提示，避免关键告警被常规反馈覆盖（玩家感知为"锁定牌无故消失"）。
+ * 消费即清空，防止残留到下个回合。
+ */
+let _pendingAutoUnlockToast: string | null = null;
+
+/** 展示行动反馈 Toast：有自动解锁提示时优先展示并清空，否则用常规文案。 */
+function _showActionToast(get: () => GameStore, fallback: string): void {
+  const pending = _pendingAutoUnlockToast;
+  _pendingAutoUnlockToast = null;
+  get().showToast(pending ?? fallback);
+}
+
 interface GameStore {
   // 引擎实例
   turnManager: TurnManager | null;
@@ -282,6 +297,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         get().showToast(`一甲子终了！最终修为：${finalScore}`);
       });
 
+      // 回合末锁定牌被自动解锁（付不起锁定费）：必须明确提示，不能静默丢锁定
+      tm.setOnLockAutoUnlocked((cardIds) => {
+        const names = cardIds
+          .map((id) => tm.getCardById(id)?.name ?? `#${id}`)
+          .join('、');
+        _pendingAutoUnlockToast = `心神难继，灵气${names}自行散去`;
+        // 立即提示；随后的行动反馈 Toast 会优先保留本提示（见 _showActionToast）
+        get().showToast(_pendingAutoUnlockToast);
+      });
+
       set({ turnManager: tm });
       get()._sync();
 
@@ -342,6 +367,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const tm = get().turnManager;
     if (!tm) return;
     tm.reset();
+    // 清掉可能残留的自动解锁提示，避免跨局误弹
+    _pendingAutoUnlockToast = null;
     // 先把引擎重置后的关键值写回 store，再清空 FX 事件。
     // 否则随后的 _sync 会把"重置前的旧季节/分数/气量 vs 重置后的初始值"的差异
     // 误判为新 FX 事件，导致新一局开局误播上一局的换季/得分/回气动画。
@@ -391,7 +418,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (ok) {
       set({ selectedPublicCard: -1, useLeverage: false });
       get()._sync();
-      get().showToast('纳灵成功');
+      _showActionToast(get, '纳灵成功');
     } else {
       get().showToast('纳灵失败（丹田满/心神不足）');
     }
@@ -406,7 +433,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (ok) {
       set({ selectedHandCard: -1 });
       get()._sync();
-      get().showToast('释灵成功');
+      _showActionToast(get, '释灵成功');
     } else {
       get().showToast('释灵失败');
     }
@@ -421,9 +448,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get()._sync();
       // 最后一回合等待 = 直接结束游戏，不产生下回合回气
       if (get().gameState === 'game_over') {
-        get().showToast('一甲子终了');
+        _showActionToast(get, '一甲子终了');
       } else {
-        get().showToast('调息（下年额外回神）');
+        _showActionToast(get, '调息（下年额外回神）');
       }
     }
     return ok;
@@ -502,12 +529,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (action.type === 'buy') {
       patch.selectedPublicCard = -1;
       patch.useLeverage = false;
-      get().showToast('纳灵成功');
+      _showActionToast(get, '纳灵成功');
     } else if (action.type === 'sell') {
       patch.selectedHandCard = -1;
-      get().showToast('释灵成功');
+      _showActionToast(get, '释灵成功');
     } else {
-      get().showToast(tm.getState() === 'game_over' ? '一甲子终了' : '调息（下年额外回神）');
+      _showActionToast(get, tm.getState() === 'game_over' ? '一甲子终了' : '调息（下年额外回神）');
     }
     set(patch);
     get()._sync();

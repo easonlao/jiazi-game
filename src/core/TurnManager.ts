@@ -151,6 +151,8 @@ export class TurnManager {
   private onStateChange?: (state: GameState) => void;
   private onTurnStart?: (round: number) => void;
   private onGameEnd?: (finalScore: number) => void;
+  /** 锁定牌被自动解锁（付不起锁定费时回合末触发），携带被解锁的牌 ID 列表 */
+  private onLockAutoUnlocked?: (cardIds: number[]) => void;
 
   // 存档服务（序列化与 LocalStorage 边界）
   private readonly saveService: GameSaveService;
@@ -264,8 +266,12 @@ export class TurnManager {
     // 1. 持仓结算
     this.settleHoldings();
 
-    // 1.5 锁定费结算：每张锁定牌每回合扣 LOCK_COST，气不足自动解锁（先解评分最低的）
-    this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason());
+    // 1.5 锁定费结算：每张锁定牌每回合扣 LOCK_COST，气不足自动解锁（先解评分最低的）。
+    // 被自动解锁的牌要通知 UI 弹 Toast，否则玩家会以为锁定牌"无故消失"（卖出/等待低气导火索）。
+    const autoUnlockedIds = this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason());
+    if (autoUnlockedIds.length > 0) {
+      this.onLockAutoUnlocked?.(autoUnlockedIds);
+    }
 
     // 2. 抽牌（锁定牌保留在公共区，抽 drawCount - 锁定数 张新牌）
     this.cardPoolManager.drawCards(this.lockManager.getLockedCardIds());
@@ -730,6 +736,16 @@ export class TurnManager {
   /** 设置游戏结束回调 */
   setOnGameEnd(callback: (finalScore: number) => void): void {
     this.onGameEnd = callback;
+  }
+
+  /** 设置锁定牌被自动解锁回调（付不起锁定费时回合末触发），携带被解锁的牌 ID 列表 */
+  setOnLockAutoUnlocked(callback: (cardIds: number[]) => void): void {
+    this.onLockAutoUnlocked = callback;
+  }
+
+  /** 按 ID 获取卡牌（供 UI 解析自动解锁牌的名称等） */
+  getCardById(id: number): JiaziCard | undefined {
+    return this.cardDataBank.getCard(id);
   }
 
   /** 获取当前状态 */

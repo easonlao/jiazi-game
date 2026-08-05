@@ -63,18 +63,37 @@ export class CardPoolManager {
 
   /**
    * 从剩余牌堆最上方抽取卡牌放入公共展示池。
-   * 锁定机制：锁定牌保留在公共区，抽牌数 = DRAW_COUNT - 锁定数（保证公共位不超上限）。
+   * 锁定机制：锁定牌保留在公共区，且保持其原始索引位置不动；新抽的牌只填充非锁定空位。
+   * 抽牌数 = DRAW_COUNT - 锁定数（保证公共位不超上限，且锁定牌位置不漂移）。
    * @param lockedCardIds 当前锁定的卡牌 ID 列表（锁定牌留在公共区）
    * @returns 抽出的公共卡牌列表
    */
   drawCards(lockedCardIds: number[] = []): JiaziCard[] {
-    const lockedCards = this.publicCards.filter((card) => lockedCardIds.includes(card.id));
+    const lockedIds = new Set(lockedCardIds);
+    // 记录锁定牌在当前公共区中的原始索引位置（刷新时原地不动，不重排到前部）
+    const lockedSlots = new Map<number, JiaziCard>();
+    this.publicCards.forEach((card, index) => {
+      if (lockedIds.has(card.id)) lockedSlots.set(index, card);
+    });
+
     const drawCount = Math.min(
-      CardPoolManager.DRAW_COUNT - lockedCards.length,
+      CardPoolManager.DRAW_COUNT - lockedSlots.size,
       this.deck.length
     );
     const newCards = this.deck.splice(0, Math.max(0, drawCount));
-    this.publicCards = [...lockedCards, ...newCards];
+
+    // 构建新公共区：锁定牌保持原索引，非锁定位置依次被新牌填充，多余空位截断
+    const next: (JiaziCard | undefined)[] = [];
+    let newCardIndex = 0;
+    for (let i = 0; i < CardPoolManager.DRAW_COUNT; i++) {
+      const lockedCard = lockedSlots.get(i);
+      if (lockedCard) {
+        next[i] = lockedCard;
+      } else if (newCardIndex < newCards.length) {
+        next[i] = newCards[newCardIndex++];
+      }
+    }
+    this.publicCards = next.filter((card): card is JiaziCard => card !== undefined);
     return this.publicCards;
   }
 
