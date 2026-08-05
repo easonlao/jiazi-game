@@ -18,6 +18,8 @@ interface HandCardProps {
   holdQiCost: number;
   /** 卖出预览（仅选中时传入，未选中传 null） */
   sellPreview: { score: number; qiChange: number } | null;
+  /** 反噬崩坏：被反噬的丹田槽位播红闪碎裂效果（2026-08-05） */
+  shattered?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export function HandCard({
   holdEarning,
   holdQiCost,
   sellPreview,
+  shattered,
 }: HandCardProps) {
   const leverageBadge = (
     <span
@@ -54,14 +57,15 @@ export function HandCard({
   );
 
   return (
-    <CardVisual
-      card={card}
-      score={score}
-      nextScore={nextScore}
-      selected={selected}
-      onClick={onClick}
-      badges={leverageBadge}
-    >
+    <div className={shattered ? 'mc-shatter-slot' : undefined}>
+      <CardVisual
+        card={card}
+        score={score}
+        nextScore={nextScore}
+        selected={selected}
+        onClick={onClick}
+        badges={leverageBadge}
+      >
       {/* 上下堆叠：每行 label + 值独享整行，避免窄屏文字被截断。 */}
       <div className="divide-y divide-wood-light/35 text-xs">
         <div className="flex items-center justify-between gap-1 px-2 py-1">
@@ -93,6 +97,7 @@ export function HandCard({
           </span>
         </div>
       )}
-    </CardVisual>
+      </CardVisual>
+    </div>
   );
 }

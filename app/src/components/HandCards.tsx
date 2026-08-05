@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useGameStore } from '../store';
 import { HandCard } from './HandCard';
 import type { HandSlot } from '@core/HandSlot';
@@ -10,6 +11,20 @@ export function HandCards() {
   const previewSellInfo = useGameStore((s) => s.previewSellInfo);
   const season = useGameStore((s) => s.season);
   const turnManager = useGameStore((s) => s.turnManager);
+  const marginCallEvent = useGameStore((s) => s.marginCallEvent);
+
+  // 反噬来源感：被反噬的丹田槽位（slotIndex）在反噬动画期间播"崩坏"效果，
+  // 与中央反噬大卡片同屏——玩家看到"丹田第 N 格崩了"→ 中央弹出惩罚数字的因果链（2026-08-05）
+  const shatteredSlots = useRef<Set<number>>(new Set());
+  const lastMarginCallId = useRef(0);
+  if (marginCallEvent && marginCallEvent.id !== lastMarginCallId.current) {
+    lastMarginCallId.current = marginCallEvent.id;
+    shatteredSlots.current = new Set(
+      (marginCallEvent.detail?.marginCallDetails ?? []).map((d) => d.slotIndex),
+    );
+    // 动画结束后清除崩坏标记（与反噬 overlay 2.3s 同步）
+    setTimeout(() => { shatteredSlots.current = new Set(); }, 2400);
+  }
 
   const hasCards = hand.some((s) => s !== null);
 
@@ -26,7 +41,7 @@ export function HandCards() {
       ) : (
         <div className="grid grid-cols-2 gap-1.5">
           {hand.map((slot: HandSlot | null, i: number) => {
-            if (!slot) return <EmptySlot key={i} />;
+            if (!slot) return <EmptySlot key={i} shattered={shatteredSlots.current.has(i)} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getFollowingSeason()) : score;
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
@@ -63,6 +78,7 @@ export function HandCards() {
                 holdEarning={holdEarning}
                 holdQiCost={holdQiCost}
                 sellPreview={sellPreview}
+                shattered={shatteredSlots.current.has(i)}
               />
             );
           })}
@@ -72,10 +88,14 @@ export function HandCards() {
   );
 }
 
-function EmptySlot() {
+function EmptySlot({ shattered = false }: { shattered?: boolean }) {
   return (
-    <div className="slot-breathe flex items-center justify-center rounded-lg border-2 border-dashed border-wood-light bg-white/50 h-24">
-      <span className="text-xs text-wood-light">空位</span>
+    <div
+      className={`flex items-center justify-center rounded-lg border-2 border-dashed border-wood-light bg-white/50 h-24 ${
+        shattered ? 'mc-shatter-slot' : 'slot-breathe'
+      }`}
+    >
+      <span className="text-xs text-wood-light">{shattered ? '崩坏' : '空位'}</span>
     </div>
   );
 }
