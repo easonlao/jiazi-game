@@ -23,7 +23,15 @@ export type ActionType = 'buy' | 'sell' | 'wait' | 'lock' | 'unlock';
 
 export interface MarginCallDetail {
   cardName: string;
-  sellScore: number;
+  /** 被反噬牌在丹田的槽位索引 0/1/2（供"来源感"动画定位；2026-08-05 结构化） */
+  slotIndex: number;
+  /** 反噬罚分 = round(杠杆 × |评分| × 系数)。2026-08-05 起被反噬牌无卖出收益 */
+  penaltyScore: number;
+  /** 被反噬时实际杠杆倍率 */
+  leverage: number;
+  /** 被反噬时卡牌评分 */
+  cardScore: number;
+  /** 兜底描述（含完整计算式） */
   reason: string;
 }
 

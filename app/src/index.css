@@ -174,13 +174,6 @@ html, body, #root {
 }
 .mc-flash { animation: mcFlash 0.45s ease-out forwards; }
 
-/* 红色警报脉冲（两次呼吸） */
-@keyframes mcPulse {
-  0%, 100% { opacity: 0.12; }
-  50% { opacity: 0.38; }
-}
-.mc-pulse { animation: mcPulse 0.9s ease-in-out 2; }
-
 /* 爆仓印章大字：砸下 → 回弹 → 停留 → 上浮淡出 */
 @keyframes mcStamp {
   0% { opacity: 0; transform: scale(2.6) rotate(-10deg); }
@@ -192,21 +185,12 @@ html, body, #root {
 }
 .mc-stamp { animation: mcStamp 2.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
-/* 爆仓大字下方的标题条淡入 */
-@keyframes mcSub {
-  0% { opacity: 0; transform: translateY(10px); }
-  26% { opacity: 1; transform: translateY(0); }
-  72% { opacity: 1; }
-  100% { opacity: 0; }
-}
-.mc-sub { animation: mcSub 2.3s ease-out forwards; }
-
-/* 被强平卡名单条滑入 */
+/* 被反噬卡大卡片滑入（信息优先：卡名+罚分，2026-08-05 重构） */
 @keyframes mcCardIn {
-  0% { opacity: 0; transform: translateX(-18px) scale(0.92); }
+  0% { opacity: 0; transform: translateY(14px) scale(0.94); }
   100% { opacity: 1; transform: none; }
 }
-.mc-card { animation: mcCardIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.mc-card { animation: mcCardIn 0.36s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
 /* 屏幕级震动（爆仓瞬间整个游戏画面抖动） */
 @keyframes screenShake {

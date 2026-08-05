@@ -13,7 +13,6 @@ import { HelpModal } from './components/HelpCenter';
 import { StartScreen } from './components/StartScreen';
 import { GameOverModal } from './components/GameOverModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
-import { useScreenShake } from './hooks/useScreenShake';
 
 export default function App() {
   const gameState = useGameStore((s) => s.gameState);
@@ -25,13 +24,9 @@ export default function App() {
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
   const closeLeaderboard = useGameStore((s) => s.closeLeaderboard);
   const showToast = useGameStore((s) => s.showToast);
-  const marginCallEvent = useGameStore((s) => s.marginCallEvent);
   const hasSave = useGameStore((s) => s.hasSave);
   const leaderboardOpen = useGameStore((s) => s.leaderboardOpen);
   const [helpOpen, setHelpOpen] = useState(false);
-
-  const gameRef = useRef<HTMLDivElement>(null);
-  useScreenShake(gameRef, marginCallEvent);
 
   // 初始化引擎
   useEffect(() => {
@@ -53,7 +48,6 @@ export default function App() {
   return (
     <div className="flex items-center justify-center w-full h-full bg-stone-800">
       <div
-        ref={gameRef}
         data-game-shell
         className="relative w-full h-full max-w-[428px] bg-parchment overflow-y-auto overflow-x-hidden flex flex-col font-sans shadow-2xl md:rounded-2xl md:my-6 md:h-[calc(100%-3rem)] md:max-h-[920px] max-md:pb-[88px]"
       >

@@ -115,11 +115,14 @@ export class MarginCallEngine {
       const forcedLiquidationQiReturn = Math.floor(slot.lockedQi * qiManager.getForcedLiquidationQiReturnFactor());
       qiManager.recover(forcedLiquidationQiReturn, newTotalLocked);
 
-      // 记录强平细节（扣分系数来自配置，避免调参后展示与实扣不一致）
+      // 记录强平细节（结构化字段供 UI 大字展示，reason 保留为兜底；扣分系数来自配置，避免调参后展示与实扣不一致）
       const penaltyCoeff = balanceConfig.marginCallPenaltyPerScore;
       details.push({
         cardName: slot.card.name,
-        sellScore: 0, // 被反噬无卖出收益
+        slotIndex: targetIndex,
+        penaltyScore: marginCallPenalty,
+        leverage: effectiveLeverage,
+        cardScore: currentScore,
         reason: `气量归零强制平仓，杠杆 ${effectiveLeverage}x，卡牌评分 ${currentScore}，扣分 ${marginCallPenalty}（杠杆 × |评分| × ${penaltyCoeff}）`
       });
 

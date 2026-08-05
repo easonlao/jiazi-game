@@ -154,7 +154,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await waitBtn.click();
 
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
-    await expect(page.getByText('调息奖励（下回合）')).toBeVisible();
+    // 账单化（2026-08-05 反噬流程重设计）：弹窗只展示本回合账单，不再预测下一回合调息奖励
+    await expect(page.getByText('行动后可用心神')).toBeVisible();
     await confirmSettlementPreview(page);
 
     await dismissSettlement(page);
