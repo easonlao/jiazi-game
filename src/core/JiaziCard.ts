@@ -117,14 +117,17 @@ export class JiaziCard {
     };
     const seasonElement = seasonElementMap[season];
 
-    // 土牌：天干保底(0.5权重,恒定) + 藏干波动(中心化,权重0.5) + 关系分(0.2)
+    // 土牌：天干保底(0.5权重,恒定) + 藏干波动(中心化,权重0.5)
+    // 2026-08-05 移除关系分(0.2)：土是中立承载者，不参与天干地支关系加分。
+    // 数据验证（真引擎）：去掉后 12 张土牌四季总分全部相等(16)——土牌差异只剩藏干波动方向，
+    // 无任何土牌在总量上占优；保留时 4 张土+土地支牌(辰丑戌未)总分 32 是其余两倍，属"土土相配加强"，
+    // 与"土完全中立"的叙事设定冲突。
     if (this.tianGanElement === Element.EARTH) {
       const stemScore = this.scoreElementInSeason(this.tianGanElement, seasonElement);
       const branchScore = this.scoreHiddenStemsInSeason(seasonElement);
       const branchScores = seasons.map((s) => this.scoreHiddenStemsInSeason(seasonElementMap[s]));
       const branchMean = branchScores.reduce((sum, value) => sum + value, 0) / branchScores.length;
-      const relationScore = this.scoreStemBranchRelation();
-      return this.roundScore10(stemScore * 0.5 + (branchScore - branchMean) * 0.5 + relationScore * 0.2);
+      return this.roundScore10(stemScore * 0.5 + (branchScore - branchMean) * 0.5);
     }
 
     // 非土牌：原均值中心化逻辑

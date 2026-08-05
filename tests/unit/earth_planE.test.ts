@@ -19,9 +19,11 @@ describe('土牌方案E评分验证', () => {
     });
     const scores = seasons.map(s => wuchen.getSeasonScore(s));
     console.log('戊辰评分:', scores.map(s => s.toFixed(2)).join(' '));
-    // 方案E：天干保底，评分应显著为正（之前均值中心化接近0）
-    expect(Math.max(...scores)).toBeGreaterThan(1.0);
-    expect(Math.min(...scores)).toBeGreaterThan(-0.5);
+    // 方案E：天干保底，评分应有明显正向水平（四季总和显著 > 0）
+    // 2026-08-05 移除关系分后：天干保底 0.4/季 + 藏干波动（辰藏乙木春夏旺/癸水冬旺），
+    // 四季 9/5/-1/3，总和 16 恒正；min=-1 是藏干波动（非均值中心化压平）
+    expect(scores.reduce((a, b) => a + b, 0)).toBeGreaterThan(5.0);
+    expect(Math.max(...scores)).toBeGreaterThan(5.0);
   });
 
   it('对冲土牌应有季节波动（藏干带来分化）', () => {
