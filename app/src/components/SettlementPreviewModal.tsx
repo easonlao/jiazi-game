@@ -101,25 +101,25 @@ export function SettlementPreviewModal() {
             )}
           </div>
 
-          {/* 修为账单：当前 → 行动 → 行动后 */}
-          <div className="rounded-lg border border-gold/40 bg-gold/5 px-3 py-2 text-xs">
-            <div className="space-y-1 text-ink-light">
-              <div className="flex justify-between">
-                <span>当前修为</span>
-                <span className="tabular-nums">{scoreBeforeAction.toFixed(1)}</span>
-              </div>
-              {preview.actionScoreChange !== 0 && (
+          {/* 修为账单：仅在修为有变化时显示（卖出价差；买入/调息修为不变，无需展示） */}
+          {preview.actionScoreChange !== 0 && (
+            <div className="rounded-lg border border-gold/40 bg-gold/5 px-3 py-2 text-xs">
+              <div className="space-y-1 text-ink-light">
                 <div className="flex justify-between">
-                  <span>{preview.action.type === 'sell' ? '释灵价差' : preview.action.type === 'buy' ? '纳灵即时' : '调息'}</span>
+                  <span>当前修为</span>
+                  <span className="tabular-nums">{scoreBeforeAction.toFixed(1)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{preview.action.type === 'sell' ? '释灵价差' : '行动即时'}</span>
                   <span className={preview.actionScoreChange >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.actionScoreChange)}</span>
                 </div>
-              )}
-              <div className="flex justify-between border-t border-gold/25 pt-1">
-                <span className="font-medium text-ink">行动后修为</span>
-                <span className="font-bold tabular-nums text-gold">{scoreAfterAction.toFixed(1)}</span>
+                <div className="flex justify-between border-t border-gold/25 pt-1">
+                  <span className="font-medium text-ink">行动后修为</span>
+                  <span className="font-bold tabular-nums text-gold">{scoreAfterAction.toFixed(1)}</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {preview.saleBreakdown && (
             <div className="rounded-lg border border-wood-light bg-[#faf6ee] px-3 py-2 text-xs text-ink-light space-y-1.5">
