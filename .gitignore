@@ -24,6 +24,17 @@ build/
 node_modules/
 .npm/
 
+# Lockfiles: pnpm-lock.yaml is the ONLY lockfile (2026-08-04 固化).
+# package-lock.json (root or app/) must never be committed or generated.
+package-lock.json
+app/package-lock.json
+**/package-lock.json
+
+# Vercel config removed 2026-08-04 — deployment is via Cloudflare Pages + Vercel
+# dashboard settings, no vercel.json in repo.
+vercel.json
+
+
 # === Vite ===
 .vite/
 
