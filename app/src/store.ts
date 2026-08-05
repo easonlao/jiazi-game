@@ -462,13 +462,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const card = tm.getPublicCards()[index];
     if (!card) return;
     const isLocked = tm.isCardLocked(card.id);
-    const ok = isLocked ? tm.executeUnlockCard(index) : tm.executeLockCard(index);
-    if (ok) {
-      get()._sync();
-      get().showToast(isLocked ? '已解锁' : `已锁定（每回合 -${TurnManager.LOCK_COST_PER_CARD} 气）`);
-    } else {
-      get().showToast(isLocked ? '解锁失败' : `锁定失败（最多锁 ${TurnManager.MAX_LOCKED_CARDS} 张 / 气不足）`);
+    if (isLocked) {
+      const ok = tm.executeUnlockCard(index);
+      if (ok) {
+        get()._sync();
+        get().showToast('已解锁');
+      } else {
+        get().showToast('解锁失败');
+      }
+      return;
     }
+    // 锁定动作：按具体失败原因提示（不混合展示多种可能）
+    const result = tm.executeLockCard(index);
+    if (result.ok) {
+      get()._sync();
+      get().showToast(`已锁定（每回合 -${TurnManager.LOCK_COST_PER_CARD} 气）`);
+      return;
+    }
+    const msg =
+      result.reason === 'qi_insufficient'
+        ? '心神不足，无法锁定灵气'
+        : result.reason === 'max_reached'
+          ? `最多锁定 ${TurnManager.MAX_LOCKED_CARDS} 张灵气`
+          : result.reason === 'already_locked'
+            ? '该灵气已在锁定中'
+            : '无法锁定灵气';
+    get().showToast(msg);
   },
 
   requestBuyPreview() {

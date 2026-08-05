@@ -27,7 +27,7 @@ describe('锁定机制（核心逻辑）', () => {
   it('锁定不立即扣气（锁定费在回合结束统一结算）', async () => {
     const tm = await makeTm();
     const qiBefore = tm.getQi();
-    expect(tm.executeLockCard(0)).toBe(true);
+    expect(tm.executeLockCard(0)).toEqual({ ok: true });
     expect(tm.getLockedCardIds()).toHaveLength(1);
     // 锁定动作本身不扣气（防止同回合锁→解锁白扣）
     expect(tm.getQi()).toBe(qiBefore);
@@ -64,10 +64,11 @@ describe('锁定机制（核心逻辑）', () => {
 
   it('锁定上限 2 张：第 3 张拒绝', async () => {
     const tm = await makeTm();
-    expect(tm.executeLockCard(0)).toBe(true);
-    expect(tm.executeLockCard(1)).toBe(true);
-    expect(tm.executeLockCard(0)).toBe(false); // 已锁
-    expect(tm.executeLockCard(1)).toBe(false);
+    expect(tm.executeLockCard(0)).toEqual({ ok: true });
+    expect(tm.executeLockCard(1)).toEqual({ ok: true });
+    expect(tm.executeLockCard(0)).toEqual({ ok: false, reason: 'already_locked' }); // 已锁（检查顺序优先于上限）
+    // 第 3 张不同牌：达上限拒绝
+    expect(tm.executeLockCard(2)).toEqual({ ok: false, reason: 'max_reached' }); // 已达上限
   });
 
   it('解锁：牌回牌堆、锁定 ID 移除', async () => {
@@ -105,7 +106,7 @@ describe('锁定机制（核心逻辑）', () => {
   it('气不足时锁定失败', async () => {
     const tm = await makeTm();
     (tm as any).qiManager.setQi(3); // 锁定费5，气3不够
-    expect(tm.executeLockCard(0)).toBe(false);
+    expect(tm.executeLockCard(0)).toEqual({ ok: false, reason: 'qi_insufficient' });
   });
 
   it('气不足于锁定费时：回合结算自动解锁最低分锁定牌', async () => {

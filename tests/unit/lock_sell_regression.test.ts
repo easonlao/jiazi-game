@@ -30,7 +30,7 @@ describe('卖出与锁定回归：气充足不解锁，气不足解锁必须通�
     tm.setOnLockAutoUnlocked(autoUnlockSpy);
 
     // 锁定一张公共牌
-    expect(tm.executeLockCard(0)).toBe(true);
+    expect(tm.executeLockCard(0)).toEqual({ ok: true });
     const lockedId = tm.getPublicCards()[0].id;
 
     // 买入另一张手牌作为待卖对象（买入会推进回合，锁定牌在结算后仍须保留）
@@ -55,7 +55,7 @@ describe('卖出与锁定回归：气充足不解锁，气不足解锁必须通�
     const autoUnlockSpy = vi.fn();
     tm.setOnLockAutoUnlocked(autoUnlockSpy);
 
-    expect(tm.executeLockCard(0)).toBe(true);
+    expect(tm.executeLockCard(0)).toEqual({ ok: true });
     const lockedId = tm.getPublicCards()[0].id;
 
     // 压低气量，使回合末锁定费（5 气）结算后 qi <= 0 → 触发自动解锁
@@ -76,9 +76,9 @@ describe('卖出与锁定回归：气充足不解锁，气不足解锁必须通�
     const autoUnlockSpy = vi.fn();
     tm.setOnLockAutoUnlocked(autoUnlockSpy);
 
-    expect(tm.executeLockCard(0)).toBe(true);
+    expect(tm.executeLockCard(0)).toEqual({ ok: true });
     const cardA = tm.getPublicCards()[0];
-    expect(tm.executeLockCard(1)).toBe(true);
+    expect(tm.executeLockCard(1)).toEqual({ ok: true });
     const cardB = tm.getPublicCards()[1];
 
     // 两张锁定费共 10 气：气 7 只够解 1 张（解锁后 +5 → 2 > 0 停止）

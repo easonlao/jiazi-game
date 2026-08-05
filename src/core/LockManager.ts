@@ -12,6 +12,16 @@ import type { JiaziCard } from './JiaziCard';
 import type { CardPoolManager } from './CardPoolManager';
 import type { QiManager } from './QiManager';
 
+/** 锁定失败原因（供 UI 按具体状态提示，避免"多种可能混合展示"） */
+export type LockFailure =
+  | 'no_card'          // 公共牌不存在
+  | 'already_locked'   // 该牌已在锁定列表
+  | 'max_reached'      // 已达锁定张数上限
+  | 'qi_insufficient'; // 心神不足（付不起至少 1 回合锁定费）
+
+/** tryLock 的结果：成功无额外信息；失败携带具体原因 */
+export type LockResult = { ok: true } | { ok: false; reason: LockFailure };
+
 export interface LockManagerDeps {
   qiManager: QiManager;
   cardPoolManager: CardPoolManager;
@@ -61,18 +71,18 @@ export class LockManager {
   /**
    * 尝试锁定一张公共牌（占公共位）。
    * 本方法只做领域动作：检查上限、锁定、记录；state 检查由调用方（TurnManager）负责。
-   * @returns 是否锁定成功
+   * @returns 锁定结果：成功或携带具体失败原因（供 UI 区分提示，如"心神不足"vs"最多锁定 2 张"）
    */
-  tryLock(publicCards: JiaziCard[], cardIndex: number, currentQi: number): boolean {
+  tryLock(publicCards: JiaziCard[], cardIndex: number, currentQi: number): LockResult {
     const card = publicCards[cardIndex];
-    if (!card) return false;
-    if (this.lockedCardIds.includes(card.id)) return false;
-    if (this.lockedCardIds.length >= LockManager.MAX_LOCKED_CARDS) return false;
-    // 气不足至少 1 回合锁定费时拒绝锁定（防止锁定后结算必然自动解锁的无效操作）
-    if (currentQi < LockManager.LOCK_COST_PER_CARD) return false;
+    if (!card) return { ok: false, reason: 'no_card' };
+    if (this.lockedCardIds.includes(card.id)) return { ok: false, reason: 'already_locked' };
+    if (this.lockedCardIds.length >= LockManager.MAX_LOCKED_CARDS) return { ok: false, reason: 'max_reached' };
+    // 心神不足至少 1 回合锁定费时拒绝锁定（防止锁定后结算必然自动解锁的无效操作）
+    if (currentQi < LockManager.LOCK_COST_PER_CARD) return { ok: false, reason: 'qi_insufficient' };
 
     this.lockedCardIds.push(card.id);
-    return true;
+    return { ok: true };
   }
 
   /**

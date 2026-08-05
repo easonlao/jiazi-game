@@ -70,7 +70,7 @@ describe('LockManager 直接单测', () => {
     it('锁定成功：加入锁定列表', () => {
       const { lockManager } = makeDeps(80);
       const cards = makePublicCards();
-      expect(lockManager.tryLock(cards, 0, 80)).toBe(true);
+      expect(lockManager.tryLock(cards, 0, 80)).toEqual({ ok: true });
       expect(lockManager.getLockedCardIds()).toEqual([1]);
       expect(lockManager.lockedCount).toBe(1);
     });
@@ -79,29 +79,29 @@ describe('LockManager 直接单测', () => {
       const { lockManager } = makeDeps(80);
       const cards = makePublicCards();
       lockManager.tryLock(cards, 0, 80);
-      expect(lockManager.tryLock(cards, 0, 80)).toBe(false);
+      expect(lockManager.tryLock(cards, 0, 80)).toEqual({ ok: false, reason: 'already_locked' });
     });
 
     it('超过上限（MAX_LOCKED_CARDS=2）：第 3 张拒绝', () => {
       const { lockManager } = makeDeps(80);
       const cards = makePublicCards();
-      expect(lockManager.tryLock(cards, 0, 80)).toBe(true);
-      expect(lockManager.tryLock(cards, 1, 80)).toBe(true);
-      expect(lockManager.tryLock(cards, 2, 80)).toBe(false);
+      expect(lockManager.tryLock(cards, 0, 80)).toEqual({ ok: true });
+      expect(lockManager.tryLock(cards, 1, 80)).toEqual({ ok: true });
+      expect(lockManager.tryLock(cards, 2, 80)).toEqual({ ok: false, reason: 'max_reached' });
       expect(lockManager.lockedCount).toBe(2);
     });
 
     it('气不足锁定费：拒绝（防止锁定后必然自动解锁的无效操作）', () => {
       const { lockManager } = makeDeps(80);
       const cards = makePublicCards();
-      expect(lockManager.tryLock(cards, 0, 4)).toBe(false); // 锁定费 5
+      expect(lockManager.tryLock(cards, 0, 4)).toEqual({ ok: false, reason: 'qi_insufficient' }); // 锁定费 5
       expect(lockManager.lockedCount).toBe(0);
     });
 
     it('非法索引 / 空牌：拒绝且不崩溃', () => {
       const { lockManager } = makeDeps(80);
-      expect(lockManager.tryLock([], 0, 80)).toBe(false);
-      expect(lockManager.tryLock(makePublicCards(), 99, 80)).toBe(false);
+      expect(lockManager.tryLock([], 0, 80)).toEqual({ ok: false, reason: 'no_card' });
+      expect(lockManager.tryLock(makePublicCards(), 99, 80)).toEqual({ ok: false, reason: 'no_card' });
     });
 
     it('解锁：移除锁定并回牌堆', () => {

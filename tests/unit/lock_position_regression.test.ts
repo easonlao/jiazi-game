@@ -31,7 +31,7 @@ async function makeTm(seed = 42) {
 describe('锁定牌位置稳定性回归测试', () => {
   it('锁定中间牌（索引1），连续 executeWait 推进多回合，位置保持不变', async () => {
     const tm = await makeTm(3);
-    expect(tm.executeLockCard(1)).toBe(true);
+    expect(tm.executeLockCard(1)).toEqual({ ok: true });
     const lockedId = tm.getPublicCards()[1].id;
     const origIndex = tm.getPublicCards().findIndex((c) => c.id === lockedId);
     expect(origIndex).toBe(1);
@@ -49,8 +49,8 @@ describe('锁定牌位置稳定性回归测试', () => {
 
   it('锁定两张牌（索引1、2），连续 executeWait 推进多回合，各自位置保持不变', async () => {
     const tm = await makeTm(7);
-    expect(tm.executeLockCard(1)).toBe(true);
-    expect(tm.executeLockCard(2)).toBe(true);
+    expect(tm.executeLockCard(1)).toEqual({ ok: true });
+    expect(tm.executeLockCard(2)).toEqual({ ok: true });
     const lockedId1 = tm.getPublicCards()[1].id;
     const lockedId2 = tm.getPublicCards()[2].id;
 
@@ -69,7 +69,7 @@ describe('锁定牌位置稳定性回归测试', () => {
 
   it('买入非锁定牌后（executeBuy 推进），锁定牌位置不变', async () => {
     const tm = await makeTm(5);
-    expect(tm.executeLockCard(1)).toBe(true);
+    expect(tm.executeLockCard(1)).toEqual({ ok: true });
     const lockedId = tm.getPublicCards()[1].id;
 
     // 充足气保证买入成功（锁定在索引1，索引0必为非锁定牌）

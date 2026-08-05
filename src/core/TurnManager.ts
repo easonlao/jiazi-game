@@ -12,7 +12,7 @@ import { MathRandomSource, RandomSource } from './RandomSource';
 import { calculateHoldingSettlement } from './SettlementPreviewCalculator';
 import { GameSaveService, type GameSnapshot } from './GameSaveService';
 import type { StorageProvider } from './StorageProvider';
-import { LockManager } from './LockManager';
+import { LockManager, type LockResult } from './LockManager';
 import { MarginCallEngine } from './MarginCallEngine';
 
 /** 游戏主状态 */
@@ -519,15 +519,15 @@ export class TurnManager {
    * @param cardIndex 公共牌索引
    * @returns 是否锁定成功
    */
-  executeLockCard(cardIndex: number): boolean {
-    if (this.state !== 'player_action') return false;
-    const ok = this.lockManager.tryLock(
+  executeLockCard(cardIndex: number): LockResult {
+    if (this.state !== 'player_action') return { ok: false, reason: 'no_card' };
+    const result = this.lockManager.tryLock(
       this.cardPoolManager.getPublicCards(),
       cardIndex,
       this.qiManager.getQi(),
     );
-    if (ok) this.lastAction = 'lock';
-    return ok;
+    if (result.ok) this.lastAction = 'lock';
+    return result;
   }
 
   /**
