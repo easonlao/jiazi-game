@@ -123,9 +123,9 @@ export function SettlementPreviewModal() {
           ) : (
             <>
               <div className="flex justify-between text-xs text-ink-light">
-                <span>下一年炼化结算</span>
+                <span>下一回合炼化结算</span>
                 {/* 不显示下回合季节名（nextSeason）——会泄露是否换季，破坏信息不完全支柱；只暴露进度与燃灵倍率 */}
-                <span>甲子第 {preview.nextRound} 年 · 季内第 {preview.nextRoundInSeason} 年 · 燃灵 {preview.settlementLeverage!.toFixed(1)}x</span>
+                <span>第 {preview.nextRound} 回合 · 季内第 {preview.nextRoundInSeason} 回合 · 燃灵 {preview.settlementLeverage!.toFixed(1)}x</span>
               </div>
 
               {preview.holdItems.length > 0 && (
@@ -182,7 +182,7 @@ export function SettlementPreviewModal() {
                 </div>
                 {preview.waitQiRecover > 0 && (
                   <div className="flex justify-between">
-                    <span>调息奖励（下年）</span>
+                    <span>调息奖励（下回合）</span>
                     <span className="text-qi-full">+{preview.waitQiRecover.toFixed(1)}</span>
                   </div>
                 )}

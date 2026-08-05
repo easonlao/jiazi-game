@@ -51,8 +51,8 @@ export function TopPanel() {
         </span>
         </h1>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-light tabular-nums">
-          <span className="font-bold text-ink">甲子第 {currentRound} 年 / {totalRounds}</span>
-          <span>本季第 {roundInSeason} 年</span>
+          <span className="font-bold text-ink">第 {currentRound} 回合 / {totalRounds}</span>
+          <span>季内第 {roundInSeason} 回合</span>
         </div>
         <div className="mt-0.5 h-1 w-32 overflow-hidden rounded-full bg-wood-light/50" aria-label={`甲子进度 ${currentRound}/${totalRounds}`}>
           <div className={`h-full rounded-full ${seasonTheme.bar}`} style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />

@@ -51,7 +51,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 首页保留一段简短规则，不需要额外打开帮助
     await expect(page.getByText('甲子纪')).toBeVisible();
     await expect(page.getByText('玩法', { exact: true })).toBeVisible();
-    await expect(page.getByText(/一甲子（60 年），春夏秋冬天时流转/)).toBeVisible();
+    await expect(page.getByText(/一甲子（60 回合），春夏秋冬天时流转/)).toBeVisible();
   });
 
   test('点击开始游戏进入游戏界面', async ({ page }) => {
@@ -60,8 +60,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 验证游戏 UI 组件出现
     await expect(page.getByText('周遭灵气')).toBeVisible();
     await expect(page.getByText('丹田')).toBeVisible();
-    await expect(page.getByText('甲子第 1 年 / 60', { exact: true })).toBeVisible();
-    await expect(page.getByText('本季第 1 年', { exact: true })).toBeVisible();
+    await expect(page.getByText('第 1 回合 / 60', { exact: true })).toBeVisible();
+    await expect(page.getByText('季内第 1 回合', { exact: true })).toBeVisible();
     await expect(page.getByText(/季内 \d+\//)).toHaveCount(0);
     // 验证操作按钮可见（使用 role 定位，避免子文本干扰）
     await expect(page.getByRole('button', { name: /纳灵/ })).toBeVisible();
@@ -145,7 +145,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     }
   });
 
-  test('调息一年', async ({ page }) => {
+  test('调息一回合', async ({ page }) => {
     await startGameAndDismiss(page);
 
     // 点击调息
@@ -154,21 +154,21 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await waitBtn.click();
 
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
-    await expect(page.getByText('调息奖励（下年）')).toBeVisible();
+    await expect(page.getByText('调息奖励（下回合）')).toBeVisible();
     await confirmSettlementPreview(page);
 
     await dismissSettlement(page);
 
     // 验证 Toast 出现「调息」
-    await expect(page.getByText('调息（下年额外回神）')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('甲子第 2 年 / 60', { exact: true })).toBeVisible();
+    await expect(page.getByText('调息（下回合额外回神）')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('第 2 回合 / 60', { exact: true })).toBeVisible();
     await expect(page.getByText(/本回合 [+-]?[0-9]+\.[0-9] 修为/)).toBeVisible();
   });
 
   test('纳灵+调息+释灵完整流程', async ({ page }) => {
     await startGameAndDismiss(page);
 
-    // ===== 第 1 年：纳灵一张灵气 =====
+    // ===== 第 1 回合：纳灵一张灵气 =====
     await expect(page.getByText('周遭灵气')).toBeVisible();
     const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
     const firstPublicCard = publicCardContainer.locator('.card-in').first();
@@ -182,14 +182,14 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     const handHeader = page.getByText(/丹田/);
     await expect(handHeader).toContainText('/3');
 
-    // ===== 第 2 年：调息 =====
+    // ===== 第 2 回合：调息 =====
     await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 5_000 });
     await page.getByRole('button', { name: /调息/ }).click();
     await expect(page.getByRole('heading', { name: '本回合结算预览' })).toBeVisible();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
 
-    // ===== 第 3 年：释灵 =====
+    // ===== 第 3 回合：释灵 =====
     // 点击丹田中的第一张牌
     const handCardContainer = page.locator('h3:has-text("丹田")').locator('..');
     const firstHandCard = handCardContainer.locator('.card-in').first();
@@ -242,7 +242,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 验证纳灵成功
     await expect(page.getByText('纳灵成功', { exact: true })).toBeVisible({ timeout: 5_000 });
 
-    // 纳灵于第 1 年，推进到季内第 3 年后，丹田应显示已升至 2.0x。
+    // 纳灵于第 1 回合，推进到季内第 3 回合后，丹田应显示已升至 2.0x。
     // 季节最短为 3 回合，因此这里不会跨季，且不依赖随机季长。
     const handSection = page.locator('h3:has-text("丹田")').locator('..').locator('..');
     await expect(handSection.getByLabel(/燃灵 1\.0×，下一回合 2\.0×/)).toBeVisible({ timeout: 5_000 });

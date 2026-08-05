@@ -458,7 +458,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (get().gameState === 'game_over') {
         _showActionToast(get, '一甲子终了');
       } else {
-        _showActionToast(get, '调息（下年额外回神）');
+        _showActionToast(get, '调息（下回合额外回神）');
       }
     }
     return ok;
@@ -561,7 +561,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       patch.selectedHandCard = -1;
       _showActionToast(get, '释灵成功');
     } else {
-      _showActionToast(get, tm.getState() === 'game_over' ? '一甲子终了' : '调息（下年额外回神）');
+      _showActionToast(get, tm.getState() === 'game_over' ? '一甲子终了' : '调息（下回合额外回神）');
     }
     set(patch);
     get()._sync();
