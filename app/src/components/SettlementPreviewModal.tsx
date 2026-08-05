@@ -54,8 +54,27 @@ export function SettlementPreviewModal() {
                 {signed(estimatedScoreDelta)}修为
               </span>
             </div>
-            <div className="mt-1 flex items-center justify-between border-t border-gold/20 pt-1">
-              <span className="text-ink-light">{preview.willMarginCall ? '反噬前累计修为' : '预计累计修为'}</span>
+            {/* 分层明细：本回合增量 = 行动收益 + 持仓炼化，让玩家看清每一分从哪来 */}
+            <div className="mt-1 space-y-0.5 border-t border-gold/20 pt-1 text-[11px] text-ink-light/90">
+              <div className="flex justify-between">
+                <span>当前修为</span>
+                <span className="tabular-nums">{scoreBeforeAction.toFixed(1)}</span>
+              </div>
+              {preview.actionScoreChange !== 0 && (
+                <div className="flex justify-between">
+                  <span>{preview.action.type === 'sell' ? '释灵价差' : preview.action.type === 'buy' ? '纳灵即时' : '调息'}</span>
+                  <span className={preview.actionScoreChange >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.actionScoreChange)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span>持仓炼化</span>
+                <span className={preview.holdEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.holdEarnings)}</span>
+              </div>
+            </div>
+            <div className="mt-1 flex items-center justify-between border-t border-gold/25 pt-1">
+              <span className="text-ink-light">
+                {preview.willMarginCall ? '反噬前修为（含本回合）' : '结算后修为（当前+本回合）'}
+              </span>
               <span className="font-bold tabular-nums text-gold">
                 {preview.finalScore !== null ? preview.finalScore.toFixed(1) : deterministicTotal.toFixed(1)} 修为
               </span>
@@ -105,7 +124,8 @@ export function SettlementPreviewModal() {
             <>
               <div className="flex justify-between text-xs text-ink-light">
                 <span>下一年炼化结算</span>
-                <span>甲子第 {preview.nextRound} 年 · {seasonDisplay(preview.nextSeason!)}时内第 {preview.nextRoundInSeason} 年 · 燃灵 {preview.settlementLeverage!.toFixed(1)}x</span>
+                {/* 不显示下回合季节名（nextSeason）——会泄露是否换季，破坏信息不完全支柱；只暴露进度与燃灵倍率 */}
+                <span>甲子第 {preview.nextRound} 年 · 季内第 {preview.nextRoundInSeason} 年 · 燃灵 {preview.settlementLeverage!.toFixed(1)}x</span>
               </div>
 
               {preview.holdItems.length > 0 && (
@@ -134,24 +154,61 @@ export function SettlementPreviewModal() {
             )}
 
               <div className="space-y-1 text-xs text-ink-light">
-                <div className="flex justify-between"><span>行动后心神</span><span>{preview.qiAfterAction.toFixed(1)}心神</span></div>
-                <div className="flex justify-between"><span>扣除炼化耗神后</span><span className={preview.qiAfterHold! <= 0 ? 'text-qi-critical font-bold' : ''}>{preview.qiAfterHold!.toFixed(1)}心神</span></div>
-                <div className="flex justify-between"><span>自然回神（每回合）</span><span className="text-qi-full">+{preview.baseQiRecover.toFixed(1)}心神</span></div>
+                <div className="flex justify-between">
+                  <span>当前心神</span>
+                  <span className="tabular-nums">{preview.qiAfterAction - preview.actionQiChange >= 0 ? (preview.qiAfterAction - preview.actionQiChange).toFixed(1) : '?'}</span>
+                </div>
+                {preview.actionQiChange !== 0 && (
+                  <div className="flex justify-between">
+                    <span>{preview.action.type === 'sell' ? '释灵流转' : preview.action.type === 'buy' ? '纳灵消耗' : '行动变化'}</span>
+                    <span className={preview.actionQiChange > 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.actionQiChange)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>行动后</span>
+                  <span className="tabular-nums font-medium">{preview.qiAfterAction.toFixed(1)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>扣除炼化耗神</span>
+                  <span className={preview.holdQiCost > 0 ? 'text-qi-critical' : 'tabular-nums'}>-{preview.holdQiCost.toFixed(1)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>炼化耗神后</span>
+                  <span className={`tabular-nums ${preview.qiAfterHold! <= 0 ? 'text-qi-critical font-bold' : ''}`}>{preview.qiAfterHold!.toFixed(1)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>自然回神（每回合）</span>
+                  <span className="text-qi-full">+{preview.baseQiRecover.toFixed(1)}</span>
+                </div>
                 {preview.waitQiRecover > 0 && (
-                  <div className="flex justify-between"><span>调息奖励（下年）</span><span className="text-qi-full">+{preview.waitQiRecover.toFixed(1)}心神</span></div>
+                  <div className="flex justify-between">
+                    <span>调息奖励（下年）</span>
+                    <span className="text-qi-full">+{preview.waitQiRecover.toFixed(1)}</span>
+                  </div>
                 )}
               </div>
 
               {preview.willMarginCall ? (
                 <div className="rounded-lg border-2 border-qi-critical bg-red-50 px-3 py-2 text-xs text-red-800">
                   <p className="font-bold">⚠️ 将触发反噬</p>
-                  <p className="mt-1">扣除炼化耗神后心神归零；一股燃灵灵气失控反噬，因此最终心神与修为无法在行动前确定。</p>
-                  <p className="mt-1">反噬候选：{preview.marginCallCandidateNames.join('、')}</p>
+                  <p className="mt-1">扣除炼化耗神后心神归零；燃灵灵气失控反噬（候选：{preview.marginCallCandidateNames.join('、')}），最终心神与修为在行动前无法完全确定。</p>
+                  {/* 反噬区间估计：被反噬的燃灵牌其价差结算为负，扣减范围 = 每张候选牌的 |当前评分|×价差系数×倍率（保守宽区间） */}
+                  <p className="mt-1 text-[11px] text-red-700/90">预计反噬扣减修为：{preview.marginCallCandidateNames.length} 张候选 · 结算后修为将低于上方数值</p>
                 </div>
               ) : (
-                <div className="flex justify-between border-t border-wood-light/50 pt-2 text-sm font-bold">
-                  <span>预计结算后</span>
-                  <span className="flex gap-3"><span>心神 {preview.finalQi!.toFixed(1)}</span><span>修为 {preview.finalScore!.toFixed(1)}</span></span>
+                <div className="rounded-lg border-2 border-gold/50 bg-gold/10 px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-ink">调息后最终</span>
+                    <span className="flex gap-4">
+                      <span className="tabular-nums font-bold text-ink">
+                        心神 <span className={preview.finalQi! <= 0 ? 'text-qi-critical' : 'text-qi-full'}>{preview.finalQi!.toFixed(1)}</span>
+                      </span>
+                      <span className="tabular-nums font-bold text-ink">
+                        修为 <span className="text-gold">{preview.finalScore!.toFixed(1)}</span>
+                      </span>
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[10px] text-ink-light/80">此为回合结束后的状态：已含回神与炼化结算</p>
                 </div>
               )}
             </>

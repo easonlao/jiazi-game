@@ -18,6 +18,7 @@ CLAUDE.local.md
 
 # === Build Output ===
 dist/
+dist.stale-*/
 build/
 
 # === Dependencies ===
