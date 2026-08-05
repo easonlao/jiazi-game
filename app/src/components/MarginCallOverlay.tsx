@@ -11,6 +11,7 @@ function signed(value: number) {
  * 信息优先 3 层（2026-08-05 反噬流程重设计 §8）：一次红闪 + "反噬"印章 + 被反噬卡大卡片。
  * 去掉脉冲/屏幕震动/副标题长文案——装饰不再淹没信息。
  * 每张被反噬卡：卡名大字（衬线）+ 评分/杠杆小字 + 罚分特大数字（penaltyScore 结构化字段，不解析 reason）。
+ * 印章+惩罚卡落在丹田下方（items-end pb-24），不遮挡手牌；丹田崩坏（z-85）在其上方同屏，因果链上下可读。
  * 约 2.3s 后撤去，露出其下已就位的结算弹窗明细。
  */
 export function MarginCallOverlay() {
@@ -38,8 +39,8 @@ export function MarginCallOverlay() {
       {/* 全屏红色闪光（一次，最快最刺眼） */}
       <div className="mc-flash absolute inset-0 bg-qi-critical" />
 
-      {/* 中央：反噬印章 + 被反噬卡大卡片 */}
-      <div className="absolute inset-0 flex items-center justify-center">
+      {/* 中央内容（印章+惩罚卡）落丹田下方，不遮挡手牌；丹田崩坏在其上方同屏可见（issue 04 修复遮挡） */}
+      <div className="absolute inset-0 flex items-end justify-center pb-24">
         <div className="text-center px-6">
           <div className="mc-stamp inline-block px-9 py-4 bg-qi-critical text-white rounded-xl shadow-[0_10px_40px_rgba(229,57,53,0.6)] border-2 border-red-200/60">
             <span className="text-4xl font-bold font-serif tracking-[0.25em]">反噬</span>

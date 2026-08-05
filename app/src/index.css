@@ -201,7 +201,8 @@ html, body, #root {
   75% { opacity: 0.35; transform: rotate(-0.5deg) scale(0.82); }
   100% { opacity: 0; transform: rotate(1.5deg) scale(0.7); }
 }
-.mc-shatter-slot { animation: mcShatterSlot 2.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+/* z-85：抬到反噬 overlay（z-80）之上，红闪与中央卡都盖不住丹田崩坏——来源感才看得见（issue 04 修复遮挡） */
+.mc-shatter-slot { position: relative; z-index: 85; animation: mcShatterSlot 2.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
 /* 屏幕级震动（爆仓瞬间整个游戏画面抖动） */
 @keyframes screenShake {
