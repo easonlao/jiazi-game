@@ -1,4 +1,6 @@
 import { useGameStore } from '../store';
+import type { SettlementDetail } from '@core/index';
+import { Element } from '@core/index';
 
 function signed(value: number) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
@@ -19,6 +21,8 @@ function signed(value: number) {
 export function SettlementPreviewModal() {
   const preview = useGameStore((s) => s.settlementPreview);
   const lastSettlement = useGameStore((s) => s.lastSettlement);
+  const turnManager = useGameStore((s) => s.turnManager);
+  const publicCards = useGameStore((s) => s.publicCards);
   const cancel = useGameStore((s) => s.cancelSettlementPreview);
   const confirm = useGameStore((s) => s.confirmSettlementPreview);
 
@@ -30,6 +34,20 @@ export function SettlementPreviewModal() {
     : preview.action.type === 'sell'
       ? `释灵${targetLabel}${preview.actionUsesLeverage ? '（燃灵）' : ''}`
       : '调息';
+
+  // 买入时：新买牌在当前天时下的炼化属性（买入决策的核心信息，基于当前可知数据；
+  // 非下一回合结算预测——天时流转后可能变化，标注说明）
+  const boughtHold = preview.action.type === 'buy' && 'cardIndex' in preview.action && turnManager
+    ? (() => {
+        const card = publicCards[preview.action.cardIndex];
+        if (!card) return null;
+        const score = turnManager.getCardScore(card, turnManager.getCurrentSeason());
+        const leverage = preview.actionUsesLeverage ? turnManager.getSettlementLeverageMultiplier() : 1;
+        const earning = turnManager.previewHoldEarning(score, leverage);
+        const qiCost = turnManager.previewHoldQiCost(score, leverage, card.tianGanElement === Element.EARTH);
+        return { earning, qiCost };
+      })()
+    : null;
 
   // 本回合账单数据
   const scoreBeforeAction = preview.scoreAfterAction - preview.actionScoreChange;
@@ -64,6 +82,21 @@ export function SettlementPreviewModal() {
                   {preview.actionQiChange !== 0 && preview.actionScoreChange !== 0 && ' · '}
                   {preview.actionScoreChange !== 0 && <span className={preview.actionScoreChange > 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.actionScoreChange)}修为</span>}
                 </span>
+              </div>
+            )}
+            {/* 买入决策：新买牌在当前天时下的炼化属性（非下回合结算预测） */}
+            {boughtHold && (
+              <div className="mt-1.5 border-t border-wood-light/50 pt-1.5">
+                <div className="flex justify-between">
+                  <span>炼化预估（当前天时）</span>
+                  <span className="flex gap-3">
+                    <span className={boughtHold.earning >= 0 ? 'font-bold text-qi-full' : 'font-bold text-qi-critical'}>
+                      {signed(boughtHold.earning)}修为/回合
+                    </span>
+                    <span className="text-qi-critical">-{boughtHold.qiCost.toFixed(1)}心神/回合</span>
+                  </span>
+                </div>
+                <p className="text-[10px] text-ink-light/70 mt-0.5">基于当前天时与燃灵倍率；天时流转后可能变化。</p>
               </div>
             )}
           </div>
