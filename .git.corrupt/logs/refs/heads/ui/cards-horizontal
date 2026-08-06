@@ -1,7 +1,0 @@
-0000000000000000000000000000000000000000 6921058821bbdb7228ae5536b887b13a9c343d7e easonlao <easonlao@gmail.com> 1786018261 +0800	branch: Created from HEAD
-6921058821bbdb7228ae5536b887b13a9c343d7e e0c64b786e6d130903fa5c89408fd1e17b343c72 easonlao <easonlao@gmail.com> 1786018567 +0800	commit: feat(ui): 卡牌区横排三列布局（公共池/丹田 grid-cols-3）+ 窄卡字号适配
-e0c64b786e6d130903fa5c89408fd1e17b343c72 7f7b1d51784796026e755fce96081a47950c187a easonlao <easonlao@gmail.com> 1786018872 +0800	commit: fix(ui): 评分区缩字号+加间距，修复窄卡内容遮挡
-7f7b1d51784796026e755fce96081a47950c187a 5067edb202c396a49ae3d9cdc57aebd05b1dd2b8 easonlao <easonlao@gmail.com> 1786019127 +0800	commit: fix(ui): 释灵预览条单行居中，修复窄卡两行折行
-5067edb202c396a49ae3d9cdc57aebd05b1dd2b8 c3bf219429f1289aeed75130dd431b2574964f6f easonlao <easonlao@gmail.com> 1786024268 +0800	commit: fix(ui): 呼吸辉光增强+四角圆角修复
-c3bf219429f1289aeed75130dd431b2574964f6f c8e77fa3b65584ce33e6b783cc4b4f5e2af0f1f3 easonlao <easonlao@gmail.com> 1786024710 +0800	commit: feat(ui): 燃灵卡片增加「燃」字标识（红底白字徽章）
-c8e77fa3b65584ce33e6b783cc4b4f5e2af0f1f3 04c5c4ffbfffbd55e7628a48bcc416fe1162b6f3 easonlao <easonlao@gmail.com> 1786024857 +0800	commit: revert(ui): 移除燃灵呼吸辉光特效，保留「燃」字标识
