@@ -27,6 +27,8 @@ interface CardVisualProps {
   onClick?: () => void;
   /** 右上角徽章区域，由 PublicCard/HandCard 各自填充 */
   badges?: React.ReactNode;
+  /** 评分标签行右侧徽章（如杠杆倍率），由 HandCard 注入 */
+  scoreBadge?: React.ReactNode;
   /** 底部信息区域，由 PublicCard/HandCard 各自填充 */
   children?: React.ReactNode;
 }
@@ -35,7 +37,7 @@ interface CardVisualProps {
  * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、当季→下季评分趋势。
  * 公共牌和手牌的差异（买入成本 vs 累计收益等）通过 badges 和 children 注入。
  */
-export function CardVisual({ card, score, nextScore, selected, highlight, onClick, badges, children }: CardVisualProps) {
+export function CardVisual({ card, score, nextScore, selected, highlight, onClick, badges, scoreBadge, children }: CardVisualProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
   const baseBorder = elementBorder[card.mainElement];
 
@@ -72,14 +74,17 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
       </div>
 
       {/* 当前→下季价值：与结算预览使用同一评分口径。
-          字号按视口宽度响应：小屏 text-base、防换行；中屏 text-lg；宽屏 text-xl 强调。 */}
-      <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1">
+          grid-cols-3 窄卡适配：评分值固定 14px（去掉 sm/md 放大），评分区 py-1.5 增加呼吸间距。 */}
+      <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5">
         <div className="min-w-0 flex-1">
-          <span className="card-score-label block text-[10px] leading-none text-ink-light">当季 → 下季评分</span>
-          <span className={`card-score-value text-base sm:text-lg md:text-xl leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
-            {score >= 0 ? '+' : ''}{score.toFixed(1)}
-            {nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
-          </span>
+          <span className="card-score-label block text-[10px] leading-tight text-ink-light">当季 → 下季评分</span>
+          <div className="flex items-baseline gap-1">
+            <span className={`card-score-value text-[14px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
+              {score >= 0 ? '+' : ''}{score.toFixed(1)}
+              {nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
+            </span>
+            {scoreBadge}
+          </div>
         </div>
       </div>
 

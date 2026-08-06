@@ -92,29 +92,6 @@ export function QiBar() {
             本回合炼化耗神 <span className={`${QI_COST_COLOR} font-bold`}>-{currentHoldQiCost.toFixed(1)} 神识</span>
           </div>
 
-          {/* 神识预算：当前持仓耗神 vs 自然回神 → 可持续回合数（issue 01 P2）。
-              口径：第四类（假设不换季，用当前耗神 + 自然回神 baseRecovery 推演），文案弱化标注。 */}
-          {(() => {
-            const netPerRound = baseRecovery - currentHoldQiCost;
-            if (netPerRound >= 0) {
-              return (
-                <div className="text-[11px] text-ink-light">
-                  当前持仓每回合 <span className={`${QI_COST_COLOR} font-bold`}>-{currentHoldQiCost.toFixed(1)} 神识</span>
-                  <span className="mx-1 text-wood-light">·</span>
-                  自然回神 +{baseRecovery.toFixed(0)}，神识不会耗尽
-                </div>
-              );
-            }
-            const rounds = Math.ceil(qi / -netPerRound);
-            return (
-              <div className="text-[11px] text-ink-light">
-                当前持仓每回合 <span className={`${QI_COST_COLOR} font-bold`}>-{currentHoldQiCost.toFixed(1)} 神识</span>
-                <span className="mx-1 text-wood-light">·</span>
-                自然回神 +{baseRecovery.toFixed(0)}，可持续约 <b className="tabular-nums text-ink">{rounds}</b> 回合（按当前推演）
-              </div>
-            );
-          })()}
-
           {holdQiCost > 0 && Math.abs(holdQiCost - currentHoldQiCost) >= 0.05 && (
             <div className="text-[11px] text-ink-light">
               下回合炼化耗神（推演） <span className={`${QI_COST_COLOR} font-bold`}>-{holdQiCost.toFixed(1)} 神识</span>

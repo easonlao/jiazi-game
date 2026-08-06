@@ -72,28 +72,31 @@ export function PublicCard({
         ) : undefined
       }
     >
-      {/* 上下堆叠而非两列：每行 label + 值，独享整行宽度，
-          避免 "每回合炼化 +2.0修为 -2.2神识" 在窄屏被截断。 */}
-      <div className="divide-y divide-wood-light/35 text-xs">
+      {/* 窄卡（grid-cols-3，~128px）适配：三行信息（耗神/炼化/炼耗），字号压缩。 */}
+      <div className="divide-y divide-wood-light/35 text-[11px]">
         <div className="flex items-center justify-between gap-1 px-2 py-1">
-          <span className="text-[10px] text-ink-light shrink-0">纳灵消耗</span>
-          {/* 神识消耗统一资源冷色；买不起时置灰弱化（颜色语义只承担"神识消耗"，可负担性用置灰表达） */}
+          <span className="text-[9px] text-ink-light shrink-0">耗神</span>
           <span className={`font-bold tabular-nums whitespace-nowrap ${canAfford ? QI_COST_COLOR : 'text-ink-light/40'}`}>
             -{buyCost} 神识
           </span>
         </div>
         <div className="flex items-center justify-between gap-1 px-2 py-1">
-          <span className="text-[10px] text-ink-light shrink-0">每回合炼化</span>
+          <span className="text-[9px] text-ink-light shrink-0">炼化</span>
           <span className="font-bold tabular-nums whitespace-nowrap">
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
             </span>
-            <span className={`ml-1.5 ${QI_COST_COLOR}`}>-{holdQiCost.toFixed(1)}神识</span>
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-1 px-2 py-1">
+          <span className="text-[9px] text-ink-light shrink-0">炼耗</span>
+          <span className={`font-bold tabular-nums whitespace-nowrap ${QI_COST_COLOR}`}>
+            -{holdQiCost.toFixed(1)}神识
           </span>
         </div>
         {locked && (
           <div className="flex items-center justify-between gap-1 px-2 py-1 bg-amber-50/60">
-            <span className="text-[10px] text-amber-700 shrink-0">锁定中</span>
+            <span className="text-[9px] text-amber-700 shrink-0">锁定中</span>
             <span className="font-bold tabular-nums whitespace-nowrap text-amber-700">
               每回合 -5 神识
             </span>

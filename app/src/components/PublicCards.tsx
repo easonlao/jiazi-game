@@ -41,7 +41,7 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
       </div>
       {/* 当季提示 */}
       <SeasonHint season={useGameStore((s) => s.season)} />
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-3 gap-1.5">
         {publicCards.map((card: JiaziCard, i: number) => {
           // 需要从 store 实时读 cost（因为 useLeverage 可能变了）
           return (
@@ -122,7 +122,7 @@ function SeasonHint({ season }: { season: string }) {
   const info = map[season];
   if (!info) return null;
   return (
-    <div className={`text-xs font-medium ${info.cls} bg-white/60 border border-wood-light rounded px-2 py-1`}>
+    <div className={`text-xs font-medium ${info.cls} bg-white/60 border border-wood-light rounded px-2 py-1 mb-1`}>
       {info.text} · 土牌四季稳定
     </div>
   );

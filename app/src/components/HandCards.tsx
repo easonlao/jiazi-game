@@ -47,7 +47,7 @@ export function HandCards() {
           三丹田空置 · 纳灵公共灵气开始炼化
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
           {hand.map((slot: HandSlot | null, i: number) => {
             if (!slot) return <EmptySlot key={i} shattered={shatteredSlots.has(i)} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);

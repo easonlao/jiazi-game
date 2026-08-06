@@ -266,3 +266,20 @@ html, body, #root {
 /* 锁定状态：卡牌轻微琥珀描边提示 */
 .card-in:has(.lock-btn) { position: relative; }
 .card-in:has(.lock-svg-active) { box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.5); }
+
+/* ═══ 燃灵呼吸辉光 ═══ */
+/* 内层 glow 节奏快 + 外层 glow 节奏慢，双层错开营造深度呼吸感 */
+@keyframes breatheGlowInner {
+  0%, 100% { box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.35); }
+  40% { box-shadow: 0 0 16px 4px rgba(249, 115, 22, 0.6); }
+  60% { box-shadow: 0 0 12px 3px rgba(239, 68, 68, 0.45); }
+}
+@keyframes breatheGlowOuter {
+  0%, 100% { box-shadow: 0 0 18px 4px rgba(239, 68, 68, 0.15); }
+  35% { box-shadow: 0 0 36px 10px rgba(249, 115, 22, 0.35); }
+  65% { box-shadow: 0 0 28px 7px rgba(239, 68, 68, 0.25); }
+}
+.breathe-glow {
+  animation: breatheGlowInner 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite,
+             breatheGlowOuter 3.3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
