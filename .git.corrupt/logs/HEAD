@@ -1,0 +1,122 @@
+0000000000000000000000000000000000000000 fd0e36f30207c5d3061543ce42af27bcc2fd87df easonlao <easonlao@users.noreply.github.com> 1784724041 +0800	clone: from https://github.com/easonlao/jiazi-game.git
+fd0e36f30207c5d3061543ce42af27bcc2fd87df ecb03c753619166d9e6a96c318fb9ac3d3e69786 easonlao <easonlao@users.noreply.github.com> 1784724195 +0800	commit: chore: 清理非运行时内容，设计文档移至项目层
+ecb03c753619166d9e6a96c318fb9ac3d3e69786 c82f7ce5676467039225e418f8a9826656d9a1c8 easonlao <easonlao@gmail.com> 1785587928 +0800	commit: refactor: migrate runtime entry to React app
+c82f7ce5676467039225e418f8a9826656d9a1c8 83c7ceda73e6a2a6588157ef39836a488e64a14c easonlao <easonlao@gmail.com> 1785587970 +0800	commit: feat: consolidate core gameplay balance and randomness
+83c7ceda73e6a2a6588157ef39836a488e64a14c 6923b2f44b4c50c731a64a52e7b2526bf5d29d96 easonlao <easonlao@gmail.com> 1785587987 +0800	commit: feat: add React game interface and settlement preview
+6923b2f44b4c50c731a64a52e7b2526bf5d29d96 1c02cfb15f0331fc73c13135e4776223766a3b43 easonlao <easonlao@gmail.com> 1785588023 +0800	commit: test: add simulation and end-to-end coverage
+1c02cfb15f0331fc73c13135e4776223766a3b43 abe845706b46fbc2685eafcdace7eb598030369e easonlao <easonlao@gmail.com> 1785588039 +0800	commit: docs: refresh gameplay README and ignore test artifacts
+abe845706b46fbc2685eafcdace7eb598030369e fd287e99ec2249abaf7d53c358a7bb5858814b3a easonlao <easonlao@gmail.com> 1785589610 +0800	commit: test: align simulator with core gameplay rules
+fd287e99ec2249abaf7d53c358a7bb5858814b3a 085e557d4cbc4dc436aa94e944e5ba8b3b011e07 easonlao <easonlao@gmail.com> 1785589861 +0800	commit: test: add cross-language simulator parity trace
+085e557d4cbc4dc436aa94e944e5ba8b3b011e07 315448eb9c2f02512a18ecda06729de767c01254 easonlao <easonlao@gmail.com> 1785590487 +0800	commit: test: add per-card score normalization A/B simulation
+315448eb9c2f02512a18ecda06729de767c01254 41cf17b2bee9c39e48745c3273a420ab945d0436 easonlao <easonlao@gmail.com> 1785591138 +0800	commit: test: add seasonal strategy and polarity simulation
+41cf17b2bee9c39e48745c3273a420ab945d0436 8c89c51b79756b5b6598c3d08ca05bc4eb9b67a7 easonlao <easonlao@gmail.com> 1785591353 +0800	commit: test: evaluate centered polarity score candidate
+8c89c51b79756b5b6598c3d08ca05bc4eb9b67a7 711aa5635b8c7c4511379783b997c92c2c01c915 easonlao <easonlao@gmail.com> 1785591899 +0800	commit: test: add v0 gameplay evaluation model
+711aa5635b8c7c4511379783b997c92c2c01c915 15adf0b6d2a58bb694163df47e39386a799561c2 easonlao <easonlao@gmail.com> 1785592281 +0800	commit: test: refine v1 evaluation and skilled leverage strategy
+15adf0b6d2a58bb694163df47e39386a799561c2 dc3849b9e5127d7c6d906ca1c7694c78220c4dcb easonlao <easonlao@gmail.com> 1785592584 +0800	commit: test: cover skilled strategy information boundary
+dc3849b9e5127d7c6d906ca1c7694c78220c4dcb 3de7a7b860f4ba944b18e152779d72eabec208c7 easonlao <easonlao@gmail.com> 1785594378 +0800	commit: test: expand evaluation contracts and multi-seed review
+3de7a7b860f4ba944b18e152779d72eabec208c7 978a1369928efcd3954fb51c4aedc269f0b6ad0a easonlao <easonlao@gmail.com> 1785595938 +0800	commit: test: search constrained leverage economy candidates
+978a1369928efcd3954fb51c4aedc269f0b6ad0a ce525551eb6e2ecb80d75d63a924aeb0ed0ddc95 easonlao <easonlao@gmail.com> 1785596300 +0800	commit: test: enforce strict seasonal leverage curve search
+ce525551eb6e2ecb80d75d63a924aeb0ed0ddc95 e046cffed8a04f3c67281873d7791c3705b967bc easonlao <easonlao@gmail.com> 1785597257 +0800	commit: test: attribute leverage search failures
+e046cffed8a04f3c67281873d7791c3705b967bc 1165a7a08d62436130c9e616ffd23862e0b7cf1c easonlao <easonlao@gmail.com> 1785597670 +0800	commit: test: compare visible leverage entry strategies
+1165a7a08d62436130c9e616ffd23862e0b7cf1c 280ae0754bb441796df15ff7b68d0e1300e6749b easonlao <easonlao@gmail.com> 1785597927 +0800	commit (amend): test: compare visible leverage entry strategies
+280ae0754bb441796df15ff7b68d0e1300e6749b ee789ae170ce02f3b3dc98b2c2a2741e73d07244 easonlao <easonlao@gmail.com> 1785598183 +0800	commit (amend): test: compare visible leverage entry strategies
+ee789ae170ce02f3b3dc98b2c2a2741e73d07244 94cd32362ed3db4d6750959b533327faa94ebecc easonlao <easonlao@gmail.com> 1785598465 +0800	commit (amend): test: compare visible leverage entry strategies
+94cd32362ed3db4d6750959b533327faa94ebecc c13064ad063acd191bcad8e95db6a6685b35fbad easonlao <easonlao@gmail.com> 1785598690 +0800	commit (amend): test: compare visible leverage entry strategies
+c13064ad063acd191bcad8e95db6a6685b35fbad 74e135138e2ac7a6de70093070d289ccb920aaf2 easonlao <easonlao@gmail.com> 1785598839 +0800	commit (amend): test: compare visible leverage entry strategies
+74e135138e2ac7a6de70093070d289ccb920aaf2 dddad340e8f56025b38e3adf0cc3a2d62a9de08a easonlao <easonlao@gmail.com> 1785599695 +0800	commit: align leverage economy and settlement previews
+dddad340e8f56025b38e3adf0cc3a2d62a9de08a e6f7d96402015d9ce81d78246a2960460d2fd3d7 easonlao <easonlao@gmail.com> 1785600245 +0800	commit: restore core leverage cost semantics
+e6f7d96402015d9ce81d78246a2960460d2fd3d7 024267f83c03fd52a008de105b01f010013a8e1b easonlao <easonlao@gmail.com> 1785600288 +0800	commit: assert core multiplier qi semantics
+024267f83c03fd52a008de105b01f010013a8e1b 10cbf3738cd802fac99c8fb8beb50f3ad66587fb easonlao <easonlao@gmail.com> 1785600790 +0800	commit: fix next season card trend display
+10cbf3738cd802fac99c8fb8beb50f3ad66587fb d5f4add88c9fda5b542a109fa0bc78be0115aaa3 easonlao <easonlao@gmail.com> 1785637280 +0800	commit: clarify round and score progress in HUD
+d5f4add88c9fda5b542a109fa0bc78be0115aaa3 83431a8f2255703445578e7d35c7135eae3aaad2 easonlao <easonlao@gmail.com> 1785638031 +0800	commit: hide random season length in HUD
+83431a8f2255703445578e7d35c7135eae3aaad2 0251a2831e1d20b02e7c01c4cdbf963d94425356 easonlao <easonlao@gmail.com> 1785638377 +0800	commit: align displayed leverage with current round
+0251a2831e1d20b02e7c01c4cdbf963d94425356 1864fccaed388c31c5094114a6758de16bd09715 easonlao <easonlao@gmail.com> 1785639278 +0800	commit: compact leverage badge on hand cards
+1864fccaed388c31c5094114a6758de16bd09715 a920b729737691eba5b63d11ccf310a075a44fd9 easonlao <easonlao@gmail.com> 1785639606 +0800	commit: simplify leverage card guidance
+a920b729737691eba5b63d11ccf310a075a44fd9 531623f4e3976078621ac1742d1848193c1bdda4 easonlao <easonlao@gmail.com> 1785640086 +0800	commit: 统一持仓卡片杠杆信息提示
+531623f4e3976078621ac1742d1848193c1bdda4 f0a37be5f9528081a6c10b72ce157b7dc672c5d4 easonlao <easonlao@gmail.com> 1785640613 +0800	commit: 统一占用气术语文案
+f0a37be5f9528081a6c10b72ce157b7dc672c5d4 caa0d71a69f7e6d184f7071c9288cd82979f6b1d easonlao <easonlao@gmail.com> 1785641632 +0800	commit: 统一持仓预览与实际结算季节口径
+caa0d71a69f7e6d184f7071c9288cd82979f6b1d df1795e0b7a093e2ef341c65952f981e98ba9322 easonlao <easonlao@gmail.com> 1785642488 +0800	commit: fix current-round leverage cost display
+df1795e0b7a093e2ef341c65952f981e98ba9322 e67cc80eb20210ef1edaca7bfe0c1906dc5e9383 easonlao <easonlao@gmail.com> 1785646304 +0800	commit: compact game surface and add help panel
+e67cc80eb20210ef1edaca7bfe0c1906dc5e9383 b775686efbbf860ebed07fe5fce493a908ee6623 easonlao <easonlao@gmail.com> 1785647215 +0800	commit: polish card hierarchy and qi labels
+b775686efbbf860ebed07fe5fce493a908ee6623 f9cded424689b31a64e18600b8ebcadd7a020953 easonlao <easonlao@gmail.com> 1785647765 +0800	commit: rebalance rules and score layout
+f9cded424689b31a64e18600b8ebcadd7a020953 c983623430caa67bf1e41468740b251f047b68d4 easonlao <easonlao@gmail.com> 1785648216 +0800	commit: tighten qi summary and trim help copy
+c983623430caa67bf1e41468740b251f047b68d4 e554f048312b94790612566a733b1577bff6ac85 easonlao <easonlao@gmail.com> 1785648579 +0800	commit: highlight score and season theme
+e554f048312b94790612566a733b1577bff6ac85 596c43c3eb83fb76813c1d9c675d4b426c78b950 easonlao <easonlao@gmail.com> 1785648963 +0800	commit: refine score delta spacing
+596c43c3eb83fb76813c1d9c675d4b426c78b950 76dbfb186f7c1bbd97e9e622220a15c8e24fce36 easonlao <easonlao@gmail.com> 1785649124 +0800	commit: remove redundant total score label
+76dbfb186f7c1bbd97e9e622220a15c8e24fce36 9882d823b26e3385e9e53ce4c4a173b7cbbfab81 easonlao <easonlao@gmail.com> 1785650152 +0800	commit: document current game implementation
+9882d823b26e3385e9e53ce4c4a173b7cbbfab81 70f6e8772e7f0fe6224eb8108bbaf44660f9acd8 easonlao <easonlao@gmail.com> 1785653021 +0800	commit: release version 0.2.0
+70f6e8772e7f0fe6224eb8108bbaf44660f9acd8 31f6e46ef19d54e8cee882944fff2b626c538e8e easonlao <easonlao@gmail.com> 1785655545 +0800	commit: 抽离持仓预览纯计算边界
+31f6e46ef19d54e8cee882944fff2b626c538e8e 6164acd5bd65728f52e50902d2c7d990ab3f64ed easonlao <easonlao@gmail.com> 1785659331 +0800	commit: refactor(module): Phase 2 四项模块拆分落地
+6164acd5bd65728f52e50902d2c7d990ab3f64ed 3683ba18187892a3ae9162681f75cb38275f85a3 easonlao <easonlao@gmail.com> 1785663301 +0800	commit: feat: 本地排行榜、浏览器存档、杠杆气耗平衡、持仓预览修复
+3683ba18187892a3ae9162681f75cb38275f85a3 7a05e7f813a998bfbc750a67af2516b6b2a7fc5c easonlao <easonlao@gmail.com> 1785663580 +0800	commit: fix: 更新 pnpm-lock.yaml 与 package.json 同步
+7a05e7f813a998bfbc750a67af2516b6b2a7fc5c ff6a38e8e2dab3dd8d6255527b926aa54eca9b41 easonlao <easonlao@gmail.com> 1785663809 +0800	commit: fix(ci): 将 app 纳入 pnpm workspace，修复 CI 单元测试失败
+ff6a38e8e2dab3dd8d6255527b926aa54eca9b41 849462534677c8ef35a06a7672e12cb55ed01f20 easonlao <easonlao@gmail.com> 1785664204 +0800	commit: fix(vercel): 添加 vercel.json 配置 monorepo 构建参数
+849462534677c8ef35a06a7672e12cb55ed01f20 754b823e215a0994c67be2a2d7cf809de4bf53b7 easonlao <easonlao@gmail.com> 1785673659 +0800	commit: fix: 修复游戏结束/重新开始时换季过场与牌池重置问题
+754b823e215a0994c67be2a2d7cf809de4bf53b7 cc6683c9f4e5d3ed8ab5588f214a4a7993a90b65 easonlao <easonlao@gmail.com> 1785683778 +0800	commit: feat(balance): 数值平衡修正——土牌方案E、专属杠杆气耗、展示牌3张、季节修复
+cc6683c9f4e5d3ed8ab5588f214a4a7993a90b65 3698866aa6ae7e253d307a6097a45359f4fb9d13 easonlao <easonlao@gmail.com> 1785688095 +0800	commit: fix(mobile): 卡片文字截断优化 - 评分字号响应式/内层布局上下堆叠/间距收紧
+3698866aa6ae7e253d307a6097a45359f4fb9d13 7a10c69fce63a3051e91049c81c22dbd1bf9fc0a easonlao <easonlao@gmail.com> 1785688300 +0800	commit: fix(mobile): 评分趋势 label 与分数分两行显示 - 移除 max-height 760 的并排布局
+7a10c69fce63a3051e91049c81c22dbd1bf9fc0a 6e5cd0aa2bdd8431caa6ca33fa143c8d7f9cc87c easonlao <easonlao@gmail.com> 1785688624 +0800	commit: fix(mobile): 滚动布局 + ActionBar 始终吸底 - 解决买卡后内容溢出截断
+6e5cd0aa2bdd8431caa6ca33fa143c8d7f9cc87c a75a5c2c2677689e4ef4df44e20c40f6fe952012 easonlao <easonlao@gmail.com> 1785718654 +0800	commit: ci: add Cloudflare Pages auto-deploy workflow
+a75a5c2c2677689e4ef4df44e20c40f6fe952012 2753feea4c1ea1bf8f6a1061ff2f84a980479361 easonlao <easonlao@gmail.com> 1785737502 +0800	commit: feat(balance): 评分×10整数化、土牌降至0.8、气整数化
+2753feea4c1ea1bf8f6a1061ff2f84a980479361 3e7edadf42b59018d5a2c79d9a4eb49cd8f03078 easonlao <easonlao@gmail.com> 1785738444 +0800	commit: feat(lock): 卡牌锁定机制——公共牌锁定 + 交互动画
+3e7edadf42b59018d5a2c79d9a4eb49cd8f03078 1ea8c9628f466ea8cdd4519712e4b237c17154a1 easonlao <easonlao@gmail.com> 1785738898 +0800	commit: fix(lock): 锁定费改为回合结束统一结算，同回合锁→解锁不扣气
+1ea8c9628f466ea8cdd4519712e4b237c17154a1 66361ca68d44021f631b6ab96afa1d8a2c1a4fa2 easonlao <easonlao@gmail.com> 1785740980 +0800	commit: feat(season): 季节段长方案B——段数池{8,12}/min4，修复换季太快
+66361ca68d44021f631b6ab96afa1d8a2c1a4fa2 a47e45827c5df55b3f2868ec23944d097f459001 easonlao <easonlao@gmail.com> 1785765100 +0800	commit: feat(analysis): 模拟器配置桥接 + 归档官方模拟器
+a47e45827c5df55b3f2868ec23944d097f459001 9a66e42d2658f2e7f2c3d8125918f75f48be9b33 easonlao <easonlao@gmail.com> 1785766584 +0800	commit: fix(ci): parity 测试改用新引擎 trace 模式，修复归档后 CI 失败
+9a66e42d2658f2e7f2c3d8125918f75f48be9b33 ef1e04ff633a87cadac4bb4aa6fa18cf202edaed easonlao <easonlao@gmail.com> 1785767657 +0800	commit: fix(ci): 引擎入 repo 供 CI 使用 + 相对路径修复
+ef1e04ff633a87cadac4bb4aa6fa18cf202edaed 86906044f719c346ee5fe83d7141371c4a6c0fc2 easonlao <easonlao@gmail.com> 1785771072 +0800	commit: docs(readme): 本地运行改用 pnpm，补充测试与模拟器命令
+86906044f719c346ee5fe83d7141371c4a6c0fc2 31d2b036c62b07dde39e013e249800f3153cfcf7 easonlao <easonlao@gmail.com> 1785771086 +0800	commit: chore(deps): 删除 package-lock.json，统一 pnpm-lock.yaml
+31d2b036c62b07dde39e013e249800f3153cfcf7 b0077aee46d9da82ab0b6e28d7433d7f9bfbb7fc easonlao <easonlao@gmail.com> 1785799668 +0800	commit: fix(core): 修复锁定牌被错误回牌堆导致的公共池重复牌 bug
+b0077aee46d9da82ab0b6e28d7433d7f9bfbb7fc c4a28f1964b06ee782f0bfbc28d7f8ead6879037 easonlao <easonlao@gmail.com> 1785800721 +0800	commit: fix(ci): wrangler-action 显式 npm 包管理器，修复 pnpm workspace 下部署失败
+c4a28f1964b06ee782f0bfbc28d7f8ead6879037 7ed4f5fb9671525f12c74cab540299527f9199fd easonlao <easonlao@gmail.com> 1785806515 +0800	commit: fix(ci): 部署改用 npx 直调 wrangler，彻底绕开 pnpm workspace 自动安装死路
+7ed4f5fb9671525f12c74cab540299527f9199fd acfd768817218e6826ca3cb8926409d37e998541 easonlao <easonlao@gmail.com> 1785806665 +0800	commit: fix(ci): wrangler 4.86.0 报 ByteString/BOM 转换错误，回退到 14:35 验证过的 3.90.0
+acfd768817218e6826ca3cb8926409d37e998541 c1552fdd2f04c2cc83c764e2048c8fb39c3f1604 easonlao <easonlao@gmail.com> 1785807249 +0800	commit: fix(ci): 部署前剥离 secrets 值中的 UTF-8 BOM，修复 wrangler ByteString 报错
+c1552fdd2f04c2cc83c764e2048c8fb39c3f1604 cd0e50f195d4ecd5bdc51e0fe86d5fb3d5d5b6c3 easonlao <easonlao@gmail.com> 1785807704 +0800	commit: chore(ci): 升级 GitHub Actions 到最新版（checkout@v7/setup-node@v7/pnpm-action@v6）+ Node 22
+cd0e50f195d4ecd5bdc51e0fe86d5fb3d5d5b6c3 e4ef87ef6e304c52ebd6fcb0e5bdff58d87833c5 easonlao <easonlao@gmail.com> 1785812658 +0800	commit: feat(test): E2E 支持生产版验证（修复 dev/prod 验证分家缺口）
+e4ef87ef6e304c52ebd6fcb0e5bdff58d87833c5 0000000000000000000000000000000000000000 easonlao <easonlao@gmail.com> 1785823802 +0800
+0000000000000000000000000000000000000000 cd0e50f195d4ecd5bdc51e0fe86d5fb3d5d5b6c3 easonlao <easonlao@gmail.com> 1785823839 +0800
+cd0e50f195d4ecd5bdc51e0fe86d5fb3d5d5b6c3 cd0e50f195d4ecd5bdc51e0fe86d5fb3d5d5b6c3 easonlao <easonlao@gmail.com> 1785832756 +0800	reset: moving to HEAD
+cd0e50f195d4ecd5bdc51e0fe86d5fb3d5d5b6c3 6658fa28cecc35442661b1108172b60af2b42cbf easonlao <easonlao@gmail.com> 1785832769 +0800	commit: feat(test): E2E 支持生产版验证（E2E_TARGET=preview 双模式）
+6658fa28cecc35442661b1108172b60af2b42cbf 4446c12485f0e31b507a7111a1529e2b22d7f0aa easonlao <easonlao@gmail.com> 1785832779 +0800	commit: chore: 清理 Phaser 残留与配置统一（版本号/Season 类型/脚本归位/tsconfig 注释）
+4446c12485f0e31b507a7111a1529e2b22d7f0aa 2e3773a5538f0e263a3f693c434147f271ef1a08 easonlao <easonlao@gmail.com> 1785832788 +0800	commit: refactor(core): 平台无关持久化 + TurnManager 模块拆分
+2e3773a5538f0e263a3f693c434147f271ef1a08 6ab3cfcc1b6b526e3b0b2fe8578c7c6f4b2c8ad4 easonlao <easonlao@gmail.com> 1785832797 +0800	commit: test(e2e): 修复断言漂移（杆 vs 杠杆文案、三张手牌布局断言）
+6ab3cfcc1b6b526e3b0b2fe8578c7c6f4b2c8ad4 5d6973b4ac35a88cbad84f0909dc3d19accfe219 easonlao <easonlao@gmail.com> 1785833632 +0800	commit: [refactor]: 消除锁定费与上限硬编码并统一引用常量
+5d6973b4ac35a88cbad84f0909dc3d19accfe219 6608766be25ba0fbe9958b26247e29542b08e645 easonlao <easonlao@gmail.com> 1785834284 +0800	commit: [chore]: 补全 Node 类型声明与版本声明
+6608766be25ba0fbe9958b26247e29542b08e645 cfa52ebbc025fd7ee0d3e276790309288fc2886d easonlao <easonlao@gmail.com> 1785846718 +0800	commit: [docs]: README 对齐当前代码与线上地址
+cfa52ebbc025fd7ee0d3e276790309288fc2886d a5073558db700cb7cf3821cddb8f07ca594a8001 easonlao <easonlao@gmail.com> 1785850236 +0800	commit: [chore]: 调试工具迁出 repo 并固化仓库边界
+a5073558db700cb7cf3821cddb8f07ca594a8001 eddff2a79f56cb8a07c46dd46e21d0f49e5b5c7e easonlao <easonlao@gmail.com> 1785851271 +0800	commit: [refactor]: 调参工具重构为真引擎驱动并退役 Python 复刻
+eddff2a79f56cb8a07c46dd46e21d0f49e5b5c7e ae4ce3c58a2c6e9bf8cfd37a3536a26bc2fafbbf easonlao <easonlao@gmail.com> 1785851639 +0800	commit: [chore]: 移除已空的 scripts 目录
+ae4ce3c58a2c6e9bf8cfd37a3536a26bc2fafbbf b7b2781875e4928f8982dbf08334bfb73c6bc5e3 easonlao <easonlao@gmail.com> 1785852115 +0800	commit: [test]: 补充 LockManager/MarginCallEngine 直接单测与存档兼容测试
+b7b2781875e4928f8982dbf08334bfb73c6bc5e3 ddd3afc556580a68a7807b8d065440d56ba11029 easonlao <easonlao@gmail.com> 1785852626 +0800	commit: [docs] 修正 SeasonCycle 残留注释，去除已退役 parity 测试引用
+ddd3afc556580a68a7807b8d065440d56ba11029 1a9c4fa40928d883c16dff56e097e10da87c50e1 easonlao <easonlao@gmail.com> 1785852859 +0800	commit: [fix] 补全 tsconfig 覆盖测试并修复测试类型与 API 不一致
+1a9c4fa40928d883c16dff56e097e10da87c50e1 7c0e001e4a401bfc960595b2b351561aae307978 easonlao <easonlao@gmail.com> 1785895281 +0800	commit: chore: 忽略 package-lock.json 与 vercel.json，防退役内容再犯
+7c0e001e4a401bfc960595b2b351561aae307978 7bcc296809e4152cec90222a00d6aa4c5d8f8bec easonlao <easonlao@gmail.com> 1785903936 +0800	commit: feat(ui): UI 文案叙事化对齐（纳灵/释灵/调息/燃灵/心神/修为/丹田/周遭灵气）
+7bcc296809e4152cec90222a00d6aa4c5d8f8bec 59aa54efb6b7992f2b332dcdae1a4ac57b964b9e easonlao <easonlao@gmail.com> 1785908945 +0800	commit: fix(lock): 修复锁定牌位置漂移 + 卖出后锁定牌静默消失
+59aa54efb6b7992f2b332dcdae1a4ac57b964b9e a4406374e10b428769fe2939f4684cb940e7f734 easonlao <easonlao@gmail.com> 1785910020 +0800	commit: fix(lock): 锁定失败提示按具体原因区分 + Toast 居中
+a4406374e10b428769fe2939f4684cb940e7f734 f8eb94e1aff4efd93589f3848d8dc80e42803319 easonlao <easonlao@gmail.com> 1785911453 +0800	commit: fix(preview): 结算预览弹窗数据清晰度优化 + 移除季节泄露
+f8eb94e1aff4efd93589f3848d8dc80e42803319 c142a4757e50914980ed5699a200d2c17ed7382d easonlao <easonlao@gmail.com> 1785911525 +0800	commit (amend): fix(preview): 结算预览弹窗数据清晰度优化 + 移除季节泄露
+c142a4757e50914980ed5699a200d2c17ed7382d b14d46c417e0bca002cff7faeb431420a6377418 easonlao <easonlao@gmail.com> 1785912874 +0800	commit: refactor(score): 移除无效常量 scoreBeta（评分基线 0.02）
+b14d46c417e0bca002cff7faeb431420a6377418 c540a0b65aaf9288fa914b8ff3a44ce07286591b easonlao <easonlao@gmail.com> 1785913895 +0800	commit: feat(score): 土牌移除干支关系分，回归'中立承载者'定位
+c540a0b65aaf9288fa914b8ff3a44ce07286591b 7f26e90ffbdd5c36dd44ae8a46c07e6b14303182 easonlao <easonlao@gmail.com> 1785919426 +0800	commit: feat(margin-call): 强平改选评分最高牌 + 不卖出结算（反噬=纯惩罚）
+7f26e90ffbdd5c36dd44ae8a46c07e6b14303182 bc2d4646a7b2a9db3d3f6bb73dfc138266a1586f easonlao <easonlao@gmail.com> 1785925477 +0800	commit: fix(ui): 修复'点击燃灵没响应=换季'的感知问题 + 换季动画不遮操作栏
+bc2d4646a7b2a9db3d3f6bb73dfc138266a1586f 01d774028a0205c00eb12ce7e3c7fec6280763e3 easonlao <easonlao@gmail.com> 1785926198 +0800	commit: fix(ui): 修正时间单位映射——回合≠年，全 UI 年改回回合
+01d774028a0205c00eb12ce7e3c7fec6280763e3 94f137d64a127a7bd518d3e7e5cfecc244fe8b49 easonlao <easonlao@gmail.com> 1785933340 +0800	commit: feat(ui): 反噬表现重构——信息优先，一眼看清哪张卡罚多少
+94f137d64a127a7bd518d3e7e5cfecc244fe8b49 391ac4d5874e1b5d6cab1a2cd9cfd4c31fa9649a easonlao <easonlao@gmail.com> 1785934079 +0800	commit: feat(ui): 反噬来源感——被反噬的丹田槽位播崩坏动画
+391ac4d5874e1b5d6cab1a2cd9cfd4c31fa9649a 6b7bb996f2712ad75d9c4551bd2193990d62df67 easonlao <easonlao@gmail.com> 1785934384 +0800	revert: Revert "feat(ui): 反噬来源感——被反噬的丹田槽位播崩坏动画"
+6b7bb996f2712ad75d9c4551bd2193990d62df67 3fd82a33fee5c09c11a72f37937fc60de02fa86c easonlao <easonlao@gmail.com> 1785934394 +0800	revert: Revert "feat(ui): 反噬表现重构——信息优先，一眼看清哪张卡罚多少"
+3fd82a33fee5c09c11a72f37937fc60de02fa86c 1f003ebd18fc5fbbe62170cda1399b4021f13d01 easonlao <easonlao@gmail.com> 1785942557 +0800	commit: feat(margin-call): 反噬流程重设计落地——确认弹窗账单化 + 反噬展示信息优先
+1f003ebd18fc5fbbe62170cda1399b4021f13d01 22e8ce9ed243246ffa8eb4c953c12a1a4568366f easonlao <easonlao@gmail.com> 1785943584 +0800	commit: fix(preview): 买入时恢复炼化预估（当前天时）——买入决策的核心信息
+22e8ce9ed243246ffa8eb4c953c12a1a4568366f 97f24383d3c7160a37a22e99f1980f0665aa6456 easonlao <easonlao@gmail.com> 1785943847 +0800	commit: fix(preview): 修为账单仅在有变化时显示——买入/调息修为不变无需冗余展示
+97f24383d3c7160a37a22e99f1980f0665aa6456 d4d3bb757b006d7b488a94bc331fc5b99b513e97 easonlao <easonlao@gmail.com> 1785944315 +0800	commit: fix(preview): 心神账单改直观顺序（当前可用→本回合使用→剩余）+ 炼化文案微调
+d4d3bb757b006d7b488a94bc331fc5b99b513e97 bdb451ec05acaabf4b1555511867da9e829837fc easonlao <easonlao@gmail.com> 1785945253 +0800	commit: feat(ui): 反噬来源感——被反噬的丹田槽位播崩坏动画（issue 04）
+bdb451ec05acaabf4b1555511867da9e829837fc 8614e7349744a72664a45a153dd89097d8403f25 easonlao <easonlao@gmail.com> 1785971545 +0800	commit: fix(ui): 修复反噬弹窗遮挡丹田崩坏——来源感可见 + 因果链上下清晰
+8614e7349744a72664a45a153dd89097d8403f25 0c4f297046ba08cb4594e1db38e3ce4dbedc754d easonlao <easonlao@gmail.com> 1785972845 +0800	commit: fix(ui): 反噬后丹田槽位保留残骸过渡，避免直接消失（issue 04）
+0c4f297046ba08cb4594e1db38e3ce4dbedc754d a312aa3031ed7f734b85ed608922caf4b23abf43 easonlao <easonlao@gmail.com> 1785985870 +0800	commit: refactor(core): 信息边界四类口径落地 + 退出费移除
+a312aa3031ed7f734b85ed608922caf4b23abf43 6921058821bbdb7228ae5536b887b13a9c343d7e easonlao <easonlao@gmail.com> 1786010141 +0800	commit: feat(ux): 玩家体验优化（换季提示/神识预算/颜色语义/帮助图例）+ 换季动画闪烁修复
+6921058821bbdb7228ae5536b887b13a9c343d7e 6921058821bbdb7228ae5536b887b13a9c343d7e easonlao <easonlao@gmail.com> 1786018261 +0800	checkout: moving from main to ui/cards-horizontal
+6921058821bbdb7228ae5536b887b13a9c343d7e e0c64b786e6d130903fa5c89408fd1e17b343c72 easonlao <easonlao@gmail.com> 1786018567 +0800	commit: feat(ui): 卡牌区横排三列布局（公共池/丹田 grid-cols-3）+ 窄卡字号适配
+e0c64b786e6d130903fa5c89408fd1e17b343c72 7f7b1d51784796026e755fce96081a47950c187a easonlao <easonlao@gmail.com> 1786018872 +0800	commit: fix(ui): 评分区缩字号+加间距，修复窄卡内容遮挡
+7f7b1d51784796026e755fce96081a47950c187a 5067edb202c396a49ae3d9cdc57aebd05b1dd2b8 easonlao <easonlao@gmail.com> 1786019127 +0800	commit: fix(ui): 释灵预览条单行居中，修复窄卡两行折行
+5067edb202c396a49ae3d9cdc57aebd05b1dd2b8 c3bf219429f1289aeed75130dd431b2574964f6f easonlao <easonlao@gmail.com> 1786024268 +0800	commit: fix(ui): 呼吸辉光增强+四角圆角修复
+c3bf219429f1289aeed75130dd431b2574964f6f c8e77fa3b65584ce33e6b783cc4b4f5e2af0f1f3 easonlao <easonlao@gmail.com> 1786024710 +0800	commit: feat(ui): 燃灵卡片增加「燃」字标识（红底白字徽章）
+c8e77fa3b65584ce33e6b783cc4b4f5e2af0f1f3 04c5c4ffbfffbd55e7628a48bcc416fe1162b6f3 easonlao <easonlao@gmail.com> 1786024857 +0800	commit: revert(ui): 移除燃灵呼吸辉光特效，保留「燃」字标识
