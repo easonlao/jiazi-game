@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store';
 
+/** 神识消耗统一色（2026-08-06 issue 01 P3：神识消耗=资源冷色，修为才用红绿） */
+const QI_COST_COLOR = 'text-sky-600';
+
 interface Floater {
   id: number;
   delta: number;
@@ -11,6 +14,7 @@ export function QiBar() {
   const maxQi = useGameStore((s) => s.maxQi);
   const currentRound = useGameStore((s) => s.currentRound);
   const totalRounds = useGameStore((s) => s.totalRounds);
+  const baseRecovery = useGameStore((s) => s.baseRecovery);
   const turnManager = useGameStore((s) => s.turnManager);
   const previewWaitQi = useGameStore((s) => s.previewWaitQi);
   const qiDelta = useGameStore((s) => s.qiDelta);
@@ -85,12 +89,35 @@ export function QiBar() {
       ) : currentHoldQiCost > 0 ? (
         <div className="mb-1 space-y-0.5">
           <div className="text-xs text-ink-light">
-            本回合炼化耗神 <span className="text-qi-critical font-bold">-{currentHoldQiCost.toFixed(1)} 神识</span>
+            本回合炼化耗神 <span className={`${QI_COST_COLOR} font-bold`}>-{currentHoldQiCost.toFixed(1)} 神识</span>
           </div>
+
+          {/* 神识预算：当前持仓耗神 vs 自然回神 → 可持续回合数（issue 01 P2）。
+              口径：第四类（假设不换季，用当前耗神 + 自然回神 baseRecovery 推演），文案弱化标注。 */}
+          {(() => {
+            const netPerRound = baseRecovery - currentHoldQiCost;
+            if (netPerRound >= 0) {
+              return (
+                <div className="text-[11px] text-ink-light">
+                  当前持仓每回合 <span className={`${QI_COST_COLOR} font-bold`}>-{currentHoldQiCost.toFixed(1)} 神识</span>
+                  <span className="mx-1 text-wood-light">·</span>
+                  自然回神 +{baseRecovery.toFixed(0)}，神识不会耗尽
+                </div>
+              );
+            }
+            const rounds = Math.ceil(qi / -netPerRound);
+            return (
+              <div className="text-[11px] text-ink-light">
+                当前持仓每回合 <span className={`${QI_COST_COLOR} font-bold`}>-{currentHoldQiCost.toFixed(1)} 神识</span>
+                <span className="mx-1 text-wood-light">·</span>
+                自然回神 +{baseRecovery.toFixed(0)}，可持续约 <b className="tabular-nums text-ink">{rounds}</b> 回合（按当前推演）
+              </div>
+            );
+          })()}
 
           {holdQiCost > 0 && Math.abs(holdQiCost - currentHoldQiCost) >= 0.05 && (
             <div className="text-[11px] text-ink-light">
-              下回合炼化耗神（推演） <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 神识</span>
+              下回合炼化耗神（推演） <span className={`${QI_COST_COLOR} font-bold`}>-{holdQiCost.toFixed(1)} 神识</span>
               <span className="mx-1 text-wood-light">·</span>
               调息后（推演） <b className="text-qi-full tabular-nums">{afterQi.toFixed(1)} 神识</b>
             </div>

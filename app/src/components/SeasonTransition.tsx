@@ -5,12 +5,14 @@ import { useGameStore, seasonDisplay } from '../store';
  * 季节转换动画："春去夏来"文字提示。
  * 由 store 的 seasonEvent（id 递增）驱动，跨季时触发一次（约 2.2s）。
  * 普通回合不再使用全屏过渡，仪式感仅保留给换季。
+ * sub 为换季四字对仗（2026-08-06 玩家体验 issue 01 P1 定稿）：
+ * 当令者旺，被当令所克者衰（夏火旺则水伏、秋金旺则木衰、冬水旺则火敛、春木旺则金藏）。
  */
 const SEASON_META: Record<string, { text: string; sub: string }> = {
-  spring: { text: '#047857', sub: '万物生发 · 木气正旺' },
-  summer: { text: '#b91c1c', sub: '烈日当空 · 火气正旺' },
-  autumn: { text: '#b45309', sub: '金秋肃杀 · 金气正旺' },
-  winter: { text: '#0369a1', sub: '天寒地冻 · 水气正旺' },
+  spring: { text: '#047857', sub: '春木生发，金气归藏' },
+  summer: { text: '#b91c1c', sub: '夏火升腾，水气伏藏' },
+  autumn: { text: '#b45309', sub: '秋金肃敛，木气式微' },
+  winter: { text: '#0369a1', sub: '冬水潜藏，火气敛息' },
 };
 
 export function SeasonTransition() {
@@ -33,10 +35,12 @@ export function SeasonTransition() {
       setAnimKey((k) => k + 1);
       setVisible(true);
       if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+      // 卸载时机必须晚于副标题动画结束：主标题 0s+2.2s=2.2s，副标题 animationDelay 0.35s+2.2s=2.55s。
+      // 若提前（如 2.3s）卸载，副标题在淡出途中（opacity≈0.76）被硬切 → 换季交互闪烁（2026-08-06 用户反馈）。
       hideTimer.current = window.setTimeout(() => {
         hideTimer.current = null;
         setVisible(false);
-      }, 2300);
+      }, 2600);
     }
   }, [seasonEvent, marginCallEvent]);
 

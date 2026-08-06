@@ -85,7 +85,7 @@ export function SettlementPreviewModal() {
                   <span className={factHoldEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
                     {signed(factHoldEarnings)}修为
                   </span>
-                  <span className="text-qi-critical ml-1">-{factHoldQiCost.toFixed(1)}神识</span>
+                  <span className="text-sky-600 ml-1">-{factHoldQiCost.toFixed(1)}神识</span>
                 </span>
               )}
             </div>
@@ -100,7 +100,7 @@ export function SettlementPreviewModal() {
                       <span className={item.earning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
                         {signed(item.earning)}修为
                       </span>
-                      <span className="text-qi-critical ml-1">-{item.qiCost.toFixed(1)}神识</span>
+                      <span className="text-sky-600 ml-1">-{item.qiCost.toFixed(1)}神识</span>
                     </span>
                   </div>
                 ))}

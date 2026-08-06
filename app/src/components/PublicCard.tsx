@@ -1,6 +1,9 @@
 import type { JiaziCard } from '@core/JiaziCard';
 import { CardVisual } from './CardVisual';
 
+/** 神识消耗统一色（2026-08-06 issue 01 P3：神识消耗=资源冷色，修为才用红绿） */
+const QI_COST_COLOR = 'text-sky-600';
+
 interface PublicCardProps {
   card: JiaziCard;
   score: number;
@@ -74,7 +77,8 @@ export function PublicCard({
       <div className="divide-y divide-wood-light/35 text-xs">
         <div className="flex items-center justify-between gap-1 px-2 py-1">
           <span className="text-[10px] text-ink-light shrink-0">纳灵消耗</span>
-          <span className={`font-bold tabular-nums whitespace-nowrap ${canAfford ? 'text-qi-full' : 'text-qi-critical'}`}>
+          {/* 神识消耗统一资源冷色；买不起时置灰弱化（颜色语义只承担"神识消耗"，可负担性用置灰表达） */}
+          <span className={`font-bold tabular-nums whitespace-nowrap ${canAfford ? QI_COST_COLOR : 'text-ink-light/40'}`}>
             -{buyCost} 神识
           </span>
         </div>
@@ -84,7 +88,7 @@ export function PublicCard({
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
             </span>
-            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}神识</span>
+            <span className={`ml-1.5 ${QI_COST_COLOR}`}>-{holdQiCost.toFixed(1)}神识</span>
           </span>
         </div>
         {locked && (

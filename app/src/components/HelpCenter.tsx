@@ -34,13 +34,16 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
           <HelpSection title="一回合怎么做">先看周遭浮现的灵气（公共牌），再选择纳灵、释灵或调息。纳灵将灵气收入丹田炼化；释灵按当前评分与纳灵时的差价结算修为；调息不纳灵不释灵，但下回合额外回神。</HelpSection>
           <HelpSection title="怎么看灵气">灵气名中天干、地支的颜色代表各自五行。卡面评分显示“当季 → 下一季”；评分越高，炼化收益越高，同时耗神也越高。</HelpSection>
           <HelpSection title="燃灵与神识">纳灵时开启燃灵（杠杆），倍率按当季天时逐档提高，换季重置为 1.0×；倍率同时放大炼化收益和耗神。神识归零时，燃灵的灵气可能失控反噬（强平）。</HelpSection>
+          <HelpSection title="颜色怎么看">
+            神识消耗（纳灵、炼化耗神）统一用<span className="mx-0.5 font-bold text-sky-600">水蓝</span>；修为收益用红绿表示——<span className="mx-0.5 font-bold text-qi-full">绿色</span>为正、<span className="mx-0.5 font-bold text-qi-critical">红色</span>为负。土牌四季稳定，不随天时起伏。
+          </HelpSection>
         </div>
       </div>
     </div>
   );
 }
 
-function HelpSection({ title, children }: { title: string; children: string }) {
+function HelpSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <h3 className="mb-0.5 font-bold text-ink">{title}</h3>
