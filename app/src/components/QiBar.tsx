@@ -34,7 +34,7 @@ export function QiBar() {
   const currentHoldQiCost = turnManager?.getCurrentHoldQiCost() ?? 0;
   const isFinalRound = currentRound >= totalRounds;
 
-  // 当前心神归零即显示"心神耗尽"（不依赖反噬事件残留）
+  // 当前神识归零即显示"神识耗尽"（不依赖反噬事件残留）
   const isBroke = qi <= 0;
 
   const barColor =
@@ -48,7 +48,7 @@ export function QiBar() {
       {/* 当前气量 */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 relative">
-          <span className="font-bold font-serif text-ink text-sm">心神</span>
+          <span className="font-bold font-serif text-ink text-sm">神识</span>
           <span
             className={`px-2.5 py-0.5 rounded-lg text-2xl font-bold font-serif tabular-nums leading-none ${
               isBroke ? 'bg-qi-critical text-white animate-pulse' : 'bg-ink text-parchment'
@@ -66,13 +66,13 @@ export function QiBar() {
               }`}
               style={{ left: `${idx * 26}px` }}
             >
-              {f.delta >= 0 ? '+' : ''}{f.delta.toFixed(0)}心神
+              {f.delta >= 0 ? '+' : ''}{f.delta.toFixed(0)}神识
             </span>
           ))}
         </div>
         {isBroke && (
           <span className="text-xs font-bold text-qi-critical bg-qi-critical/10 px-2 py-0.5 rounded animate-pulse">
-            💥 心神耗尽
+            💥 神识耗尽
           </span>
         )}
       </div>
@@ -85,45 +85,45 @@ export function QiBar() {
       ) : currentHoldQiCost > 0 ? (
         <div className="mb-1 space-y-0.5">
           <div className="text-xs text-ink-light">
-            本回合炼化耗神 <span className="text-qi-critical font-bold">-{currentHoldQiCost.toFixed(1)} 心神</span>
+            本回合炼化耗神 <span className="text-qi-critical font-bold">-{currentHoldQiCost.toFixed(1)} 神识</span>
           </div>
 
           {holdQiCost > 0 && Math.abs(holdQiCost - currentHoldQiCost) >= 0.05 && (
             <div className="text-[11px] text-ink-light">
-              下回合炼化耗神 <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 心神</span>
+              下回合炼化耗神（推演） <span className="text-qi-critical font-bold">-{holdQiCost.toFixed(1)} 神识</span>
               <span className="mx-1 text-wood-light">·</span>
-              调息后 <b className="text-qi-full tabular-nums">{afterQi.toFixed(1)} 心神</b>
+              调息后（推演） <b className="text-qi-full tabular-nums">{afterQi.toFixed(1)} 神识</b>
             </div>
           )}
 
           {willMarginCall ? (
             <>
-              {/* 强平触发：afterQi 是不确定值，不能作为确定剩余气展示 */}
+              {/* 推演口径下的强平提醒：afterQi 是不确定值，不能作为确定剩余气展示 */}
               <div className="text-xs font-medium text-qi-critical">
-                将触发反噬，最终心神取决于被反噬的灵气
+                若神识不足，可能触发反噬；最终神识取决于被反噬的灵气
               </div>
               <div className="text-[11px] text-qi-critical font-bold bg-qi-critical/10 px-2 py-1 rounded">
-                ⚠️ 心神难以为继！回合结束反噬，燃灵灵气会被强行释出
+                ⚠️ 神识难以为继！回合结束可能反噬，燃灵灵气会被强行释出
               </div>
             </>
           ) : willQiDeplete ? (
             <>
               <div className="text-xs font-medium text-qi-critical">
-                扣除炼化耗神后心神将归零；没有燃灵灵气，因此不会触发反噬
+                扣除炼化耗神后神识将归零；没有燃灵灵气，因此不会触发反噬
               </div>
               <div className="text-xs font-medium text-qi-full">
-                点「调息」后预计 <b className="tabular-nums">{afterQi.toFixed(1)}</b> 心神
+                点「调息」后预计（推演） <b className="tabular-nums">{afterQi.toFixed(1)}</b> 神识
               </div>
             </>
           ) : holdQiCost > 0 && Math.abs(holdQiCost - currentHoldQiCost) >= 0.05 ? null : (
             <div className="text-xs font-medium text-qi-full">
-              点「调息」后剩余 <b className="tabular-nums">{afterQi.toFixed(1)}</b> 心神
+              点「调息」后剩余（推演） <b className="tabular-nums">{afterQi.toFixed(1)}</b> 神识
             </div>
           )}
         </div>
       ) : (
         <div className="mb-1 text-xs text-ink-light">
-          暂无炼化 · 点「调息」后剩余 <b className="text-qi-full tabular-nums">{afterQi.toFixed(1)}</b> 心神
+          暂无炼化 · 点「调息」后剩余 <b className="text-qi-full tabular-nums">{afterQi.toFixed(1)}</b> 神识
         </div>
       )}
 

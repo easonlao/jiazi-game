@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   TurnManager,
   LeaderboardService,
+  Element,
   type GameState,
   type SettlementDetail,
   type SettlementPreview,
@@ -25,7 +26,7 @@ export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent };
 let _initializing = false;
 
 /**
- * 回合末「锁定牌被自动解锁」事件的 Toast 文案（如「心神难继，灵气甲子自行散去」）。
+ * 回合末「锁定牌被自动解锁」事件的 Toast 文案（如「神识难继，灵气甲子自行散去」）。
  * 结算触发后立即展示；随后行动流程再弹「释灵成功/纳灵成功/调息」等反馈文案时，
  * 优先保留本提示，避免关键告警被常规反馈覆盖（玩家感知为"锁定牌无故消失"）。
  * 消费即清空，防止残留到下个回合。
@@ -57,7 +58,6 @@ interface GameStore {
   leverageMultiplier: number;
   /** 以下数值来自核心 BalanceConfig，前端渲染一律读取，禁止硬编码 */
   maxQi: number;
-  sellCost: number;
   baseRecovery: number;
   waitBonus: number;
   totalRounds: number;
@@ -167,7 +167,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   publicCards: [],
   leverageMultiplier: 1,
   maxQi: 80,
-  sellCost: 4,
   baseRecovery: 10,
   waitBonus: 10,
   totalRounds: 60,
@@ -229,7 +228,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       publicCards: [...tm.getPublicCards()],
       leverageMultiplier: tm.getLeverageMultiplier(),
       maxQi: tm.getMaxQi(),
-      sellCost: tm.getSellCost(),
       baseRecovery: tm.getBaseRecovery(),
       waitBonus: tm.getWaitBonus(),
       totalRounds: tm.getTotalRounds(),
@@ -310,7 +308,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const names = cardIds
           .map((id) => tm.getCardById(id)?.name ?? `#${id}`)
           .join('、');
-        _pendingAutoUnlockToast = `心神难继，灵气${names}自行散去`;
+        _pendingAutoUnlockToast = `神识难继，灵气${names}自行散去`;
         // 立即提示；随后的行动反馈 Toast 会优先保留本提示（见 _showActionToast）
         get().showToast(_pendingAutoUnlockToast);
       });
@@ -428,7 +426,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get()._sync();
       _showActionToast(get, '纳灵成功');
     } else {
-      get().showToast('纳灵失败（丹田满/心神不足）');
+      get().showToast('纳灵失败（丹田满/神识不足）');
     }
     return ok;
   },
@@ -489,7 +487,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     const msg =
       result.reason === 'qi_insufficient'
-        ? '心神不足，无法锁定灵气'
+        ? '神识不足，无法锁定灵气'
         : result.reason === 'max_reached'
           ? `最多锁定 ${TurnManager.MAX_LOCKED_CARDS} 张灵气`
           : result.reason === 'already_locked'
@@ -585,7 +583,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!tm || cardIndex < 0 || cardIndex >= cards.length) return 0;
     const card = cards[cardIndex];
     const score = tm.getCardScore(card, tm.getCurrentSeason());
-    const leverage = get().useLeverage ? tm.getSettlementLeverageMultiplier() : 1;
+    // 信息边界契约：公共牌面预览只用"当下回合"杠杆倍数（getLeverageMultiplier），
+    // 禁用 getSettlementLeverageMultiplier（下回合真实倍数 = 是否换季的代理变量，会泄露换季时机）。
+    const leverage = get().useLeverage ? tm.getLeverageMultiplier() : 1;
     return tm.previewHoldEarning(score, leverage);
   },
 
@@ -595,7 +595,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!tm || cardIndex < 0 || cardIndex >= cards.length) return 0;
     const card = cards[cardIndex];
     const score = tm.getCardScore(card, tm.getCurrentSeason());
-    const leverage = get().useLeverage ? tm.getSettlementLeverageMultiplier() : 1;
+    // 同上：当下回合杠杆倍数（信息边界契约 docs/ui-information-boundary.md）
+    const leverage = get().useLeverage ? tm.getLeverageMultiplier() : 1;
     return tm.previewHoldQiCost(score, leverage);
   },
 
@@ -626,27 +627,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
       };
     }
 
-    // 委托核心 previewSettlement（wait 分支）——与真实结算共用同一组计算器，
-    // 消灭此前 store 手写推演与核心逻辑的双份漂移风险（Bug A/E 同型）。
-    const preview = tm.previewSettlement({ type: 'wait' });
-    if (!preview) {
-      return {
-        afterQi: get().qi, holdQiCost: 0, midQi: get().qi,
-         willQiDeplete: false, willMarginCall: false, hasLeverage: false,
-      };
+    // 信息边界契约（docs/ui-information-boundary.md）：本方法是"下回合推演"，
+    // 必须用"假设不换季"口径——恒定 roundInSeason+1 的杠杆倍数（getNextLeverageNoSeasonChange）、
+    // 当前季评分，**不触碰 isSeasonEnd / 下回合季节**。
+    // 不复用 previewSettlement（wait 分支）：它用真实下回合倍数 + 下回合季节，
+    // 属"是否换季"的代理变量，会泄露换季时机（2026-08-06 issue 03 审计发现）。
+    const currentSeason = tm.getCurrentSeason();
+    const handSlots = tm.getHand();
+    let holdQiCost = 0;
+    let hasLeverage = false;
+    for (const slot of handSlots) {
+      if (!slot) continue;
+      const score = tm.getCardScore(slot.card, currentSeason);
+      const leverage = slot.useLeverage ? tm.getNextLeverageNoSeasonChange() : 1;
+      if (slot.useLeverage) hasLeverage = true;
+      holdQiCost += tm.previewHoldQiCost(
+        score,
+        leverage,
+        slot.card.tianGanElement === Element.EARTH,
+      );
     }
-
-    const midQi = preview.qiAfterHold ?? get().qi;
-    const holdQiCost = preview.holdQiCost;
+    const qi = get().qi;
+    const midQi = qi - holdQiCost;
     const willQiDeplete = midQi <= 0;
-    const willMarginCall = preview.willMarginCall;
-    const hasLeverage = preview.marginCallCandidateNames.length > 0;
-    // 强平时 finalQi 为 null（最终气取决于被随机强平的仓位，不确定值）；
-    // 这里给出下限估算保持字段类型稳定，UI 在 willMarginCall 分支不展示该值。
-    const afterQi = preview.finalQi ?? Math.min(
-      tm.getMaxQi(),
-      midQi + preview.baseQiRecover + preview.waitQiRecover,
-    );
+    const willMarginCall = willQiDeplete && hasLeverage;
+    // 强平候选数 > 0 时最终气取决于被随机强平的仓位（不确定值）；UI 在 willMarginCall 分支不展示该值。
+    const afterQi = willMarginCall
+      ? midQi
+      : Math.min(tm.getMaxQi(), midQi + tm.getBaseRecovery() + tm.getWaitBonus());
 
     return { afterQi, holdQiCost, midQi, willQiDeplete, willMarginCall, hasLeverage };
   },

@@ -44,6 +44,28 @@ describe('TurnManager 行动前结算预览', () => {
     expect(manager.getSettlementSeason()).toBe('winter');
   });
 
+  it('假设不换季推演口径：非季末与真实下回合一致，季末返回幻影倍数不泄露换季', async () => {
+    const manager = await startedGame(101);
+    // 季内第5回合、非季末（本季长12）：推演 = 6 → 2.5x，与真实下回合一致
+    (manager as any).seasonCycle.loadState(2, 5, [12, 12, 12, 12]);
+    expect(manager.getNextLeverageNoSeasonChange()).toBe(2.5);
+    expect(manager.getSettlementLeverageMultiplier()).toBe(2.5);
+
+    // 季内第5回合、恰为季末（本季长5）：真实下回合换季重置 1.0x；
+    // 推演口径仍按 6 → 2.5x（幻影倍数），玩家无法从推演值区分是否季末
+    (manager as any).seasonCycle.loadState(2, 5, [12, 12, 5, 12]);
+    expect(manager.getNextLeverageNoSeasonChange()).toBe(2.5);
+    expect(manager.getSettlementLeverageMultiplier()).toBe(1.0);
+  });
+
+  it('假设不换季推演口径：季末第12回合超出表末返回兜底最大倍数', async () => {
+    const manager = await startedGame(102);
+    // 季末第12回合（本季长12）：真实下回合换季 1.0x；推演 = 13 → 表末兜底 3.5x
+    (manager as any).seasonCycle.loadState(0, 12, [12, 12, 12, 12]);
+    expect(manager.getNextLeverageNoSeasonChange()).toBe(3.5);
+    expect(manager.getSettlementLeverageMultiplier()).toBe(1.0);
+  });
+
   it('非季末持仓预览使用下一回合实际季节评分，而非固定下一季趋势评分', async () => {
     const manager = await startedGame(111);
     (manager as any).seasonCycle.loadState(0, 1, [12, 12, 12, 12]);
@@ -123,7 +145,7 @@ describe('TurnManager 行动前结算预览', () => {
     expect(preview!.actionCardName).toBe(soldSlot.card.name);
     expect(preview!.actionUsesLeverage).toBe(false);
     expect(preview!.actionQiChange).toBe(
-      Math.min(80, 75 + soldSlot.lockedQi) - 4 - 75,
+      Math.min(80, 75 + soldSlot.lockedQi) - 75,
     );
     expect(preview!.saleBreakdown).toEqual({
       buyScore: soldSlot.buyScore,
@@ -131,8 +153,7 @@ describe('TurnManager 行动前结算预览', () => {
       leverage: 1,
       scoreChange: manager.previewSellScore(soldSlot),
       lockedQiReturn: Math.min(80, 75 + soldSlot.lockedQi) - 75,
-      exitCost: 4,
-      qiChange: Math.min(80, 75 + soldSlot.lockedQi) - 4 - 75,
+      qiChange: Math.min(80, 75 + soldSlot.lockedQi) - 75,
     });
     expect(preview!.holdItems.map((item) => item.cardName)).toContain(remainingSlot.card.name);
 

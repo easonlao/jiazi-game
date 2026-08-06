@@ -62,9 +62,4 @@ describe('QiManager - 气耗管理边界测试', () => {
     expect(qiManager.getBaseRecovery()).toBe(10);
     expect(qiManager.getWaitBonus()).toBe(10);
   });
-
-  it('应该正确获取卖出消耗', () => {
-    const qiManager = new QiManager(50);
-    expect(qiManager.getSellCost()).toBe(4);
-  });
 });

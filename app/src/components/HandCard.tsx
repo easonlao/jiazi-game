@@ -44,9 +44,9 @@ export function HandCard({
   const leverageBadge = (
     <span
       className={`text-[9px] px-1 py-0.5 rounded font-bold whitespace-nowrap ${isLeverage ? 'bg-qi-critical text-white' : 'bg-white/75 text-ink-light border border-wood-light'}`}
-      title={isLeverage ? `当前燃灵 ${leverage.toFixed(1)}×` : '未燃灵，按 1.0× 结算'}
+      title={isLeverage ? `当前燃灵 ${leverage.toFixed(1)}×；若继续本季，杠杆将爬升至 ${settlementLeverage !== undefined ? settlementLeverage.toFixed(1) : leverage.toFixed(1)}×（提醒）` : '未燃灵，按 1.0× 结算'}
       aria-label={isLeverage
-        ? `燃灵 ${leverage.toFixed(1)}×${settlementLeverage !== undefined && settlementLeverage > leverage ? `，下一回合 ${settlementLeverage.toFixed(1)}×` : ''}`
+        ? `燃灵 ${leverage.toFixed(1)}×${settlementLeverage !== undefined && settlementLeverage > leverage ? `，若继续本季 ${settlementLeverage.toFixed(1)}×（提醒）` : ''}`
         : '燃灵未启用，当前按 1.0× 结算'}
     >
       杆 {leverage.toFixed(1)}×
@@ -74,7 +74,7 @@ export function HandCard({
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
             </span>
-            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}心神</span>
+            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}神识</span>
           </span>
         </div>
         <div className="flex items-center justify-between gap-1 px-2 py-1">
@@ -93,7 +93,7 @@ export function HandCard({
             <span className={sellPreview.score >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {sellPreview.score >= 0 ? '+' : ''}{sellPreview.score.toFixed(1)}分
             </span>
-            <span className="ml-1.5 text-ink-light">心神{sellPreview.qiChange >= 0 ? '+' : ''}{sellPreview.qiChange.toFixed(1)}</span>
+            <span className="ml-1.5 text-ink-light">神识{sellPreview.qiChange >= 0 ? '+' : ''}{sellPreview.qiChange.toFixed(1)}</span>
           </span>
         </div>
       )}

@@ -19,8 +19,6 @@ export interface BalanceConfig {
   baseRecovery: number;
   /** 等待动作额外回气奖励 */
   waitBonus: number;
-  /** 卖出固定手续费 */
-  sellCost: number;
   /** 买入基数（不随评分变化的部分） */
   baseBuyCost: number;
   /** 买入消耗随评分的系数：cost = ceil(baseBuyCost * (1 + factor * score)) */
@@ -64,7 +62,6 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   initialQi: 50,
   baseRecovery: 10,
   waitBonus: 10,
-  sellCost: 4,
   baseBuyCost: 11,
   /** 评分×10 整数化后系数÷10 补偿：0.05 → 0.005（保持气经济不变） */
   buyCostFactor: 0.005,

@@ -68,7 +68,6 @@ export interface SalePreviewBreakdown {
   scoreChange: number;
   /** 占用气返还受气上限截断后的实际到账量。 */
   lockedQiReturn: number;
-  exitCost: number;
   qiChange: number;
 }
 
@@ -468,15 +467,6 @@ export class TurnManager {
       effectiveLeverage
     );
 
-    // 卖出固定扣气，不再回复气
-    const sellCost = this.qiManager.getSellCost();
-    // 注意：卖出时会先释放 lockedQi 再扣 sellCost，所以可用气 = 当前气 + 该卡牌的 lockedQi
-    const availableQi = this.qiManager.getQi() + (slot ? slot.lockedQi : 0);
-    if (availableQi < sellCost) {
-      console.log('[TurnManager] 气不足以支付卖出成本（含锁定占用气）');
-      return false;
-    }
-
     // 移除卡牌以释放对应的占用气锁定额，并将卡牌回洗入牌池
     const soldSlot = this.handManager.sell(slotIndex);
     if (soldSlot) {
@@ -488,9 +478,6 @@ export class TurnManager {
     if (soldSlot) {
       this.qiManager.recover(soldSlot.lockedQi);
     }
-
-    // 执行卖出固定扣气
-    this.qiManager.spend(sellCost);
 
     this.totalSells++;
     this.scoreManager.addSellEarnings(sellScore);
@@ -790,11 +777,6 @@ export class TurnManager {
     return this.qiManager.getMaxQi();
   }
 
-  /** 卖出固定手续费 */
-  getSellCost(): number {
-    return this.qiManager.getSellCost();
-  }
-
   /** 买入入场手续费 */
   getBuyEntryFee(): number {
     return this.qiManager.getBuyEntryFee();
@@ -868,9 +850,24 @@ export class TurnManager {
   /**
    * 获取下回合结算时会实际使用的杠杆倍数（预测用）。
    * 玩家行动后结算发生在下一回合；若行动跨季，下一回合季内进度为 1，倍率随之重置。
+   * ⚠️ 信息边界契约：含季末判定（isSeasonEnd），是"是否换季"的代理变量，
+   * 禁止在任何"行动前 UI"（公共牌面预览、结算弹窗本回合账单层）使用。
    */
   getSettlementLeverageMultiplier(): number {
     return this.leverageCalculator.getMultiplier(this.seasonCycle.getNextRoundInSeason());
+  }
+
+  /**
+   * 获取下回合杠杆倍数的"假设不换季"推演口径（供 UI 静态提示，如手牌 →2.5x 箭头）。
+   * 恒定按 当前季内回合 + 1 查杠杆表，**不查 isSeasonEnd()**：
+   * - 非季末：与真实下回合倍数一致（公开规则可推）
+   * - 季末：返回"幻影倍数"（如季末第 12 回合 → 13 → 表末兜底 3.5x），玩家无法区分
+   *   真爬升/幻影 → 不泄露换季时机
+   * 这是"提醒"——预览只给公开规则模拟，不给下回合真实状态。
+   * 依据：docs/ui-information-boundary.md 第三类口径。
+   */
+  getNextLeverageNoSeasonChange(): number {
+    return this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason() + 1);
   }
 
   /** 获取当前爆仓强平次数 */
@@ -912,12 +909,10 @@ export class TurnManager {
     return this.scoreManager.calculateSellScore(currentScore, slot.buyScore, effectiveLeverage);
   }
 
-  /** 预览卖出实际气变化：释放占用气先封顶，再扣卖出费。 */
+  /** 预览卖出实际气变化：释放占用气先封顶，即为净到账。 */
   previewSellQiChange(slot: HandSlot): number {
     const currentQi = this.qiManager.getQi();
-    return Math.min(this.qiManager.getMaxQi(), currentQi + slot.lockedQi)
-      - this.qiManager.getSellCost()
-      - currentQi;
+    return Math.min(this.qiManager.getMaxQi(), currentQi + slot.lockedQi) - currentQi;
   }
 
   /**
@@ -963,15 +958,13 @@ export class TurnManager {
     } else if (action.type === 'sell') {
       const slot = this.handManager.getSlot(action.slotIndex);
       if (!slot) return null;
-      const sellCost = this.qiManager.getSellCost();
-      if (currentQi + slot.lockedQi < sellCost) return null;
 
       actionCardName = slot.card.name;
       actionUsesLeverage = slot.useLeverage;
-      // 与 executeSell 顺序一致：先 recover(lock) 并封顶，再扣卖出费。
+      // 与 executeSell 顺序一致：先 recover(lock) 并封顶。
       const qiAfterReturn = Math.min(this.qiManager.getMaxQi(), currentQi + slot.lockedQi);
       const lockedQiReturn = qiAfterReturn - currentQi;
-      actionQiChange = qiAfterReturn - sellCost - currentQi;
+      actionQiChange = qiAfterReturn - currentQi;
       actionScoreChange = this.previewSellScore(slot);
       const effectiveLeverage = slot.useLeverage
         ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
@@ -982,7 +975,6 @@ export class TurnManager {
         leverage: effectiveLeverage,
         scoreChange: actionScoreChange,
         lockedQiReturn,
-        exitCost: sellCost,
         qiChange: actionQiChange,
       };
       const virtualIndex = virtualHand.indexOf(slot);

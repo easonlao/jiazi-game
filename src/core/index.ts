@@ -42,3 +42,6 @@ export type { LockManagerDeps } from './LockManager';
 
 export { MarginCallEngine } from './MarginCallEngine';
 export type { MarginCallEngineDeps } from './MarginCallEngine';
+
+export { buildProjectedHoldings } from './settlementProjection';
+export type { ProjectedHolding } from './settlementProjection';

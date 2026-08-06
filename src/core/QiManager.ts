@@ -105,14 +105,6 @@ export class QiManager {
   }
 
   /**
-   * 获取卖出卡牌需要扣除的气耗
-   * @returns 卖出气耗 (当前设定为 4)
-   */
-  getSellCost(): number {
-    return this.cfg.sellCost;
-  }
-
-  /**
    * 获取每回合的基础自然回复气量
    * @returns 基础回复气量 (默认为 10)
    */

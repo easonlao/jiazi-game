@@ -40,7 +40,7 @@ export function PublicCard({
               e.stopPropagation();
               onToggleLock();
             }}
-            title={locked ? '点击解锁（灵气回灵流，停止耗神）' : '点击锁定（留住灵气，每回合 -5 心神）'}
+            title={locked ? '点击解锁（灵气回灵流，停止耗神）' : '点击锁定（留住灵气，每回合 -5 神识）'}
             aria-label={locked ? '解锁此卡牌' : '锁定此卡牌'}
             className={`
               lock-btn relative flex h-6 w-6 items-center justify-center rounded-full
@@ -70,12 +70,12 @@ export function PublicCard({
       }
     >
       {/* 上下堆叠而非两列：每行 label + 值，独享整行宽度，
-          避免 "每回合炼化 +2.0修为 -2.2心神" 在窄屏被截断。 */}
+          避免 "每回合炼化 +2.0修为 -2.2神识" 在窄屏被截断。 */}
       <div className="divide-y divide-wood-light/35 text-xs">
         <div className="flex items-center justify-between gap-1 px-2 py-1">
           <span className="text-[10px] text-ink-light shrink-0">纳灵消耗</span>
           <span className={`font-bold tabular-nums whitespace-nowrap ${canAfford ? 'text-qi-full' : 'text-qi-critical'}`}>
-            -{buyCost} 心神
+            -{buyCost} 神识
           </span>
         </div>
         <div className="flex items-center justify-between gap-1 px-2 py-1">
@@ -84,14 +84,14 @@ export function PublicCard({
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
             </span>
-            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}心神</span>
+            <span className="ml-1.5 text-qi-critical">-{holdQiCost.toFixed(1)}神识</span>
           </span>
         </div>
         {locked && (
           <div className="flex items-center justify-between gap-1 px-2 py-1 bg-amber-50/60">
             <span className="text-[10px] text-amber-700 shrink-0">锁定中</span>
             <span className="font-bold tabular-nums whitespace-nowrap text-amber-700">
-              每回合 -5 心神
+              每回合 -5 神识
             </span>
           </div>
         )}

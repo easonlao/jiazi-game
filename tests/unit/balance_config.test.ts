@@ -56,7 +56,6 @@ describe('BalanceConfig', () => {
   it('默认配置与现状一致', () => {
     expect(DEFAULT_BALANCE_CONFIG.baseRecovery).toBe(10);
     expect(DEFAULT_BALANCE_CONFIG.waitBonus).toBe(10);
-    expect(DEFAULT_BALANCE_CONFIG.sellCost).toBe(4);
     expect(DEFAULT_BALANCE_CONFIG.buyEntryFee).toBe(2);
     expect(DEFAULT_BALANCE_CONFIG.baseBuyCost).toBe(11);
     expect(DEFAULT_BALANCE_CONFIG.maxQi).toBe(80);
