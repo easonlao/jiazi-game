@@ -48,7 +48,7 @@ export function QiBar() {
     'bg-qi-full';
 
   return (
-    <div className="px-3 py-1.5 bg-[#faf6ee] border-b border-wood-light">
+    <div className="px-3 py-1.5 max-md:py-1 bg-[#faf6ee] border-b border-wood-light">
       {/* 当前气量 */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 relative">

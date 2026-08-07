@@ -29,7 +29,7 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
   }
 
   return (
-    <div className="flex flex-col gap-1 px-4 py-1.5">
+    <div className="flex flex-col gap-1 px-4 py-1.5 max-md:py-1">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold font-serif text-ink">周遭灵气</h3>
         <div className="flex items-center gap-2">

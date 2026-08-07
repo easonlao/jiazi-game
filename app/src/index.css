@@ -37,27 +37,19 @@ html, body, #root {
   }
 }
 
-/* 窄屏（典型手机 ≤ 420px）兜底：评分值保持 text-base 可读字号且防换行，
-   牌面文字小一档避免 "+2.0修为 -2.2神识" 撑出，ActionBar 说明文字防溢出。 */
-@media (max-width: 420px) {
+/* 窄屏（手机竖屏，壳恒满宽 ≤428px）兜底：游戏壳是 max-w-[428px] 固定壳，
+   不能用视口 max-width:420px（手机视口 421~428 时不触发，壳却仍是 428 宽 → 溢出）。
+   改用视口 <768px（max-md）覆盖整段手机区间。
+   只调尺寸不删信息：评分值保持可读字号且防换行，牌面文字小一档防撑出。 */
+@media (max-width: 767px) {
   .card-score-trend .card-score-value {
-    font-size: 1rem;
+    font-size: 0.9375rem;
     white-space: nowrap;
   }
 
-  /* 牌面文字再小一档，避免 "+2.0修为 -2.2神识" 撑出 */
+  /* 牌面文字小一档，避免 "+2.0修为 -2.2神识" 撑出 */
   .card-in {
     font-size: 0.8125rem;
-  }
-
-  /* ActionBar 4 列按钮：第二行说明文字截断防溢出 */
-  .grid-cols-4 > button > span:last-child {
-    font-size: 0.625rem;
-    line-height: 1.05;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 100%;
   }
 }
 

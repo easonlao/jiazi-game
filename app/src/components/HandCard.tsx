@@ -62,8 +62,8 @@ export function HandCard({
         ) : null}
       >
       {/* 窄卡（grid-cols-3，~128px）适配：三行信息（炼化/炼耗/累计），字号压缩。 */}
-      <div className="divide-y divide-wood-light/35 text-[11px]">
-        <div className="flex items-center justify-between gap-1 px-2 py-1">
+      <div className="divide-y divide-wood-light/35 text-[11px] max-md:text-[10px]">
+        <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
           <span className="text-[9px] text-ink-light shrink-0">炼化</span>
           <span className="font-bold tabular-nums whitespace-nowrap">
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
@@ -71,13 +71,13 @@ export function HandCard({
             </span>
           </span>
         </div>
-        <div className="flex items-center justify-between gap-1 px-2 py-1">
+        <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
           <span className="text-[9px] text-ink-light shrink-0">炼耗</span>
           <span className={`font-bold tabular-nums whitespace-nowrap ${QI_COST_COLOR}`}>
             -{holdQiCost.toFixed(1)}神识
           </span>
         </div>
-        <div className="flex items-center justify-between gap-1 px-2 py-1">
+        <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
           <span className="text-[9px] text-ink-light shrink-0">累计炼化</span>
           <span className={`font-bold tabular-nums whitespace-nowrap ${holdEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
             {holdEarnings >= 0 ? '+' : ''}{holdEarnings.toFixed(1)}修为

@@ -57,12 +57,12 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
     >
       {/* 牌名本身编码干支五行：天干、地支各自按所属元素着色 */}
       <div className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-0.5">
-        <span className="text-base leading-none font-bold truncate">
+        <span className="text-base max-md:text-[15px] leading-none font-bold truncate min-w-0">
           <span className={elementScoreColor[card.tianGanElement]}>{card.tianGan}</span>
           <span className={elementScoreColor[card.diZhiElement]}>{card.diZhi}</span>
         </span>
         <div className="flex gap-1 shrink-0">
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+          <span className={`text-[10px] max-md:text-[9px] px-1.5 py-0.5 rounded font-bold ${
             card.yinYang === YinYang.YANG
               ? 'bg-orange-500 text-white'
               : 'bg-violet-500 text-white'
@@ -75,11 +75,11 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
 
       {/* 当前→下季价值：与结算预览使用同一评分口径。
           grid-cols-3 窄卡适配：评分值固定 14px（去掉 sm/md 放大），评分区 py-1.5 增加呼吸间距。 */}
-      <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5">
+      <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5 max-md:py-1">
         <div className="min-w-0 flex-1">
-          <span className="card-score-label block text-[10px] leading-tight text-ink-light">当季 → 下季评分</span>
+          <span className="card-score-label block text-[10px] max-md:text-[9px] leading-tight text-ink-light">当季 → 下季评分</span>
           <div className="flex items-baseline gap-1">
-            <span className={`card-score-value text-[14px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
+            <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
               {score >= 0 ? '+' : ''}{score.toFixed(1)}
               {nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
             </span>

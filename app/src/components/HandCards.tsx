@@ -37,7 +37,7 @@ export function HandCards() {
   const hasCards = hand.some((s) => s !== null);
 
   return (
-    <div className="flex flex-col gap-1 px-4 py-1.5">
+    <div className="flex flex-col gap-1 px-4 py-1.5 max-md:py-1">
       <h3 className="text-sm font-bold font-serif text-ink">
         丹田 {hand.filter((s) => s).length}/{hand.length}
       </h3>

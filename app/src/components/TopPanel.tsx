@@ -44,7 +44,7 @@ export function TopPanel() {
   }, [scoreDelta]);
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2 bg-[#faf6ee] border-b border-wood-light">
+    <div className="flex items-center justify-between gap-3 px-4 py-2 max-md:py-1.5 bg-[#faf6ee] border-b border-wood-light">
       <div className="min-w-0">
         <h1 className={`text-lg font-bold font-serif ${seasonTheme.text}`}>
         {/* key 变化触发切换动画，提示回合推进 */}

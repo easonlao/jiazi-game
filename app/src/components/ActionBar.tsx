@@ -36,7 +36,7 @@ export function ActionBar() {
   const affordBuy = buyCost <= qi;
 
   return (
-    <div className="z-10 flex flex-col gap-1 px-4 py-1.5 bg-[#faf6ee] border-t border-wood-light md:sticky md:bottom-0 max-md:fixed max-md:left-0 max-md:right-0 max-md:bottom-0 max-md:z-30 max-md:max-w-[428px] max-md:mx-auto">
+    <div className="z-10 flex flex-col gap-1 px-4 py-1.5 max-md:py-1 bg-[#faf6ee] border-t border-wood-light md:sticky md:bottom-0 max-md:fixed max-md:left-0 max-md:right-0 max-md:bottom-0 max-md:z-30 max-md:max-w-[428px] max-md:mx-auto">
       {/* 最后一回合提示：核心禁止纳灵，需明确告知 */}
       {isFinalRound && (
         <div className="text-[11px] text-qi-critical bg-qi-critical/10 px-2 py-1 rounded">
@@ -51,7 +51,7 @@ export function ActionBar() {
           onClick={requestBuyPreview}
           disabled={!canBuy || !affordBuy}
           className={`
-            py-2 rounded-lg text-sm font-bold transition-all duration-150
+            py-2 max-md:py-1.5 rounded-lg text-sm font-bold transition-all duration-150
             ${canBuy && affordBuy
               ? 'bg-qi-full text-white hover:bg-green-600 hover:shadow-md hover:-translate-y-0.5 active:scale-95'
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -66,7 +66,7 @@ export function ActionBar() {
           onClick={requestSellPreview}
           disabled={!canSell}
           className={`
-            py-2 rounded-lg text-sm font-bold transition-all duration-150
+            py-2 max-md:py-1.5 rounded-lg text-sm font-bold transition-all duration-150
             ${canSell
               ? 'bg-qi-critical text-white hover:bg-red-600 hover:shadow-md hover:-translate-y-0.5 active:scale-95'
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -80,7 +80,7 @@ export function ActionBar() {
         <button
           onClick={toggleLeverage}
           className={`
-            py-2 rounded-lg text-sm font-bold transition-all duration-150 relative
+            py-2 max-md:py-1.5 rounded-lg text-sm font-bold transition-all duration-150 relative
             ${useLeverage
               ? 'bg-qi-danger text-white ring-2 ring-qi-critical'
               : 'bg-white border border-wood-mid text-wood-dark hover:bg-wood-light/20 hover:shadow-sm hover:-translate-y-0.5 active:scale-95'
@@ -98,11 +98,11 @@ export function ActionBar() {
         {/* 调息（等待）：最后一回合 = 结束游戏，不产生结算/回气 */}
         <button
           onClick={requestWaitPreview}
-          className="py-2 rounded-lg text-sm font-bold bg-white border border-wood-mid text-wood-dark hover:bg-wood-light/20 hover:shadow-sm hover:-translate-y-0.5 active:scale-95 transition-all duration-150"
+          className="py-2 max-md:py-1.5 rounded-lg text-sm font-bold bg-white border border-wood-mid text-wood-dark hover:bg-wood-light/20 hover:shadow-sm hover:-translate-y-0.5 active:scale-95 transition-all duration-150"
         >
           {isFinalRound ? '结束游戏' : '调息'}
           {!isFinalRound && (
-            <span className="block text-[10px] font-normal leading-tight">
+            <span className="block text-[10px] max-md:text-[9px] font-normal leading-tight whitespace-nowrap">
               <span className="text-qi-full">+{baseRecovery}</span>自然+<span className="text-sky-600">{waitBonus}</span>奖励
             </span>
           )}
