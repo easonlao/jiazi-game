@@ -6,6 +6,7 @@ export type {
   MarginCallDetail,
   SettlementPreview,
   SettlementPreviewAction,
+  RoundLogEntry,
 } from './TurnManager';
 
 export { SeasonCycle } from './SeasonCycle';

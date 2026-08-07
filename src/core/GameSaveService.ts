@@ -11,6 +11,7 @@
  */
 
 import type { StorageProvider } from './StorageProvider';
+import type { RoundLogEntry } from './TurnManager';
 
 /** 可序列化的手牌槽位快照。 */
 export interface HandSlotSnapshot {
@@ -54,6 +55,8 @@ export interface GameSnapshot {
   pool: CardPoolSnapshot;
   /** 锁定中的公共牌 ID 列表（锁定机制） */
   lockedCardIds?: number[];
+  /** 回合数据留存（交易看板数据源）。可选：老存档无此字段，读档时空数组。 */
+  roundLog?: RoundLogEntry[];
 }
 
 const SAVE_KEY = 'jiazi_game_save';

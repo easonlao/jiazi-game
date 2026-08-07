@@ -9,6 +9,7 @@ import {
   type SettlementPreviewAction,
   type JiaziCard,
   type LeaderboardEntry,
+  type RoundLogEntry,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -62,11 +63,17 @@ interface GameStore {
   waitBonus: number;
   totalRounds: number;
   lastSettlement: SettlementDetail | null;
+  /** 回合数据留存（交易看板数据源）：每回合一条已发生事实记录，只读消费 */
+  roundLog: RoundLogEntry[];
   totalBuys: number;
   totalSells: number;
   totalWaits: number;
   totalLeverageBuys: number;
   marginCallCount: number;
+  /** 本局累计炼化收益（ScoreManager.totalHoldEarnings，局终修为构成用） */
+  totalHoldEarnings: number;
+  /** 本局累计卖出收益（ScoreManager.totalSellEarnings，局终修为构成用） */
+  totalSellEarnings: number;
 
   // 交互状态
   selectedPublicCard: number;
@@ -110,6 +117,11 @@ interface GameStore {
   leaderboardOpen: boolean;
   openLeaderboard: () => void;
   closeLeaderboard: () => void;
+
+  // 交易看板（行迹）
+  dashboardOpen: boolean;
+  openDashboard: () => void;
+  closeDashboard: () => void;
 
   // 操作
   selectPublicCard: (index: number) => void;
@@ -171,11 +183,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   waitBonus: 10,
   totalRounds: 60,
   lastSettlement: null,
+  roundLog: [],
   totalBuys: 0,
   totalSells: 0,
   totalWaits: 0,
   totalLeverageBuys: 0,
   marginCallCount: 0,
+  totalHoldEarnings: 0,
+  totalSellEarnings: 0,
 
   selectedPublicCard: -1,
   selectedHandCard: -1,
@@ -188,6 +203,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hasSave: false,
   leaderboardEntries: [],
   leaderboardOpen: false,
+  dashboardOpen: false,
 
   // FX 事件（初始为 null，_sync diff 后才会产生）
   seasonEvent: null,
@@ -232,9 +248,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       waitBonus: tm.getWaitBonus(),
       totalRounds: tm.getTotalRounds(),
       lastSettlement: settlement,
+      roundLog: [...tm.getRoundLog()],
       totalBuys: tm.getTotalBuys(),
       totalSells: tm.getTotalSells(),
       totalWaits: tm.getTotalWaits(),
+      totalHoldEarnings: tm.getTotalHoldEarnings(),
+      totalSellEarnings: tm.getTotalSellEarnings(),
       totalLeverageBuys: tm.getTotalLeverageBuys(),
       marginCallCount: nextMarginCallCount,
       lockedCardIds: tm.getLockedCardIds(),
@@ -369,6 +388,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ leaderboardOpen: false });
   },
 
+  openDashboard() {
+    set({ dashboardOpen: true });
+  },
+
+  closeDashboard() {
+    set({ dashboardOpen: false });
+  },
+
   reset() {
     const tm = get().turnManager;
     if (!tm) return;
@@ -393,6 +420,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       pendingAction: null,
       settlementPreview: null,
       lastSettlement: null,
+      roundLog: [],
       // 清空 FX 事件，避免残留动画在重开时误触发
       seasonEvent: null,
       marginCallEvent: null,

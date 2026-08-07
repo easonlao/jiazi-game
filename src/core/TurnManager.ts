@@ -1,4 +1,4 @@
-import { JiaziCard, Element } from './JiaziCard';
+import { JiaziCard, Element, YinYang } from './JiaziCard';
 import { CardDataBank } from './CardDataBank';
 import { SeasonCycle, Season } from './SeasonCycle';
 import { QiManager } from './QiManager';
@@ -54,6 +54,51 @@ export interface SettlementDetail {
   finalScore: number;
 }
 
+/**
+ * 回合数据留存记录（交易看板数据源）。
+ *
+ * 每回合结算完成后 push 一条，是"已发生事实"的完整快照——不含任何预测/推演
+ * 字段，天然满足 docs/ui-information-boundary.md 的展示边界（看板只能回顾，
+ * 不能泄露"下一回合"信息）。
+ *
+ * 与 SettlementDetail 的关系：settlement 是引擎内部结算明细（lastSettlementDetail），
+ * RoundLogEntry 在其上补充行动层信息（本回合玩家执行了什么操作、涉及哪张卡），
+ * 合并成一条自包含的回合记录，供 UI 直接消费。
+ */
+export interface RoundLogEntry {
+  /** 回合序号（1-60） */
+  round: number;
+  /** 该回合所处季节（spring/summer/autumn/winter） */
+  season: string;
+  /** 季内第几回合 */
+  roundInSeason: number;
+  /** 本回合玩家执行的操作（buy/sell/wait/lock/unlock；首回合无行动为 null） */
+  action: ActionType | null;
+  /** 行动涉及的卡牌名（调息/等待为 null） */
+  actionCardName: string | null;
+  /** 行动时该卡的季节评分（买入时=买入评分；卖出时=卖出评分；其余 null） */
+  actionCardScore: number | null;
+  /** 卖出专属：买入时记录的评分（价差 = actionCardScore - buyScore） */
+  buyScore: number | null;
+  /** 卖出专属：卖出收益（(卖出评分-买入评分)×4×杠杆） */
+  sellScore: number | null;
+  /** 行动消耗或变动的神识（买入=纳灵耗神；卖出=归还锁气；调息=0） */
+  actionQiChange: number;
+  /**
+   * 本回合抽牌后玩家可见的公共牌池快照（含锁定保留牌）。
+   * 供后续分析体系使用：验证牌池随机性、评估玩家在"当时可选牌"下的决策质量、
+   * 复盘"这张牌当时在不在池里"。只存卡牌核心标识，不存动态评分（评分随季节变化，
+   * 需要时由引擎按 roundLog.round 反查，避免快照与计算口径漂移）。
+   */
+  publicCards: { id: number; name: string; mainElement: Element; yinYang: YinYang }[];
+  /** 本回合结算明细（持仓炼化/耗神/回气/反噬，来自 lastSettlementDetail） */
+  settlement: SettlementDetail;
+  /** 该回合结束时的总修为 */
+  scoreAfter: number;
+  /** 该回合结束时的神识 */
+  qiAfter: number;
+}
+
 /** 行动尚未提交时的可序列化描述。 */
 export type SettlementPreviewAction =
   | { type: 'buy'; cardIndex: number; leverage: boolean }
@@ -107,6 +152,27 @@ export interface SettlementPreview {
 }
 
 /**
+ * 最后行动的卡牌信息快照（回合数据留存用）。
+ *
+ * executeBuy/executeSell 在结算时同步写入；buildRoundLogEntry 在 processRound
+ * 归档时读取——由于行动→advanceTurn→processRound 是同步链，读取时必然是最新行动。
+ * lock/unlock 不推进回合，不写此字段（它们不产生独立回合记录）。
+ */
+interface LastActionCardInfo {
+  card: JiaziCard;
+  /** buy: 买入时评分；sell: 买入时记录的评分 */
+  buyScore: number;
+  /** sell: 卖出时评分；buy: 与 buyScore 相同 */
+  currentScore: number;
+  /** sell: 卖出收益（(卖出-买入)×4×杠杆）；buy: 0 */
+  sellScore: number;
+  /** buy: 纳灵耗神（负值）；sell: 0 */
+  buyCost: number;
+  /** sell: 归还锁气（正值）；buy: 0 */
+  qiReturn: number;
+}
+
+/**
  * 回合管理器
  * 
  * 游戏最核心的控制器与状态机骨架。负责流程控制、状态维护和各个子模块（气、计分、手牌、牌池、季节）的协调工作。
@@ -153,6 +219,10 @@ export class TurnManager {
   private totalSells: number = 0;
   private totalWaits: number = 0;
   private totalLeverageBuys: number = 0;
+  /** 回合数据留存：每回合一条完整记录（交易看板/局终总结的数据源） */
+  private roundLog: RoundLogEntry[] = [];
+  /** 最后行动的卡牌信息快照（buildRoundLogEntry 归档用，行动时同步更新） */
+  private lastActionCard: LastActionCardInfo | null = null;
 
   // 回调
   private onStateChange?: (state: GameState) => void;
@@ -213,6 +283,8 @@ export class TurnManager {
     this.totalSells = 0;
     this.totalWaits = 0;
     this.totalLeverageBuys = 0;
+    this.roundLog = [];
+    this.lastActionCard = null;
 
     this.saveService = new GameSaveService(options?.storage);
   }
@@ -291,10 +363,76 @@ export class TurnManager {
       this.lastSettlementDetail.finalScore = this.scoreManager.getScore();
     }
 
+    // 回合数据留存：把本回合（已发生的行动 + 结算 + 终值）归档为一条不可变记录。
+    // 首回合（round 1）玩家尚未行动，action 为 null；后续回合 action 是上一回合的操作。
+    // 行动层信息从 lastAction 与 lastSettlementDetail 重建——卖出专属的 buyScore/sellScore
+    // 在 executeSell 时已结算，这里直接读最后行动即可（无历史追溯需求，看板逐回合展示）。
+    this.roundLog.push(this.buildRoundLogEntry());
+
     // 4. 等待玩家操作
     this.state = 'player_action';
     this.onStateChange?.('player_action');
     this.onTurnStart?.(this.currentRound);
+  }
+
+  /**
+   * 归档本回合记录（roundLog 数据留存）。
+   *
+   * ⚠️ 必须在 lastSettlementDetail.finalQi/finalScore 赋值之后调用。
+   * 行动层字段全部来自"已发生事实"（lastAction + 引擎结算），不含任何预测数据。
+   */
+  private buildRoundLogEntry(): RoundLogEntry {
+    const season = this.seasonCycle.getCurrentSeason();
+    const roundInSeason = this.seasonCycle.getCurrentRoundInSeason();
+    const action = this.lastAction;
+    const settlement = this.lastSettlementDetail!;
+
+    // 从结算明细重建行动层信息：
+    // - buy/sell 涉及的卡牌名：结算明细的 holdItems 里存的是"该回合持仓结算"的卡，
+    //   不等于"行动买卖的卡"。买卖的卡要额外记录，但 lastSettlementDetail 不存行动卡。
+    //   看板逐回合展示"本回合操作了什么"，需要从执行路径补录——见 executeBuy/Sell/Wait 的
+    //   lastActionCard 字段（2026-08-06 新增，随行动同步更新）。
+    let actionCardName: string | null = null;
+    let actionCardScore: number | null = null;
+    let buyScore: number | null = null;
+    let sellScore: number | null = null;
+    let actionQiChange = 0;
+
+    if (action === 'buy' && this.lastActionCard) {
+      actionCardName = this.lastActionCard.card.name;
+      actionCardScore = this.lastActionCard.buyScore;
+      buyScore = this.lastActionCard.buyScore; // 买入时评分即买价（价差基准）
+      actionQiChange = -this.lastActionCard.buyCost; // 纳灵耗神识（负值）
+    } else if (action === 'sell' && this.lastActionCard) {
+      actionCardName = this.lastActionCard.card.name;
+      actionCardScore = this.lastActionCard.currentScore;
+      buyScore = this.lastActionCard.buyScore;
+      sellScore = this.lastActionCard.sellScore;
+      actionQiChange = this.lastActionCard.qiReturn; // 归还锁气（正值）
+    }
+
+    return {
+      round: this.currentRound,
+      season,
+      roundInSeason,
+      action,
+      actionCardName,
+      actionCardScore,
+      buyScore,
+      sellScore,
+      actionQiChange,
+      // 本回合抽牌后的公共牌池快照（buildRoundLogEntry 在 drawCards 之后调用，
+      // getPublicCards() 即玩家本回合看到的候选牌，含锁定保留牌）
+      publicCards: this.cardPoolManager.getPublicCards().map((card) => ({
+        id: card.id,
+        name: card.name,
+        mainElement: card.mainElement,
+        yinYang: card.yinYang,
+      })),
+      settlement,
+      scoreAfter: this.scoreManager.getScore(),
+      qiAfter: this.qiManager.getQi(),
+    };
   }
 
   /**
@@ -430,6 +568,16 @@ export class TurnManager {
     // 买的是锁定牌则自动解锁（牌已入手，不再占用公共位）
     this.lockManager.onCardBought(card.id);
 
+    // 记录本回合行动的卡牌信息（回合数据留存：buildRoundLogEntry 归档用）
+    this.lastActionCard = {
+      card,
+      buyScore,
+      currentScore: buyScore,
+      sellScore: 0,
+      buyCost,
+      qiReturn: 0,
+    };
+
     // 未选的牌回牌堆（锁定中的牌保留）。
     // 注意：filter 回调第二个参数才是当前元素，必须用元素自身的 id 判断是否锁定，
     // 不能用外层闭包变量 `card.id`（那是要买的牌，不是当前元素）——
@@ -482,6 +630,18 @@ export class TurnManager {
     this.totalSells++;
     this.scoreManager.addSellEarnings(sellScore);
 
+    // 记录本回合行动的卡牌信息（回合数据留存：buildRoundLogEntry 归档用）
+    if (soldSlot) {
+      this.lastActionCard = {
+        card: soldSlot.card,
+        buyScore: soldSlot.buyScore,
+        currentScore,
+        sellScore,
+        buyCost: 0,
+        qiReturn: soldSlot.lockedQi,
+      };
+    }
+
     this.lastAction = 'sell';
     this.advanceTurn();
     return true;
@@ -501,6 +661,8 @@ export class TurnManager {
 
     this.lastAction = 'wait';
     this.totalWaits++;
+    // 等待无卡牌行动：清空行动卡快照（buildRoundLogEntry 归档时 actionCardName 为 null）
+    this.lastActionCard = null;
     this.advanceTurn();
     return true;
   }
@@ -621,6 +783,7 @@ export class TurnManager {
         publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
       },
       lockedCardIds: this.lockManager.getLockedCardIds(),
+      roundLog: this.roundLog,
     };
   }
 
@@ -677,6 +840,10 @@ export class TurnManager {
 
     // 7. 还原锁定状态（兼容旧存档：lockedCardIds 缺失则空）
     this.lockManager.restoreLockedCardIds(data.lockedCardIds ? [...data.lockedCardIds] : []);
+
+    // 8. 还原回合数据留存（兼容旧存档：roundLog 缺失则空——老玩家读旧档不崩，
+    //    但看板只能从读档后的回合开始记录，历史回合无法追溯，属可接受的降级）
+    this.roundLog = data.roundLog ? [...data.roundLog] : [];
   }
 
   /**
@@ -873,6 +1040,11 @@ export class TurnManager {
   /** 获取当前爆仓强平次数 */
   getMarginCallCount(): number {
     return this.marginCallCount;
+  }
+
+  /** 获取回合数据留存（交易看板/局终总结数据源）。只读，UI 不得修改。 */
+  getRoundLog(): readonly RoundLogEntry[] {
+    return this.roundLog;
   }
 
   getTotalHoldEarnings(): number {

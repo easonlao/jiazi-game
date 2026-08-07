@@ -26,6 +26,8 @@ export function TopPanel() {
   const score = useGameStore((s) => s.score);
   const scoreDelta = useGameStore((s) => s.scoreDelta);
   const seasonTheme = SEASON_THEME[season] ?? SEASON_THEME.spring;
+  const openDashboard = useGameStore((s) => s.openDashboard);
+  const gameState = useGameStore((s) => s.gameState);
 
   const [floaters, setFloaters] = useState<Floater[]>([]);
   const lastEventId = useRef(0);
@@ -58,6 +60,15 @@ export function TopPanel() {
           <div className={`h-full rounded-full ${seasonTheme.bar}`} style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />
         </div>
       </div>
+      {gameState === 'player_action' && (
+        <button
+          onClick={openDashboard}
+          className="shrink-0 px-3 py-2 rounded-lg bg-white border border-wood-mid text-wood-dark text-sm font-bold font-serif hover:bg-wood-light/20 hover:shadow-sm transition-all"
+          aria-label="打开交易看板"
+        >
+          行迹
+        </button>
+      )}
       <div className="score-panel relative shrink-0 rounded-lg border border-gold/35 bg-gold/5 px-2 py-1 text-right">
         <div className="text-xl font-black leading-6 text-gold tabular-nums">
           {score.toFixed(1)} 修为

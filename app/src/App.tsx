@@ -13,6 +13,7 @@ import { HelpModal } from './components/HelpCenter';
 import { StartScreen } from './components/StartScreen';
 import { GameOverModal } from './components/GameOverModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
+import { TradeDashboard } from './components/TradeDashboard';
 
 export default function App() {
   const gameState = useGameStore((s) => s.gameState);
@@ -91,6 +92,7 @@ export default function App() {
         )}
         <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
         {leaderboardOpen && <LeaderboardModal />}
+        <TradeDashboard />
       </div>
     </div>
   );
