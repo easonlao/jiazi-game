@@ -38,14 +38,14 @@ html, body, #root {
 }
 
 /* 窄屏（典型手机 ≤ 420px）兜底：评分值保持 text-base 可读字号且防换行，
-   牌面文字小一档避免 "+2.0分 -2.2气" 撑出，ActionBar 说明文字防溢出。 */
+   牌面文字小一档避免 "+2.0修为 -2.2神识" 撑出，ActionBar 说明文字防溢出。 */
 @media (max-width: 420px) {
   .card-score-trend .card-score-value {
     font-size: 1rem;
     white-space: nowrap;
   }
 
-  /* 牌面文字再小一档，避免 "+2.0分 -2.2气" 撑出 */
+  /* 牌面文字再小一档，避免 "+2.0修为 -2.2神识" 撑出 */
   .card-in {
     font-size: 0.8125rem;
   }

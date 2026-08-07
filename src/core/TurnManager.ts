@@ -93,7 +93,7 @@ export interface RoundLogEntry {
   publicCards: { id: number; name: string; mainElement: Element; yinYang: YinYang }[];
   /** 本回合结算明细（持仓炼化/耗神/回气/反噬，来自 lastSettlementDetail） */
   settlement: SettlementDetail;
-  /** 该回合结束时的总修为 */
+  /** 该回合结束时的总分数 */
   scoreAfter: number;
   /** 该回合结束时的神识 */
   qiAfter: number;

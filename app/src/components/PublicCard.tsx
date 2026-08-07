@@ -84,7 +84,7 @@ export function PublicCard({
           <span className="text-[9px] text-ink-light shrink-0">炼化</span>
           <span className="font-bold tabular-nums whitespace-nowrap">
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
-              {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
+              {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}修为
             </span>
           </span>
         </div>

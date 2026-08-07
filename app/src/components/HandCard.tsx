@@ -67,7 +67,7 @@ export function HandCard({
           <span className="text-[9px] text-ink-light shrink-0">炼化</span>
           <span className="font-bold tabular-nums whitespace-nowrap">
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
-              {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}分
+              {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}修为
             </span>
           </span>
         </div>
@@ -80,7 +80,7 @@ export function HandCard({
         <div className="flex items-center justify-between gap-1 px-2 py-1">
           <span className="text-[9px] text-ink-light shrink-0">累计炼化</span>
           <span className={`font-bold tabular-nums whitespace-nowrap ${holdEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
-            {holdEarnings >= 0 ? '+' : ''}{holdEarnings.toFixed(1)}分
+            {holdEarnings >= 0 ? '+' : ''}{holdEarnings.toFixed(1)}修为
           </span>
         </div>
       </div>
