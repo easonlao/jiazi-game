@@ -118,3 +118,111 @@ export function aggregateCardSummaries(roundLog: RoundLogEntry[]): CardSummary[]
 export function countSettled(summaries: CardSummary[]): number {
   return summaries.filter((s) => !s.holding).length;
 }
+
+/** 单卡操作轨迹条目（时间线一行） */
+export interface CardTraceItem {
+  /** 所在回合 */
+  round: number;
+  /** 季节英文 */
+  season: string;
+  /** 条目类型 */
+  kind: 'buy' | 'sell' | 'hold' | 'margin';
+  /** buy: 买入评分；sell: 卖出评分；hold: 累计炼化；margin: 罚分 */
+  value: number;
+  /** buy: 耗神（负数，如 -5）；其余 null/0 */
+  qiCost: number;
+  /** sell: 买入时评分（价差 = value - buyScore） */
+  buyScore: number | null;
+  /** hold: 起止回合 [start, end]；其余 null */
+  holdRange: [number, number] | null;
+  /** sell: 卖出收益；hold: 区间内总炼化；其余 0 */
+  earnings: number;
+}
+
+/**
+ * 提取单张卡的操作轨迹（按回合正序），用于点击卡牌展开时间线。
+ *
+ * 规则：
+ * - buy：action === 'buy' 且 actionCardName 匹配 → 一条（评分 + 耗神）
+ * - sell：action === 'sell' 且 actionCardName 匹配 → 一条（买入评分 → 卖出评分 + 收益）
+ * - hold：settlement.holdItems 含该卡的回合 → 连续回合合并为一条区间（累计炼化）
+ * - margin：settlement.marginCallDetails 含该卡 → 一条（罚分）
+ * 数据源全部来自 roundLog，已发生事实，无预测字段。
+ */
+export function cardTrace(roundLog: RoundLogEntry[], name: string): CardTraceItem[] {
+  const items: CardTraceItem[] = [];
+
+  for (const entry of roundLog) {
+    // 行动层：买入/卖出
+    if (entry.action === 'buy' && entry.actionCardName === name) {
+      items.push({
+        round: entry.round,
+        season: entry.season,
+        kind: 'buy',
+        value: entry.actionCardScore ?? 0,
+        qiCost: entry.actionQiChange,
+        buyScore: null,
+        holdRange: null,
+        earnings: 0,
+      });
+    }
+    if (entry.action === 'sell' && entry.actionCardName === name) {
+      items.push({
+        round: entry.round,
+        season: entry.season,
+        kind: 'sell',
+        value: entry.actionCardScore ?? 0,
+        qiCost: 0,
+        buyScore: entry.buyScore ?? 0,
+        holdRange: null,
+        earnings: entry.sellScore ?? 0,
+      });
+    }
+    // 结算层：持有炼化（每回合一条，之后按连续回合合并）
+    const held = entry.settlement.holdItems.find((h) => h.cardName === name);
+    if (held) {
+      items.push({
+        round: entry.round,
+        season: entry.season,
+        kind: 'hold',
+        value: held.earning,
+        qiCost: 0,
+        buyScore: null,
+        holdRange: null,
+        earnings: held.earning,
+      });
+    }
+    // 结算层：反噬罚分
+    const mc = entry.settlement.marginCallDetails.find((d) => d.cardName === name);
+    if (mc) {
+      items.push({
+        round: entry.round,
+        season: entry.season,
+        kind: 'margin',
+        value: mc.penaltyScore,
+        qiCost: 0,
+        buyScore: null,
+        holdRange: null,
+        earnings: -mc.penaltyScore,
+      });
+    }
+  }
+
+  // 按回合排序（同回合内：buy/sell 行动在前，hold/margin 结算在后）
+  items.sort((a, b) => a.round - b.round || (a.kind === 'hold' || a.kind === 'margin' ? 1 : -1) - (b.kind === 'hold' || b.kind === 'margin' ? 1 : -1));
+
+  // 合并连续持有回合为区间（hold 相邻回合合并，累计炼化）
+  const merged: CardTraceItem[] = [];
+  for (const item of items) {
+    const last = merged[merged.length - 1];
+    if (item.kind === 'hold' && last && last.kind === 'hold' && item.round === (last.holdRange?.[1] ?? last.round) + 1) {
+      last.holdRange = [last.holdRange?.[0] ?? last.round, item.round];
+      last.value += item.value;
+      last.earnings += item.earnings;
+    } else {
+      merged.push(item);
+      if (item.kind === 'hold') item.holdRange = [item.round, item.round];
+    }
+  }
+  return merged;
+}
