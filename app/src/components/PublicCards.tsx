@@ -42,11 +42,16 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
       {/* 当季提示 */}
       <SeasonHint season={useGameStore((s) => s.season)} />
       <div className="grid grid-cols-3 gap-1.5">
-        {publicCards.map((card: JiaziCard, i: number) => {
+        {publicCards
+          // 2026-08-07 防「影子牌」：同一种牌只渲染一张（重复 id 是底层残留/异常，
+          // 直接渲染会出现无法选中操作的幽灵卡——用户实测公共区 4 张、5 张且有重复乙卯）。
+          // key 用「位置-名字」复合，避免 React 同 id 冲突导致重复卡渲染异常。
+          .filter((card, i, arr) => arr.findIndex((c) => c.id === card.id) === i)
+          .map((card: JiaziCard, i: number) => {
           // 需要从 store 实时读 cost（因为 useLeverage 可能变了）
           return (
             <PublicCardItem
-              key={card.id}
+              key={`${i}-${card.id}`}
               card={card}
               index={i}
               selected={selectedPublicCard === i}

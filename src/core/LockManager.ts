@@ -114,6 +114,7 @@ export class LockManager {
     const locked: JiaziCard[] = [];
     const unlocked: JiaziCard[] = [];
     for (const card of publicCards) {
+      if (!card) continue; // 跳过 undefined 占位（executeBuy 买入后的空位）
       (this.lockedCardIds.includes(card.id) ? locked : unlocked).push(card);
     }
     return { locked, unlocked };

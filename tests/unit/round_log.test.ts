@@ -85,6 +85,7 @@ describe('TurnManager roundLog 回合数据留存', () => {
     const tm = await makeTm();
     tm.startGame();
     const publicCards = tm.getPublicCards();
+    const targetName = publicCards[0].name; // 买入前先存目标名（买入后 splice 数组会变）
     const qiBefore = tm.getQi();
     const ok = tm.executeBuy(0, false);
     expect(ok).toBe(true);
@@ -92,7 +93,7 @@ describe('TurnManager roundLog 回合数据留存', () => {
     const log = tm.getRoundLog();
     const entry = log[log.length - 1];
     expect(entry.action).toBe('buy');
-    expect(entry.actionCardName).toBe(publicCards[0].name);
+    expect(entry.actionCardName).toBe(targetName);
     expect(entry.actionCardScore).toBeTypeOf('number');
     expect(entry.buyScore).toBeTypeOf('number');
     expect(entry.actionQiChange).toBeLessThan(0); // 纳灵耗神识
@@ -172,6 +173,34 @@ describe('TurnManager roundLog 回合数据留存', () => {
     // 验证：买入动作发生时，目标牌在当回合（round 1）可见快照里
     const round1Snapshot = log.find((e) => e.round === 1)!;
     expect(round1Snapshot.publicCards.some((c) => c.id === target.id)).toBe(true);
+  });
+
+  it('买入后公共牌池立即不含刚买的牌（影子牌回归测试）', async () => {
+    const tm = await makeTm();
+    tm.startGame();
+    const publicCards = tm.getPublicCards();
+    const target = publicCards[0];
+    const targetId = target.id;
+
+    // 买入前：公共池 3 张且无重复
+    expect(publicCards.length).toBeGreaterThan(0);
+    const idSetBefore = new Set(publicCards.map((c) => c.id));
+    expect(idSetBefore.size).toBe(publicCards.length);
+
+    tm.executeBuy(0, false);
+
+    // 买入后：公共池不含刚买的牌（修复点：splice 立即移除）
+    const afterBuy = tm.getPublicCards();
+    expect(afterBuy.some((c) => c.id === targetId)).toBe(false);
+    // 无重复 id
+    const idSetAfter = new Set(afterBuy.map((c) => c.id));
+    expect(idSetAfter.size).toBe(afterBuy.length);
+
+    // 再调息（wait）：公共池依然不含已买入牌、无重复（残留不再被回堆成副本）
+    tm.executeWait();
+    const afterWait = tm.getPublicCards();
+    expect(afterWait.some((c) => c.id === targetId)).toBe(false);
+    expect(new Set(afterWait.map((c) => c.id)).size).toBe(afterWait.length);
   });
 
   it('存档往返保留 roundLog', async () => {

@@ -73,7 +73,8 @@ export class CardPoolManager {
     // 记录锁定牌在当前公共区中的原始索引位置（刷新时原地不动，不重排到前部）
     const lockedSlots = new Map<number, JiaziCard>();
     this.publicCards.forEach((card, index) => {
-      if (lockedIds.has(card.id)) lockedSlots.set(index, card);
+      // 跳过 undefined 占位（executeBuy 买入后留下的空位，锁定牌保持原索引）
+      if (card && lockedIds.has(card.id)) lockedSlots.set(index, card);
     });
 
     const drawCount = Math.min(

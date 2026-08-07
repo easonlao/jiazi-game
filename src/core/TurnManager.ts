@@ -617,9 +617,22 @@ export class TurnManager {
     // 否则当买的是非锁定牌时，`!isCardLocked(card.id)` 永远为 true，
     // 会把所有锁定的牌错误地回牌堆，导致 deck 与 publicCards 同时持有同一张锁定牌的引用，
     // 下一次 drawCards 可能从 deck 抽到这张牌的副本，使 publicCards 出现「两张同 id 锁定牌」（用户截图里的 bug）。
-    const remainingCards = this.cardPoolManager.getPublicCards()
-      .filter((c, i) => i !== cardIndex && !this.lockManager.isCardLocked(c.id));
-    this.cardPoolManager.returnCards(remainingCards);
+    //
+    // 2026-08-07 修复「影子牌」：买入的牌必须立即从公共区移除（否则它残留在数组里，
+    // 若下一回合调息 executeWait 把公共区未锁定牌回堆，残留的已买入牌会被一起回堆，
+    // deck 出现副本，drawCards 再次抽到 → 公共区重现该牌——用户实测公共区 4 张、5 张且重复乙卯无法选中）。
+    // 移除方式：非锁定牌位置置空（undefined 占位），锁定牌**保持原索引**（splice 会让锁定牌位置
+    // 前移，破坏 lock-position-drift 修复）；drawCards 在下回合重建时跳过空位。
+    const publicCards = this.cardPoolManager.getPublicCards();
+    const unlockedToReturn: JiaziCard[] = [];
+    for (let i = 0; i < publicCards.length; i++) {
+      const c = publicCards[i];
+      if (i === cardIndex) { publicCards[i] = undefined!; continue; } // 买入的：占位空
+      if (this.lockManager.isCardLocked(c.id)) continue;              // 锁定牌：原位保留
+      publicCards[i] = undefined!;                                     // 未选非锁：占位空 + 回堆
+      unlockedToReturn.push(c);
+    }
+    if (unlockedToReturn.length > 0) this.cardPoolManager.returnCards(unlockedToReturn);
 
     this.lastAction = 'buy';
     this.recordDecision('buy');
@@ -1105,7 +1118,8 @@ export class TurnManager {
     if (this.state !== 'player_action') return;
     const qi = this.qiManager.getQi();
     const hand = this.handManager.getHand();
-    const cards = this.cardPoolManager.getPublicCards();
+    // 过滤 undefined 占位：executeBuy 买入后立即调用本方法时，公共区数组含刚清空的空位
+    const cards = this.cardPoolManager.getPublicCards().filter((c): c is JiaziCard => c !== undefined);
     const handCount = hand.filter((s) => s !== null).length;
     const currentSeason = this.seasonCycle.getCurrentSeason();
     const nextSeason = this.seasonCycle.getFollowingSeason();
