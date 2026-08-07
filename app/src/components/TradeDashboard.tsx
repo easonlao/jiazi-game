@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useGameStore, seasonDisplay } from '../store';
 import { Element, YinYang, type RoundLogEntry } from '@core/index';
+import { aggregateCardSummaries, countSettled, type CardSummary } from '../lib/cardSummary';
 
 /** 五行色点（与 CardVisual 同源口径，看板回合卡用） */
 const elementDot: Record<Element, string> = {
@@ -64,6 +65,10 @@ export function TradeDashboard() {
   // 倒序：最新回合在上（翻交易记录习惯）
   const reversed = useMemo(() => [...filtered].reverse(), [filtered]);
 
+  // 经手卡牌：整局操作过的卡片总结（纯前端聚合，数据源 roundLog）
+  const cardSummaries = useMemo(() => aggregateCardSummaries(roundLog), [roundLog]);
+  const settledCount = useMemo(() => countSettled(cardSummaries), [cardSummaries]);
+
   if (!open) return null;
 
   return (
@@ -110,6 +115,11 @@ export function TradeDashboard() {
                 />
               </div>
             </div>
+            {/* 经手统计：整局操作过的卡 */}
+            <div className="flex items-center justify-between mt-2 text-[11px] text-ink-light">
+              <span>经手 <span className="font-bold text-ink tabular-nums">{cardSummaries.length}</span> 张</span>
+              <span>了结 <span className="font-bold text-ink tabular-nums">{settledCount}</span> 张</span>
+            </div>
             {/* 三栏统计：全部来自 store 真实计数 */}
             <div className="mt-3 pt-3 border-t border-[#E9E1CE] grid grid-cols-3 gap-2 text-center">
               <div>
@@ -127,6 +137,21 @@ export function TradeDashboard() {
             </div>
           </div>
         </div>
+
+        {/* 经手卡牌：整局操作过的卡片总结（总体行为，独立于逐回合流水） */}
+        {cardSummaries.length > 0 && (
+          <div className="px-4 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold font-serif text-ink">经手卡牌</span>
+              <span className="text-[11px] text-ink-light">整局操作 · 按最后操作倒序</span>
+            </div>
+            <div className="space-y-2">
+              {cardSummaries.map((s) => (
+                <CardSummaryRow key={s.name} summary={s} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 筛选 tabs：shrink-0 固定 + 底部留白，不与滚动列表粘连 */}
         <div className="shrink-0 px-4 pt-3 pb-2.5 flex gap-2 border-b border-[#E9E1CE]">
@@ -154,6 +179,69 @@ export function TradeDashboard() {
           {reversed.map((entry) => (
             <RoundCard key={entry.round} entry={entry} />
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 经手卡牌单行：五行色点 + 干支 + 阴阳 + 买/卖次数 + 收益明细 + 总收益 + 状态 */
+function CardSummaryRow({ summary }: { summary: CardSummary }) {
+  const dot = elementDot[summary.mainElement];
+  const isYang = summary.yinYang === YinYang.YANG;
+  const pnlClass = summary.total >= 0 ? 'text-qi-full' : 'text-qi-critical';
+  const detClass = (v: number) => (v >= 0 ? 'text-qi-full' : 'text-qi-critical');
+
+  return (
+    <div className="bg-white rounded-xl p-3 shadow-sm">
+      <div className="flex items-center gap-2.5">
+        {/* 卡名：五行色点 + 干支 + 阴阳徽章 */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`w-2 h-2 rounded-sm shrink-0 ${dot}`} aria-hidden />
+          <span className="text-[15px] font-bold font-serif text-ink">{summary.name}</span>
+          <span
+            className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-bold text-parchment ${
+              isYang ? 'bg-orange-500' : 'bg-violet-500'
+            }`}
+            title={isYang ? '阳 · 波动较大' : '阴 · 较稳'}
+          >
+            {isYang ? '阳' : '阴'}
+          </span>
+        </div>
+
+        {/* 次数与收益明细 */}
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-ink tabular-nums">
+            买 <span className="font-bold">{summary.buys}</span> 次 · 卖 <span className="font-bold">{summary.sells}</span> 次
+          </div>
+          <div className="text-[10px] text-ink-light mt-0.5 truncate tabular-nums">
+            {summary.sells > 0 && (
+              <span className={detClass(summary.sellEarnings)}>卖出 {fmtScore(summary.sellEarnings)}</span>
+            )}
+            {summary.sells > 0 && summary.holdEarnings !== 0 && <span className="text-ink-light"> · </span>}
+            {summary.holdEarnings !== 0 && (
+              <span className={detClass(summary.holdEarnings)}>炼化 {fmtScore(summary.holdEarnings)}</span>
+            )}
+            {summary.penalty > 0 && (
+              <>
+                <span className="text-ink-light"> · </span>
+                <span className="text-qi-critical">反噬 -{fmtScore(summary.penalty)}</span>
+              </>
+            )}
+            {summary.sells === 0 && summary.holdEarnings === 0 && summary.penalty === 0 && (
+              <span>暂无收益</span>
+            )}
+          </div>
+        </div>
+
+        {/* 总收益 + 状态 */}
+        <div className="text-right shrink-0">
+          <div className={`text-base font-bold tabular-nums ${pnlClass}`}>
+            {summary.total >= 0 ? '+' : ''}{fmtScore(summary.total)}
+          </div>
+          <div className={`text-[10px] ${summary.holding ? 'text-amber-600' : 'text-ink-light'}`}>
+            {summary.holding ? '持有中' : '已了结'}
+          </div>
         </div>
       </div>
     </div>
