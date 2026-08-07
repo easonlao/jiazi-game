@@ -56,6 +56,8 @@ export function TradeDashboard() {
   const totalSells = useGameStore((s) => s.totalSells);
   const marginCallCount = useGameStore((s) => s.marginCallCount);
   const [filter, setFilter] = useState<TabFilter>('all');
+  /** 当前展开轨迹的卡名（同时只展开一张，避免多卡叠高） */
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     if (filter === 'all') return roundLog;
@@ -83,14 +85,14 @@ export function TradeDashboard() {
           >
             ←
           </button>
-          <h2 className="text-lg font-bold font-serif text-ink">行迹 · 交易看板</h2>
+          <h2 className="text-lg font-bold font-serif text-ink">行迹</h2>
           <span className="px-3 py-1 rounded-full bg-wood-mid text-parchment text-xs font-medium">
             {seasonDisplay(season)} · 天时
           </span>
         </div>
 
-        {/* Hero 卡：固定不滚动（当前状态总览） */}
-        <div className="px-4 pt-3 shrink-0">
+        {/* Hero 卡：固定不滚动（当前状态总览）——底部 border 与滚动区明确分隔，滚动时不粘连 */}
+        <div className="px-4 pt-3 pb-3 shrink-0 border-b border-wood-light/40">
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <span className="text-sm text-ink-light">当前修为</span>
@@ -149,14 +151,14 @@ export function TradeDashboard() {
               </div>
               <div className="space-y-2">
                 {cardSummaries.map((s) => (
-                  <CardSummaryRow key={s.name} summary={s} roundLog={roundLog} />
+                  <CardSummaryRow key={s.name} summary={s} roundLog={roundLog} expandedName={expandedCard} onToggle={setExpandedCard} />
                 ))}
               </div>
             </div>
           )}
 
           {/* 筛选 tabs：sticky 固定，滚动到回合列表时仍可切换 */}
-          <div className="sticky top-0 z-10 shrink-0 px-4 pt-3 pb-2.5 flex gap-2 border-b border-[#E9E1CE] bg-parchment">
+          <div className="sticky top-0 z-10 shrink-0 px-4 pb-2.5 pt-2 flex gap-2 border-b border-[#E9E1CE] bg-parchment">
             {TABS.map((t) => (
               <button
                 key={t.key}
@@ -189,8 +191,15 @@ export function TradeDashboard() {
 }
 
 /** 经手卡牌单行：五行色点 + 干支 + 阴阳 + 买/卖次数 + 收益明细 + 总收益 + 状态；点击展开操作轨迹 */
-function CardSummaryRow({ summary, roundLog }: { summary: CardSummary; roundLog: RoundLogEntry[] }) {
-  const [expanded, setExpanded] = useState(false);
+function CardSummaryRow({
+  summary, roundLog, expandedName, onToggle,
+}: {
+  summary: CardSummary;
+  roundLog: RoundLogEntry[];
+  expandedName: string | null;
+  onToggle: (name: string) => void;
+}) {
+  const expanded = expandedName === summary.name;
   const dot = elementDot[summary.mainElement];
   const isYang = summary.yinYang === YinYang.YANG;
   const pnlClass = summary.total >= 0 ? 'text-qi-full' : 'text-qi-critical';
@@ -199,7 +208,7 @@ function CardSummaryRow({ summary, roundLog }: { summary: CardSummary; roundLog:
   return (
     <div
       className="bg-white rounded-xl p-3 shadow-sm cursor-pointer transition-colors hover:bg-[#FBF8F0]"
-      onClick={() => setExpanded((v) => !v)}
+      onClick={() => onToggle(summary.name)}
       role="button"
       aria-expanded={expanded}
       aria-label={`${summary.name} 操作轨迹`}
@@ -222,11 +231,11 @@ function CardSummaryRow({ summary, roundLog }: { summary: CardSummary; roundLog:
         {/* 次数与收益明细 */}
         <div className="flex-1 min-w-0">
           <div className="text-xs text-ink tabular-nums">
-            买 <span className="font-bold">{summary.buys}</span> 次 · 卖 <span className="font-bold">{summary.sells}</span> 次
+            纳灵 <span className="font-bold">{summary.buys}</span> 次 · 释灵 <span className="font-bold">{summary.sells}</span> 次
           </div>
           <div className="text-[10px] text-ink-light mt-0.5 truncate tabular-nums">
             {summary.sells > 0 && (
-              <span className={detClass(summary.sellEarnings)}>卖出 {fmtScore(summary.sellEarnings)}</span>
+              <span className={detClass(summary.sellEarnings)}>释灵 {fmtScore(summary.sellEarnings)}</span>
             )}
             {summary.sells > 0 && summary.holdEarnings !== 0 && <span className="text-ink-light"> · </span>}
             {summary.holdEarnings !== 0 && (
@@ -255,8 +264,12 @@ function CardSummaryRow({ summary, roundLog }: { summary: CardSummary; roundLog:
         </div>
       </div>
 
-      {/* 展开：操作轨迹时间线 */}
-      {expanded && <CardTraceView summary={summary} roundLog={roundLog} />}
+      {/* 展开：操作轨迹时间线（限高内部滚动，避免单卡展开撑爆区块） */}
+      {expanded && (
+        <div className="mt-3 pt-2.5 border-t border-dashed border-[#E9E1CE] max-h-56 overflow-y-auto">
+          <CardTraceView summary={summary} roundLog={roundLog} />
+        </div>
+      )}
     </div>
   );
 }
@@ -267,7 +280,7 @@ function CardTraceView({ summary, roundLog }: { summary: CardSummary; roundLog: 
   if (trace.length === 0) return null;
 
   return (
-    <div className="mt-3 pt-2.5 border-t border-dashed border-[#E9E1CE]">
+    <div>
       <div className="flex items-center gap-3">
         {/* 时间线轴：色点 + 连线 */}
         <div className="flex flex-col items-center shrink-0">
@@ -417,7 +430,7 @@ function ActionResult({ entry }: { entry: RoundLogEntry }) {
         <div className={`text-base font-bold tabular-nums ${sell >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
           {sell >= 0 ? '+' : ''}{fmtScore(sell)}
         </div>
-        <div className="text-[10px] text-ink-light">卖出收益</div>
+        <div className="text-[10px] text-ink-light">释灵收益</div>
       </div>
     );
   }

@@ -14,11 +14,14 @@ export class ScoreManager {
   private score: number;
   private totalHoldEarnings: number;
   private totalSellEarnings: number;
+  /** 反噬罚分累计（局终展示"反噬扣分"用；独立于买卖收益口径） */
+  private totalMarginCallPenalty: number;
 
   constructor() {
     this.score = 0;
     this.totalHoldEarnings = 0;
     this.totalSellEarnings = 0;
+    this.totalMarginCallPenalty = 0;
   }
 
   /**
@@ -34,11 +37,13 @@ export class ScoreManager {
    * @param score 总分
    * @param hold 总持仓收益
    * @param sell 总卖出收益
+   * @param marginCallPenalty 反噬罚分累计（老存档无此字段时默认 0）
    */
-  setScore(score: number, hold: number, sell: number): void {
+  setScore(score: number, hold: number, sell: number, marginCallPenalty: number = 0): void {
     this.score = score;
     this.totalHoldEarnings = hold;
     this.totalSellEarnings = sell;
+    this.totalMarginCallPenalty = marginCallPenalty;
   }
 
   /**
@@ -116,6 +121,12 @@ export class ScoreManager {
    */
   applyMarginCallPenalty(penaltyAmount: number): void {
     this.score -= penaltyAmount;
+    this.totalMarginCallPenalty += penaltyAmount;
+  }
+
+  /** 获取反噬罚分累计 */
+  getTotalMarginCallPenalty(): number {
+    return this.totalMarginCallPenalty;
   }
 
   /**
@@ -125,5 +136,6 @@ export class ScoreManager {
     this.score = 0;
     this.totalHoldEarnings = 0;
     this.totalSellEarnings = 0;
+    this.totalMarginCallPenalty = 0;
   }
 }

@@ -262,7 +262,7 @@ export function SettlementPreviewModal() {
               {projectedLeverageCount > 0 && (
                 <div className="mt-1 border-t border-blue-600/15 pt-1 text-[11px]">
                   <span className="text-blue-700">燃灵持仓 {projectedLeverageCount} 张：神识不足时可能被反噬</span>
-                  <span className="text-ink-light/70"> · 反噬扣修为 = 杠杆 × |评分| × 3，被反噬牌无卖出收益</span>
+                  <span className="text-ink-light/70"> · 反噬扣修为 = 杠杆 × |评分| × 3，被反噬牌无释灵收益</span>
                 </div>
               )}
 

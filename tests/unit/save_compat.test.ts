@@ -142,6 +142,20 @@ describe('存档版本兼容（旧档 → 新代码）', () => {
 
     expect(() => tm.importSnapshot(badSave)).toThrow();
   });
+
+  it('新档含 totalMarginCallPenalty：还原保留；老档缺该字段：回退 0', async () => {
+    // 新档：含反噬罚分累计
+    const tm1 = await makeTm();
+    tm1.importSnapshot(makeValidSnapshot({ totalMarginCallPenalty: 42 }));
+    expect(tm1.getTotalMarginCallPenalty()).toBe(42);
+
+    // 老档：无该字段（模拟旧版本存档）
+    const tm2 = await makeTm();
+    const oldSave = makeValidSnapshot();
+    delete (oldSave as any).totalMarginCallPenalty;
+    tm2.importSnapshot(oldSave);
+    expect(tm2.getTotalMarginCallPenalty()).toBe(0);
+  });
 });
 
 describe('GameSaveService 坏档防护（load 路径）', () => {

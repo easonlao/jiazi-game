@@ -179,7 +179,8 @@ describe('aggregateCardSummaries 经手卡牌聚合', () => {
     expect(s.penalty).toBe(24);
     expect(s.holdEarnings).toBe(5);
     expect(s.total).toBe(5 - 24);
-    expect(s.holding).toBe(true); // 买 1 卖 0，仍持有（反噬清仓不计入卖出）
+    expect(s.marginCalls).toBe(1);
+    expect(s.holding).toBe(false); // 买 1 卖 0 反噬 1：净持仓 0，已了结（反噬强制清仓）
   });
 
   it('排序按最后操作回合倒序', () => {
@@ -205,6 +206,28 @@ describe('aggregateCardSummaries 经手卡牌聚合', () => {
     expect(s.sells).toBe(1);
     expect(s.holding).toBe(true); // 净持有 1 张
     expect(s.lastRound).toBe(6);
+  });
+
+  it('反噬清仓后再买入：净持仓 1，仍持有', () => {
+    const log: RoundLogEntry[] = [
+      entry({ round: 2, action: 'buy', actionCardName: '丙寅' }),
+      entry({
+        round: 4,
+        settlement: {
+          round: 4, season: 'spring', holdEarnings: 0, holdQiCost: 0,
+          holdItems: [], baseQiRecover: 10, waitQiRecover: 0,
+          marginCallTriggered: true,
+          marginCallDetails: [{ cardName: '丙寅', slotIndex: 0, penaltyScore: 30, leverage: 2, cardScore: -10, reason: '测试' }],
+          finalQi: 50, finalScore: 0,
+        },
+      }),
+      entry({ round: 7, action: 'buy', actionCardName: '丙寅' }),
+    ];
+
+    const [s] = aggregateCardSummaries(log);
+    expect(s.buys).toBe(2);
+    expect(s.marginCalls).toBe(1);
+    expect(s.holding).toBe(true); // 买 2 - 反噬 1 = 净持仓 1
   });
 
   it('countSettled 统计已了结张数', () => {

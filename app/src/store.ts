@@ -10,6 +10,7 @@ import {
   type JiaziCard,
   type LeaderboardEntry,
   type RoundLogEntry,
+  type DecisionEntry,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -65,15 +66,21 @@ interface GameStore {
   lastSettlement: SettlementDetail | null;
   /** 回合数据留存（交易看板数据源）：每回合一条已发生事实记录，只读消费 */
   roundLog: RoundLogEntry[];
+  /** 决策日志（局终行为评价数据源）：每次行动记录情境×动作，只读消费 */
+  decisionLog: DecisionEntry[];
   totalBuys: number;
   totalSells: number;
   totalWaits: number;
   totalLeverageBuys: number;
+  /** 锁定次数（行为画像"预判"维度数据源） */
+  totalLocks: number;
   marginCallCount: number;
   /** 本局累计炼化收益（ScoreManager.totalHoldEarnings，局终修为构成用） */
   totalHoldEarnings: number;
   /** 本局累计卖出收益（ScoreManager.totalSellEarnings，局终修为构成用） */
   totalSellEarnings: number;
+  /** 本局反噬罚分累计（ScoreManager.totalMarginCallPenalty，局终展示反噬扣分用） */
+  totalMarginCallPenalty: number;
 
   // 交互状态
   selectedPublicCard: number;
@@ -184,13 +191,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   totalRounds: 60,
   lastSettlement: null,
   roundLog: [],
+  decisionLog: [],
   totalBuys: 0,
   totalSells: 0,
   totalWaits: 0,
   totalLeverageBuys: 0,
+  totalLocks: 0,
   marginCallCount: 0,
   totalHoldEarnings: 0,
   totalSellEarnings: 0,
+  totalMarginCallPenalty: 0,
 
   selectedPublicCard: -1,
   selectedHandCard: -1,
@@ -249,12 +259,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       totalRounds: tm.getTotalRounds(),
       lastSettlement: settlement,
       roundLog: [...tm.getRoundLog()],
+      decisionLog: [...tm.getDecisionLog()],
       totalBuys: tm.getTotalBuys(),
       totalSells: tm.getTotalSells(),
       totalWaits: tm.getTotalWaits(),
       totalHoldEarnings: tm.getTotalHoldEarnings(),
       totalSellEarnings: tm.getTotalSellEarnings(),
+      totalMarginCallPenalty: tm.getTotalMarginCallPenalty(),
       totalLeverageBuys: tm.getTotalLeverageBuys(),
+      totalLocks: tm.getTotalLocks(),
       marginCallCount: nextMarginCallCount,
       lockedCardIds: tm.getLockedCardIds(),
     });
@@ -351,9 +364,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 开始新游戏前清除旧存档
     tm.clearSave();
     set({ hasSave: false });
+    // 重置引擎（清空上一局的 roundLog/decisionLog/手牌/牌池等），再开新局。
+    // 否则复用同一 TurnManager 实例时，新局会残留上一局的回合记录（行迹可见旧数据）。
+    // 注意：不能在重置后清空 FX 事件——首回合合法回气（+10）是正常事件，
+    // 清除会导致开局回气动画丢失；上一局的残留动画已在 reset() 中清空。
+    tm.reset();
     tm.startGame();
     get()._sync();
-    set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null });
+    set({
+      selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
+      pendingAction: null, settlementPreview: null,
+    });
   },
 
   loadGameFromSave() {
@@ -421,6 +442,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       settlementPreview: null,
       lastSettlement: null,
       roundLog: [],
+      decisionLog: [],
       // 清空 FX 事件，避免残留动画在重开时误触发
       seasonEvent: null,
       marginCallEvent: null,
@@ -531,7 +553,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const action: SettlementPreviewAction = { type: 'buy', cardIndex, leverage: get().useLeverage };
     const preview = tm.previewSettlement(action);
     if (!preview) {
-      get().showToast('当前无法买入');
+      get().showToast('当前无法纳灵');
       return;
     }
     set({ pendingAction: action, settlementPreview: preview });
@@ -544,7 +566,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const action: SettlementPreviewAction = { type: 'sell', slotIndex };
     const preview = tm.previewSettlement(action);
     if (!preview) {
-      get().showToast('当前无法卖出');
+      get().showToast('当前无法释灵');
       return;
     }
     set({ pendingAction: action, settlementPreview: preview });

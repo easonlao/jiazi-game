@@ -105,6 +105,33 @@ export type SettlementPreviewAction =
   | { type: 'sell'; slotIndex: number }
   | { type: 'wait' };
 
+/**
+ * 决策情境类型（局终行为评价用）。
+ * 玩家每次行动时，用行动前的状态判定当前属于哪个情境。
+ */
+export type DecisionScenario =
+  /** 好牌当前：神识充足 + 公共牌有高分牌（>=15） */
+  | 'good_card_available'
+  /** 坏牌在手：手牌有评分转负且下季不反弹 */
+  | 'bad_card_holding'
+  /** 未来好牌：公共牌未来2季评分高且当前便宜 */
+  | 'future_good_card'
+  /** 神识告急：神识低 + 持仓耗神大 */
+  | 'qi_low'
+  /** 强牌杠杆：神识极高 + 评分极高且下季不崩 */
+  | 'strong_card_leverage';
+
+/** 决策日志条目：某回合玩家面对某情境做出的选择 */
+export interface DecisionEntry {
+  /** 回合序号 */
+  round: number;
+  /** 情境（行动前判定） */
+  scenario: DecisionScenario;
+  /** 实际动作：buy / sell / wait / lock / unlock */
+  action: string;
+}
+
+
 /** 主动卖出时的价差与气量流转明细。 */
 export interface SalePreviewBreakdown {
   buyScore: number;
@@ -219,8 +246,12 @@ export class TurnManager {
   private totalSells: number = 0;
   private totalWaits: number = 0;
   private totalLeverageBuys: number = 0;
+  /** 锁定次数（executeLockCard 成功 +1；行为画像"预判"维度数据源） */
+  private totalLocks: number = 0;
   /** 回合数据留存：每回合一条完整记录（交易看板/局终总结的数据源） */
   private roundLog: RoundLogEntry[] = [];
+  /** 决策日志：每次行动记录「情境 × 动作」（局终行为评价用） */
+  private decisionLog: DecisionEntry[] = [];
   /** 最后行动的卡牌信息快照（buildRoundLogEntry 归档用，行动时同步更新） */
   private lastActionCard: LastActionCardInfo | null = null;
 
@@ -283,7 +314,9 @@ export class TurnManager {
     this.totalSells = 0;
     this.totalWaits = 0;
     this.totalLeverageBuys = 0;
+    this.totalLocks = 0;
     this.roundLog = [];
+    this.decisionLog = [];
     this.lastActionCard = null;
 
     this.saveService = new GameSaveService(options?.storage);
@@ -589,6 +622,7 @@ export class TurnManager {
     this.cardPoolManager.returnCards(remainingCards);
 
     this.lastAction = 'buy';
+    this.recordDecision('buy');
     this.advanceTurn();
     return true;
   }
@@ -643,6 +677,7 @@ export class TurnManager {
     }
 
     this.lastAction = 'sell';
+    this.recordDecision('sell');
     this.advanceTurn();
     return true;
   }
@@ -660,6 +695,7 @@ export class TurnManager {
     this.cardPoolManager.returnCards(unlocked);
 
     this.lastAction = 'wait';
+    this.recordDecision('wait');
     this.totalWaits++;
     // 等待无卡牌行动：清空行动卡快照（buildRoundLogEntry 归档时 actionCardName 为 null）
     this.lastActionCard = null;
@@ -682,7 +718,11 @@ export class TurnManager {
       cardIndex,
       this.qiManager.getQi(),
     );
-    if (result.ok) this.lastAction = 'lock';
+    if (result.ok) {
+      this.lastAction = 'lock';
+      this.totalLocks++;
+      this.recordDecision('lock');
+    }
     return result;
   }
 
@@ -698,7 +738,10 @@ export class TurnManager {
       this.cardPoolManager.getPublicCards(),
       cardIndex,
     );
-    if (ok) this.lastAction = 'unlock';
+    if (ok) {
+      this.lastAction = 'unlock';
+      this.recordDecision('unlock');
+    }
     return ok;
   }
 
@@ -760,6 +803,7 @@ export class TurnManager {
       score: this.scoreManager.getScore(),
       totalHoldEarnings: this.scoreManager.getTotalHoldEarnings(),
       totalSellEarnings: this.scoreManager.getTotalSellEarnings(),
+      totalMarginCallPenalty: this.scoreManager.getTotalMarginCallPenalty(),
       totalBuys: this.totalBuys,
       totalSells: this.totalSells,
       totalWaits: this.totalWaits,
@@ -798,7 +842,7 @@ export class TurnManager {
     this.lastAction = data.lastAction as ActionType | null;
 
     // 2. 还原积分
-    this.scoreManager.setScore(data.score, data.totalHoldEarnings, data.totalSellEarnings);
+    this.scoreManager.setScore(data.score, data.totalHoldEarnings, data.totalSellEarnings, data.totalMarginCallPenalty ?? 0);
 
     // 还原统计数据
     this.totalBuys = data.totalBuys !== undefined ? data.totalBuys : 0;
@@ -1047,12 +1091,72 @@ export class TurnManager {
     return this.roundLog;
   }
 
+  /** 获取决策日志（局终行为评价数据源）。只读，UI 不得修改。 */
+  getDecisionLog(): readonly DecisionEntry[] {
+    return this.decisionLog;
+  }
+
+  /**
+   * 记录一次决策样本：判定行动前的状态属于哪个情境，记录实际动作。
+   * 在 executeBuy/Sell/Wait/Lock/Unlock 成功后调用（行动前状态已读取）。
+   * @param action 实际执行的动作
+   */
+  private recordDecision(action: string): void {
+    if (this.state !== 'player_action') return;
+    const qi = this.qiManager.getQi();
+    const hand = this.handManager.getHand();
+    const cards = this.cardPoolManager.getPublicCards();
+    const handCount = hand.filter((s) => s !== null).length;
+    const currentSeason = this.seasonCycle.getCurrentSeason();
+    const nextSeason = this.seasonCycle.getFollowingSeason();
+    const afterIdx = (['spring', 'summer', 'autumn', 'winter'].indexOf(nextSeason) + 1) % 4;
+    const afterNextSeason = ['spring', 'summer', 'autumn', 'winter'][afterIdx];
+
+    const slots = hand.filter((s) => s !== null);
+    const hasBadCard = slots.some((slot) => {
+      const cur = this.getCardScore(slot.card, currentSeason);
+      const next = this.getCardScore(slot.card, nextSeason);
+      return cur < 0 && next < 0;
+    });
+    const bestCardCur = cards.length > 0
+      ? Math.max(...cards.map((c) => this.getCardScore(c, currentSeason)))
+      : -999;
+    const hasFutureGood = cards.some((c) => {
+      const next = this.getCardScore(c, nextSeason);
+      const afterNext = this.getCardScore(c, afterNextSeason);
+      const cur = this.getCardScore(c, currentSeason);
+      return Math.max(next, afterNext) >= 22 && cur <= 12;
+    });
+    const canBuy = handCount < 3 && cards.length > 0;
+    const bestCard = cards.length > 0
+      ? cards.map((c) => ({ c, cur: this.getCardScore(c, currentSeason), next: this.getCardScore(c, nextSeason) }))
+          .sort((a, b) => b.cur - a.cur)[0]
+      : null;
+
+    // 情境判定（优先级：坏牌 > 神识告急 > 未来好牌 > 强牌杠杆 > 好牌当前）
+    let scenario: DecisionScenario | null = null;
+    if (hasBadCard) scenario = 'bad_card_holding';
+    else if (qi < 20 && slots.length > 0) scenario = 'qi_low';
+    else if (hasFutureGood && qi > 30) scenario = 'future_good_card';
+    else if (qi > 50 && canBuy && bestCard && bestCard.cur >= 20 && bestCard.next - bestCard.cur >= -5) scenario = 'strong_card_leverage';
+    else if (canBuy && qi > 20 && bestCardCur >= 15) scenario = 'good_card_available';
+
+    if (scenario) {
+      this.decisionLog.push({ round: this.currentRound, scenario, action });
+    }
+  }
+
   getTotalHoldEarnings(): number {
     return this.scoreManager.getTotalHoldEarnings();
   }
 
   getTotalSellEarnings(): number {
     return this.scoreManager.getTotalSellEarnings();
+  }
+
+  /** 获取反噬罚分累计（局终展示"反噬扣分"用） */
+  getTotalMarginCallPenalty(): number {
+    return this.scoreManager.getTotalMarginCallPenalty();
   }
 
   /** 预览买入卡牌气消耗 */
@@ -1257,6 +1361,11 @@ export class TurnManager {
 
   getTotalLeverageBuys(): number {
     return this.totalLeverageBuys;
+  }
+
+  /** 锁定次数（行为画像"预判"维度数据源） */
+  getTotalLocks(): number {
+    return this.totalLocks;
   }
 
   getTotalLockedQi(): number {

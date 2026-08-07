@@ -7,6 +7,8 @@ export type {
   SettlementPreview,
   SettlementPreviewAction,
   RoundLogEntry,
+  DecisionScenario,
+  DecisionEntry,
 } from './TurnManager';
 
 export { SeasonCycle } from './SeasonCycle';

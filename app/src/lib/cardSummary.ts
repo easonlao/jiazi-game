@@ -31,9 +31,11 @@ export interface CardSummary {
   holdEarnings: number;
   /** 反噬罚分累计（marginCallDetails[].penaltyScore） */
   penalty: number;
+  /** 反噬次数（marginCallDetails 中该卡出现的次数；反噬会强制清仓离开丹田） */
+  marginCalls: number;
   /** 最后操作回合（买入或卖出的最大 round，用于排序） */
   lastRound: number;
-  /** 是否仍持有：买入次数 > 卖出次数 */
+  /** 是否仍持有：净持仓 = 买入 - 卖出 - 反噬清仓 > 0 */
   holding: boolean;
   /** 单卡总收益 = 卖出 + 炼化 - 反噬罚分 */
   total: number;
@@ -73,6 +75,7 @@ export function aggregateCardSummaries(roundLog: RoundLogEntry[]): CardSummary[]
         sellEarnings: 0,
         holdEarnings: 0,
         penalty: 0,
+        marginCalls: 0,
         lastRound: round,
         holding: false,
         total: 0,
@@ -98,15 +101,18 @@ export function aggregateCardSummaries(roundLog: RoundLogEntry[]): CardSummary[]
     for (const item of entry.settlement.holdItems) {
       ensure(item.cardName, entry.round).holdEarnings += item.earning;
     }
-    // 结算层：反噬罚分
+    // 结算层：反噬罚分（每出现一次 = 该卡被反噬清仓一次，离开丹田）
     for (const mc of entry.settlement.marginCallDetails) {
-      ensure(mc.cardName, entry.round).penalty += mc.penaltyScore;
+      const s = ensure(mc.cardName, entry.round);
+      s.penalty += mc.penaltyScore;
+      s.marginCalls++;
     }
   }
 
   const summaries = [...map.values()];
   for (const s of summaries) {
-    s.holding = s.buys > s.sells;
+    // 净持仓 = 买入 - 卖出 - 反噬清仓；> 0 才算仍在持有
+    s.holding = s.buys - s.sells - s.marginCalls > 0;
     s.total = s.sellEarnings + s.holdEarnings - s.penalty;
   }
   // 最后操作回合倒序（最近操作的卡在前）

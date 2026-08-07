@@ -1,44 +1,53 @@
 import { useGameStore } from '../store';
+import { evaluateGame, evaluateDecisions, decisionQualityScore } from '../lib/gameReview';
 
 /**
  * 局终总结（游戏结束弹窗）
  *
- * 展示最终修为 + 修为构成（炼化/卖出/反噬比例）+ 三维度判定（风格/风控/择时）。
- * 数据源全部来自真实字段：score / totalHoldEarnings / totalSellEarnings /
- * marginCallCount / totalBuys / totalSells——不引入任何虚构统计。
+ * 双层评价（2026-08-07 用户方向，分数与行为解耦）：
+ * - 境界：按最终修为分档（炼气→飞升七档，纯分数结果，运气+实力共同决定）
+ * - 决策质量：五维画像（择机/止损/预判/避险/进取），数据定义最优动作，
+ *   统计玩家每类情境的做对率，反向给出后续行动建议
  *
- * 维度判定规则（纯派生，可复算）：
- * - 风格：炼化收益 > 卖出收益 → 持有流；反之 → 差价流
- * - 风控：反噬 0 次 → 稳健；1 次 → 审慎；≥2 次 → 激进
- * - 择时：本局亏损（score < 0）→ 逆天；盈利 → 顺天
+ * 修为构成：炼化 + 卖出（正向来源），反噬是惩罚（不参与占比，单独标红）。
  */
 export function GameOverModal() {
   const score = useGameStore((s) => s.score);
   const totalHoldEarnings = useGameStore((s) => s.totalHoldEarnings);
   const totalSellEarnings = useGameStore((s) => s.totalSellEarnings);
+  const totalMarginCallPenalty = useGameStore((s) => s.totalMarginCallPenalty);
   const marginCallCount = useGameStore((s) => s.marginCallCount);
   const totalBuys = useGameStore((s) => s.totalBuys);
   const totalSells = useGameStore((s) => s.totalSells);
+  const totalLocks = useGameStore((s) => s.totalLocks);
+  const totalLeverageBuys = useGameStore((s) => s.totalLeverageBuys);
+  const totalWaits = useGameStore((s) => s.totalWaits);
+  const decisionLog = useGameStore((s) => s.decisionLog);
   const reset = useGameStore((s) => s.reset);
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
   const openDashboard = useGameStore((s) => s.openDashboard);
+
+  // 境界（纯分数结果）
+  const review = evaluateGame({
+    totalBuys, totalSells, totalWaits, totalLeverageBuys, totalLocks, marginCallCount, score,
+  });
+  const { realm } = review;
+
+  // 决策质量（数据定义最优，五维做对率）
+  const quality = evaluateDecisions(decisionLog);
+  const qualityScore = decisionQualityScore(quality);
 
   // 修为构成：炼化 + 卖出 是正向来源，反噬是惩罚（不参与占比，单独标红）
   const positive = Math.abs(totalHoldEarnings) + Math.abs(totalSellEarnings);
   const holdPct = positive > 0 ? Math.round((Math.abs(totalHoldEarnings) / positive) * 100) : 0;
   const sellPct = positive > 0 ? Math.round((Math.abs(totalSellEarnings) / positive) * 100) : 0;
 
-  // 三维度判定
-  const style = totalHoldEarnings > totalSellEarnings ? '持有流' : '差价流';
-  const risk = marginCallCount === 0 ? '稳健' : marginCallCount === 1 ? '审慎' : '激进';
-  const timing = score >= 0 ? '顺天' : '逆天';
-  const riskColor = marginCallCount === 0 ? 'text-qi-full' : marginCallCount === 1 ? 'text-qi-danger' : 'text-qi-critical';
-
   return (
     <div className="modal-backdrop absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="mx-4 w-full max-w-xs bg-parchment rounded-xl shadow-2xl p-6 text-center max-h-[92%] overflow-y-auto">
-        <h2 className="text-lg font-bold font-serif text-ink mb-1">一甲子终了</h2>
-        <p className="text-xs text-ink-light mb-3">汝之修为几何</p>
+        {/* 境界（分数结果分档） */}
+        <p className="text-3xl font-black font-serif text-gold mb-1">{realm.name}境</p>
+        <p className="text-xs text-ink-light mb-2">{realm.desc}</p>
 
         {/* 最终修为 */}
         <p className="text-4xl font-black text-gold mb-1 tabular-nums">
@@ -65,34 +74,51 @@ export function GameOverModal() {
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-sm bg-gold inline-block" />
-              卖出 {totalSellEarnings >= 0 ? '+' : ''}{totalSellEarnings.toFixed(1)}
+              释灵 {totalSellEarnings >= 0 ? '+' : ''}{totalSellEarnings.toFixed(1)}
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-sm bg-qi-critical inline-block" />
               反噬 ×{marginCallCount}
+              {totalMarginCallPenalty > 0 && (
+                <span className="text-qi-critical font-bold">（扣 {totalMarginCallPenalty.toFixed(1)}）</span>
+              )}
             </span>
           </div>
         </div>
 
-        {/* 三维度判定 */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          <div className="bg-[#FAF6EE] rounded-lg py-2">
-            <div className="text-[10px] text-ink-light">风格</div>
-            <div className="text-sm font-bold font-serif text-ink">{style}</div>
+        {/* 决策质量：五维做对率（数据定义最优，反向给建议） */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold font-serif text-ink">决策质量</span>
+            <span className="text-[11px] text-ink-light tabular-nums">
+              综合 {qualityScore}/100
+            </span>
           </div>
-          <div className="bg-[#FAF6EE] rounded-lg py-2">
-            <div className="text-[10px] text-ink-light">风控</div>
-            <div className={`text-sm font-bold font-serif ${riskColor}`}>{risk}</div>
-          </div>
-          <div className="bg-[#FAF6EE] rounded-lg py-2">
-            <div className="text-[10px] text-ink-light">择时</div>
-            <div className="text-sm font-bold font-serif text-ink">{timing}</div>
-          </div>
+          {quality.length === 0 ? (
+            <div className="text-[11px] text-ink-light py-2 text-center bg-white rounded-lg">本局未触发关键决策情境</div>
+          ) : (
+            <div className="space-y-1.5">
+              {quality.map((q) => (
+                <div key={q.scenario} className="bg-white rounded-lg px-3 py-2 flex items-center gap-2">
+                  <span className="text-[11px] text-ink-light w-8 shrink-0">{q.label}</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-[#E9E1CE] overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${q.rate >= 0.6 ? 'bg-qi-full' : 'bg-qi-danger'}`}
+                      style={{ width: `${Math.round(q.rate * 100)}%` }}
+                    />
+                  </div>
+                  <span className={`text-[11px] font-bold tabular-nums shrink-0 ${q.rate >= 0.6 ? 'text-qi-full' : 'text-qi-critical'}`}>
+                    {Math.round(q.rate * 100)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 行动统计小字 */}
         <p className="text-[10px] text-ink-light mb-4 tabular-nums">
-          纳灵 {totalBuys} 次 · 释灵 {totalSells} 次
+          纳灵 {totalBuys} · 释灵 {totalSells} · 燃灵 {totalLeverageBuys} · 牵神 {totalLocks}
         </p>
 
         <div className="flex flex-col gap-2">
