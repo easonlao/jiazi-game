@@ -18,8 +18,8 @@ import { MarginCallEngine } from './MarginCallEngine';
 /** 游戏主状态 */
 export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'game_over';
 
-/** 玩家操作类型 */
-export type ActionType = 'buy' | 'sell' | 'wait' | 'lock' | 'unlock';
+/** 玩家操作类型（settle = 终局出清：系统强制平仓，非玩家主动操作，不计入行为统计） */
+export type ActionType = 'buy' | 'sell' | 'wait' | 'lock' | 'unlock' | 'settle';
 
 export interface MarginCallDetail {
   cardName: string;
@@ -793,9 +793,74 @@ export class TurnManager {
   }
 
   /**
+   * 终局强制平仓：游戏结束时（第 60 回合结算后）对所有仍未卖出的持仓
+   * 按正常卖出公式（当前季评分 vs 买入评分 + 当前动态杠杆）强制结算。
+   *
+   * 设计决策（2026-08-07 用户确认）：
+   * - 结算价格 = 复用 executeSell 的 sellScore 公式，规则一致——强牌可能赚、垃圾牌可能亏
+   * - 收益计入修为（scoreManager.addSettleEarnings），独立统计口径 totalSettleEarnings
+   * - **不计入** totalSells（释灵次数）、**不写** decisionLog——系统行为非玩家主动行为，行为画像纯净
+   * - roundLog 每条出清卡追加一条 action='settle' 记录，看板以「出清」徽章区分
+   */
+  private settleEndgameHoldings(): void {
+    const hand = this.handManager.getHand();
+    const currentSeason = this.seasonCycle.getCurrentSeason();
+    const currentLeverage = this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason());
+
+    for (let i = 0; i < hand.length; i++) {
+      const slot = hand[i];
+      if (!slot) continue;
+
+      const currentScore = this.getCardScore(slot.card, currentSeason);
+      const effectiveLeverage = slot.useLeverage ? currentLeverage : 1;
+      const settleScore = this.scoreManager.calculateSellScore(currentScore, slot.buyScore, effectiveLeverage);
+
+      // 收益计入修为（独立口径，不入 totalSellEarnings / totalSells）
+      this.scoreManager.addSettleEarnings(settleScore);
+
+      // 卡回洗入牌池 + 归还占用气 + 清空槽位（终局后无后续玩法，但保持状态一致）
+      this.cardPoolManager.returnCards([slot.card]);
+      this.qiManager.recover(slot.lockedQi);
+      this.handManager.sell(i);
+
+      // 归档一条「出清」回合记录（round = 终局回合 61，供行迹看板展示）
+      this.roundLog.push({
+        round: this.currentRound,
+        season: currentSeason,
+        roundInSeason: this.seasonCycle.getCurrentRoundInSeason(),
+        action: 'settle',
+        actionCardName: slot.card.name,
+        actionCardScore: currentScore,
+        buyScore: slot.buyScore,
+        sellScore: settleScore,
+        actionQiChange: 0,
+        publicCards: [],
+        settlement: {
+          round: this.currentRound,
+          season: currentSeason,
+          holdEarnings: 0,
+          holdQiCost: 0,
+          holdItems: [],
+          baseQiRecover: 0,
+          waitQiRecover: 0,
+          marginCallTriggered: false,
+          marginCallDetails: [],
+          finalQi: this.qiManager.getQi(),
+          finalScore: this.scoreManager.getScore(),
+        },
+        scoreAfter: this.scoreManager.getScore(),
+        qiAfter: this.qiManager.getQi(),
+      });
+    }
+  }
+
+  /**
    * 结束当前游戏并触发结算
    */
   private endGame(): void {
+    // 终局强制平仓：所有未卖出持仓统一结算（用户设计决策 2026-08-07）
+    this.settleEndgameHoldings();
+
     this.state = 'game_over';
     this.onStateChange?.('game_over');
     this.onGameEnd?.(this.scoreManager.getScore());
@@ -817,6 +882,7 @@ export class TurnManager {
       totalHoldEarnings: this.scoreManager.getTotalHoldEarnings(),
       totalSellEarnings: this.scoreManager.getTotalSellEarnings(),
       totalMarginCallPenalty: this.scoreManager.getTotalMarginCallPenalty(),
+      totalSettleEarnings: this.scoreManager.getTotalSettleEarnings(),
       totalBuys: this.totalBuys,
       totalSells: this.totalSells,
       totalWaits: this.totalWaits,
@@ -855,7 +921,13 @@ export class TurnManager {
     this.lastAction = data.lastAction as ActionType | null;
 
     // 2. 还原积分
-    this.scoreManager.setScore(data.score, data.totalHoldEarnings, data.totalSellEarnings, data.totalMarginCallPenalty ?? 0);
+    this.scoreManager.setScore(
+      data.score,
+      data.totalHoldEarnings,
+      data.totalSellEarnings,
+      data.totalMarginCallPenalty ?? 0,
+      data.totalSettleEarnings ?? 0,
+    );
 
     // 还原统计数据
     this.totalBuys = data.totalBuys !== undefined ? data.totalBuys : 0;
@@ -901,6 +973,46 @@ export class TurnManager {
     // 8. 还原回合数据留存（兼容旧存档：roundLog 缺失则空——老玩家读旧档不崩，
     //    但看板只能从读档后的回合开始记录，历史回合无法追溯，属可接受的降级）
     this.roundLog = data.roundLog ? [...data.roundLog] : [];
+
+    // 8.5 读档降级补录：手牌中缺失 buy 记录（老存档无 roundLog 或记录不全）的卡，
+    //    补录近似买入记录。否则行迹聚合会产生"幽灵卡"——有炼化收益但无买入记录的卡
+    //    （buys=0），导致「经手卡牌数」虚增、「了结数」虚高（2026-08-07 数据一致性 issue）。
+    //    近似字段：season/roundInSeason 用当前值，actionQiChange=0（历史耗神不可考），
+    //    publicCards/settlement 用占位——只保证统计口径正确，不伪造历史细节。
+    const buyNames = new Set(this.roundLog.filter((e) => e.action === 'buy').map((e) => e.actionCardName));
+    for (const slot of restoredHand) {
+      if (!slot || buyNames.has(slot.card.name)) continue;
+      const season = this.seasonCycle.getCurrentSeason();
+      this.roundLog.push({
+        round: slot.buyRound,
+        season,
+        roundInSeason: 1,
+        action: 'buy',
+        actionCardName: slot.card.name,
+        actionCardScore: slot.buyScore,
+        buyScore: slot.buyScore,
+        sellScore: null,
+        actionQiChange: 0,
+        publicCards: [],
+        settlement: {
+          round: slot.buyRound,
+          season,
+          holdEarnings: 0,
+          holdQiCost: 0,
+          holdItems: [],
+          baseQiRecover: 0,
+          waitQiRecover: 0,
+          marginCallTriggered: false,
+          marginCallDetails: [],
+          finalQi: data.qi,
+          finalScore: data.score,
+        },
+        scoreAfter: data.score,
+        qiAfter: data.qi,
+      });
+    }
+    // 补录记录 round 可能小于现有记录，统一按回合排序保证看板正序展示
+    this.roundLog.sort((a, b) => a.round - b.round);
   }
 
   /**
@@ -1371,6 +1483,11 @@ export class TurnManager {
 
   getTotalWaits(): number {
     return this.totalWaits;
+  }
+
+  /** 终局出清收益累计（局终修为构成单独展示；独立于主动释灵收益） */
+  getTotalSettleEarnings(): number {
+    return this.scoreManager.getTotalSettleEarnings();
   }
 
   getTotalLeverageBuys(): number {

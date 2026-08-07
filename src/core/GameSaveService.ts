@@ -48,6 +48,8 @@ export interface GameSnapshot {
   totalSellEarnings: number;
   /** 反噬罚分累计。可选：老存档无此字段，读档时按 0 处理（历史数据不完整）。 */
   totalMarginCallPenalty?: number;
+  /** 终局出清收益累计。可选：老存档无此字段，读档时按 0 处理。 */
+  totalSettleEarnings?: number;
   totalBuys: number;
   totalSells: number;
   totalWaits: number;

@@ -18,6 +18,8 @@ CLAUDE.local.md
 
 # === Build Output ===
 dist/
+# 历史构建残留（dist.bak / dist.prev-* 等），均不进 git
+app/dist*/
 dist.stale-*/
 build/
 

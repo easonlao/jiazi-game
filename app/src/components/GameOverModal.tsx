@@ -15,6 +15,7 @@ export function GameOverModal() {
   const score = useGameStore((s) => s.score);
   const totalHoldEarnings = useGameStore((s) => s.totalHoldEarnings);
   const totalSellEarnings = useGameStore((s) => s.totalSellEarnings);
+  const totalSettleEarnings = useGameStore((s) => s.totalSettleEarnings);
   const totalMarginCallPenalty = useGameStore((s) => s.totalMarginCallPenalty);
   const marginCallCount = useGameStore((s) => s.marginCallCount);
   const totalBuys = useGameStore((s) => s.totalBuys);
@@ -37,10 +38,11 @@ export function GameOverModal() {
   const quality = evaluateDecisions(decisionLog);
   const qualityScore = decisionQualityScore(quality);
 
-  // 修为构成：炼化 + 卖出 是正向来源，反噬是惩罚（不参与占比，单独标红）
-  const positive = Math.abs(totalHoldEarnings) + Math.abs(totalSellEarnings);
+  // 修为构成：炼化 + 释灵 + 出清 是正向来源，反噬是惩罚（不参与占比，单独标红）
+  const positive = Math.abs(totalHoldEarnings) + Math.abs(totalSellEarnings) + Math.abs(totalSettleEarnings);
   const holdPct = positive > 0 ? Math.round((Math.abs(totalHoldEarnings) / positive) * 100) : 0;
   const sellPct = positive > 0 ? Math.round((Math.abs(totalSellEarnings) / positive) * 100) : 0;
+  const settlePct = positive > 0 ? Math.round((Math.abs(totalSettleEarnings) / positive) * 100) : 0;
 
   return (
     <div className="modal-backdrop absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -63,6 +65,7 @@ export function GameOverModal() {
               <>
                 <div className="bg-qi-full" style={{ width: `${holdPct}%` }} />
                 <div className="bg-gold" style={{ width: `${sellPct}%` }} />
+                {totalSettleEarnings !== 0 && <div className="bg-amber-500" style={{ width: `${settlePct}%` }} />}
               </>
             )}
             {positive === 0 && <div className="bg-wood-light/50 w-full" />}
@@ -76,6 +79,12 @@ export function GameOverModal() {
               <span className="w-2 h-2 rounded-sm bg-gold inline-block" />
               释灵 {totalSellEarnings >= 0 ? '+' : ''}{totalSellEarnings.toFixed(1)}
             </span>
+            {totalSettleEarnings !== 0 && (
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" />
+                出清 {totalSettleEarnings >= 0 ? '+' : ''}{totalSettleEarnings.toFixed(1)}
+              </span>
+            )}
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-sm bg-qi-critical inline-block" />
               反噬 ×{marginCallCount}

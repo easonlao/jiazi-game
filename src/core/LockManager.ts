@@ -140,7 +140,9 @@ export class LockManager {
       let worstId: number | null = null;
       let worstScore = Number.POSITIVE_INFINITY;
       for (const id of this.lockedCardIds) {
-        const card = publicCards.find((c) => c.id === id);
+        // 守卫 undefined：executeBuy 买入后公共牌数组存在占位空位（113f731 影子牌修复），
+        // 锁定牌不会在空位，跳过即可
+        const card = publicCards.find((c) => c && c.id === id);
         if (!card) continue;
         const score = this.deps.getCardScore(card, currentSeason);
         if (score < worstScore) {
@@ -151,7 +153,7 @@ export class LockManager {
       if (worstId === null) break;
       this.lockedCardIds = this.lockedCardIds.filter((id) => id !== worstId);
       autoUnlockedIds.push(worstId);
-      const card = publicCards.find((c) => c.id === worstId);
+      const card = publicCards.find((c) => c && c.id === worstId);
       if (card) this.deps.cardPoolManager.returnCards([card]);
       this.deps.qiManager.recover(LockManager.LOCK_COST_PER_CARD);
     }

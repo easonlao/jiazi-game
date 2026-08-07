@@ -240,6 +240,46 @@ describe('aggregateCardSummaries 经手卡牌聚合', () => {
     expect(countSettled(summaries)).toBe(1); // 甲子已了结，戊午持有中
   });
 
+  it('终局出清：settles 独立计数，收益计入 total，净持仓清空不再持有', () => {
+    const log: RoundLogEntry[] = [
+      entry({ round: 2, action: 'buy', actionCardName: '甲子', actionCardScore: 10 }),
+      entry({
+        round: 61,
+        action: 'settle',
+        actionCardName: '甲子',
+        actionCardScore: 18,
+        buyScore: 10,
+        sellScore: 32,
+      }),
+    ];
+    const [s] = aggregateCardSummaries(log);
+    expect(s.buys).toBe(1);
+    expect(s.sells).toBe(0); // 出清不是主动释灵
+    expect(s.settles).toBe(1);
+    expect(s.settleEarnings).toBe(32);
+    expect(s.total).toBeCloseTo(32, 5); // 无炼化/反噬，总收益 = 出清收益
+    expect(s.holding).toBe(false); // 买 1 出清 1：净持仓 0，已了结
+  });
+
+  it('出清轨迹条目：cardTrace 含 settle 记录', () => {
+    const log: RoundLogEntry[] = [
+      entry({ round: 2, action: 'buy', actionCardName: '甲子', actionCardScore: 10 }),
+      entry({
+        round: 61,
+        action: 'settle',
+        actionCardName: '甲子',
+        actionCardScore: 18,
+        buyScore: 10,
+        sellScore: 32,
+      }),
+    ];
+    const trace = cardTrace(log, '甲子');
+    expect(trace.map((t) => t.kind)).toEqual(['buy', 'settle']);
+    expect(trace[1].kind).toBe('settle');
+    expect(trace[1].earnings).toBe(32);
+    expect(trace[1].buyScore).toBe(10);
+  });
+
   it('调息/首回合无行动卡不产生聚合', () => {
     const log: RoundLogEntry[] = [
       entry({ round: 1, action: null }),

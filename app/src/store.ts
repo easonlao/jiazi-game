@@ -79,6 +79,8 @@ interface GameStore {
   totalHoldEarnings: number;
   /** 本局累计卖出收益（ScoreManager.totalSellEarnings，局终修为构成用） */
   totalSellEarnings: number;
+  /** 本局终局出清收益（ScoreManager.totalSettleEarnings，局终修为构成单独展示） */
+  totalSettleEarnings: number;
   /** 本局反噬罚分累计（ScoreManager.totalMarginCallPenalty，局终展示反噬扣分用） */
   totalMarginCallPenalty: number;
 
@@ -200,6 +202,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   marginCallCount: 0,
   totalHoldEarnings: 0,
   totalSellEarnings: 0,
+  totalSettleEarnings: 0,
   totalMarginCallPenalty: 0,
 
   selectedPublicCard: -1,
@@ -265,6 +268,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       totalWaits: tm.getTotalWaits(),
       totalHoldEarnings: tm.getTotalHoldEarnings(),
       totalSellEarnings: tm.getTotalSellEarnings(),
+      totalSettleEarnings: tm.getTotalSettleEarnings(),
       totalMarginCallPenalty: tm.getTotalMarginCallPenalty(),
       totalLeverageBuys: tm.getTotalLeverageBuys(),
       totalLocks: tm.getTotalLocks(),

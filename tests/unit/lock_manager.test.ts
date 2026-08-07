@@ -205,5 +205,20 @@ describe('LockManager 直接单测', () => {
       expect(lockManager.getLockedCardIds()).toEqual([]);
       expect(qiManager.getQi()).toBe(3);
     });
+
+    it('公共牌含 undefined 占位（executeBuy 影子牌修复副作用）：自动解锁不崩溃', () => {
+      // 回归：113f731 给三处遍历加了 undefined 守卫，但 settleLockCost 漏了——
+      // executeBuy 买入后公共牌数组存在占位空位，锁定牌 + 气不足触发自动解锁时
+      // find(c => c.id === id) 遇 undefined 抛错（expert-lock 蒙特卡罗撞出）
+      const { lockManager, qiManager, setPublicCards } = makeDeps(3);
+      const cards = makePublicCards();
+      const withHoles = [undefined, cards[1], undefined];
+      setPublicCards(withHoles as any);
+      lockManager.tryLock(cards, 1, 3); // 锁定乙丑（公共池位置 1，保留）
+      expect(() => lockManager.settleLockCost('spring')).not.toThrow();
+      // 扣 5 → 气 -2 → 自动解锁乙丑并返 5 气 → 气 3
+      expect(lockManager.getLockedCardIds()).toEqual([]);
+      expect(qiManager.getQi()).toBe(3);
+    });
   });
 });

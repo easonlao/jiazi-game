@@ -286,16 +286,18 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 终局后 ActionBar 显示"游戏结束"状态文本
     await expect(page.getByText('游戏结束', { exact: true })).toBeVisible({ timeout: 10_000 });
 
-    // 验证游戏结束弹窗（使用 role 定位标题，避免与状态文字、Toast 歧义）
-    const gameOverTitle = page.getByRole('heading', { name: '一甲子终了' });
-    await expect(gameOverTitle).toBeVisible({ timeout: 15_000 });
+    // 验证游戏结束弹窗（a1dae8b 局终评价重构后无「一甲子终了」标题，
+    // 弹窗直接从境界名开始——用「最终修为」+ 境界名定位模态框）
+    const gameOverModal = page.locator('.modal-backdrop').filter({ hasText: '最终修为' });
+    await expect(gameOverModal).toBeVisible({ timeout: 15_000 });
+    // 境界名（如「炼气境」）渲染
+    await expect(gameOverModal.getByText(/境$/)).toBeVisible();
 
     // 验证分数显示（在游戏结束弹窗内）
-    const gameOverModal = page.locator('.modal-backdrop').filter({ has: page.getByRole('heading', { name: '一甲子终了' }) });
-    await expect(gameOverModal.getByText(/修为$/)).toBeVisible();
+    await expect(gameOverModal.getByText('最终修为', { exact: true })).toBeVisible();
 
     // 验证重新开始按钮
-    const restartBtn = page.getByText('再入轮回', { exact: true });
+    const restartBtn = gameOverModal.getByText('再入轮回', { exact: true });
     await expect(restartBtn).toBeVisible();
 
     // 点击重新开始

@@ -12,13 +12,14 @@ const elementDot: Record<Element, string> = {
   [Element.WATER]: 'bg-sky-500',
 };
 
-/** 行动徽章样式：释灵红 / 纳灵蓝 / 调息木纹 / 炼化橙（结算专用） */
+/** 行动徽章样式：释灵红 / 纳灵蓝 / 调息木纹 / 炼化橙（结算专用）/ 出清金（终局强制平仓） */
 const actionBadge: Record<string, { bg: string; label: string }> = {
   buy: { bg: 'bg-sky-600', label: '纳灵' },
   sell: { bg: 'bg-red-500', label: '释灵' },
   wait: { bg: 'bg-[#8B7355]', label: '调息' },
   lock: { bg: 'bg-amber-600', label: '锁' },
   unlock: { bg: 'bg-amber-500', label: '解锁' },
+  settle: { bg: 'bg-gold', label: '出清' },
 };
 
 /** 筛选 tab：全部 + 三种行动 */
@@ -232,12 +233,17 @@ function CardSummaryRow({
         <div className="flex-1 min-w-0">
           <div className="text-xs text-ink tabular-nums">
             纳灵 <span className="font-bold">{summary.buys}</span> 次 · 释灵 <span className="font-bold">{summary.sells}</span> 次
+            {summary.settles > 0 && <> · 出清 <span className="font-bold">{summary.settles}</span> 次</>}
           </div>
           <div className="text-[10px] text-ink-light mt-0.5 truncate tabular-nums">
             {summary.sells > 0 && (
               <span className={detClass(summary.sellEarnings)}>释灵 {fmtScore(summary.sellEarnings)}</span>
             )}
-            {summary.sells > 0 && summary.holdEarnings !== 0 && <span className="text-ink-light"> · </span>}
+            {summary.sells > 0 && summary.settleEarnings !== 0 && <span className="text-ink-light"> · </span>}
+            {summary.settleEarnings !== 0 && (
+              <span className={detClass(summary.settleEarnings)}>出清 {fmtScore(summary.settleEarnings)}</span>
+            )}
+            {(summary.sells > 0 || summary.settleEarnings !== 0) && summary.holdEarnings !== 0 && <span className="text-ink-light"> · </span>}
             {summary.holdEarnings !== 0 && (
               <span className={detClass(summary.holdEarnings)}>炼化 {fmtScore(summary.holdEarnings)}</span>
             )}
@@ -247,7 +253,7 @@ function CardSummaryRow({
                 <span className="text-qi-critical">反噬 -{fmtScore(summary.penalty)}</span>
               </>
             )}
-            {summary.sells === 0 && summary.holdEarnings === 0 && summary.penalty === 0 && (
+            {summary.sells === 0 && summary.holdEarnings === 0 && summary.penalty === 0 && summary.settleEarnings === 0 && (
               <span>暂无收益</span>
             )}
           </div>
@@ -306,6 +312,7 @@ function CardTraceView({ summary, roundLog }: { summary: CardSummary; roundLog: 
               <div className="text-xs font-bold font-serif text-ink">
                 {t.kind === 'buy' && <>纳灵 · {summary.name}</>}
                 {t.kind === 'sell' && <>释灵 · {summary.name}</>}
+                {t.kind === 'settle' && <>出清 · {summary.name}</>}
                 {t.kind === 'hold' && <>持有 · 炼化</>}
                 {t.kind === 'margin' && <>反噬</>}
               </div>
@@ -313,6 +320,9 @@ function CardTraceView({ summary, roundLog }: { summary: CardSummary; roundLog: 
                 {t.kind === 'buy' && <>评分 {t.value >= 0 ? '+' : ''}{fmtScore(t.value)} · 耗神 {fmtScore(t.qiCost)}</>}
                 {t.kind === 'sell' && (
                   <>评分 {t.buyScore != null ? `${t.buyScore >= 0 ? '+' : ''}${fmtScore(t.buyScore)} → ` : ''}{t.value >= 0 ? '+' : ''}{fmtScore(t.value)} · 收益 <span className={t.earnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{t.earnings >= 0 ? '+' : ''}{fmtScore(t.earnings)}</span></>
+                )}
+                {t.kind === 'settle' && (
+                  <>终局评分 {t.buyScore != null ? `${t.buyScore >= 0 ? '+' : ''}${fmtScore(t.buyScore)} → ` : ''}{t.value >= 0 ? '+' : ''}{fmtScore(t.value)} · 收益 <span className={t.earnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{t.earnings >= 0 ? '+' : ''}{fmtScore(t.earnings)}</span></>
                 )}
                 {t.kind === 'hold' && (
                   <>{t.holdRange ? `${t.holdRange[1] - t.holdRange[0] + 1} 回合 · ` : ''}累计 <span className="text-qi-full">+{fmtScore(t.earnings)}</span></>
@@ -329,11 +339,12 @@ function CardTraceView({ summary, roundLog }: { summary: CardSummary; roundLog: 
   );
 }
 
-/** 轨迹色点：纳灵水蓝 / 释灵红 / 持有绿 / 反噬红 */
+/** 轨迹色点：纳灵水蓝 / 释灵红 / 出清金 / 持有绿 / 反噬红 */
 function traceDot(kind: string): string {
   switch (kind) {
     case 'buy': return 'bg-sky-600';
     case 'sell': return 'bg-red-500';
+    case 'settle': return 'bg-gold';
     case 'hold': return 'bg-qi-full';
     default: return 'bg-red-500';
   }
@@ -369,7 +380,7 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
                   {entry.actionCardName}
                 </span>
               )}
-              {entry.action === 'buy' || entry.action === 'sell' ? (
+              {entry.action === 'buy' || entry.action === 'sell' || entry.action === 'settle' ? (
                 <ActionDetail entry={entry} />
               ) : (
                 <span className="text-xs text-ink-light">无操作 · 静候天时</span>
@@ -379,6 +390,9 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
               {entry.action === 'buy' && `评分 ${entry.actionCardScore} · 耗神 ${fmtScore(entry.actionQiChange)}`}
               {entry.action === 'sell' && (
                 <>评分 {entry.buyScore} → {entry.actionCardScore} · 价差 {fmtScore((entry.actionCardScore ?? 0) - (entry.buyScore ?? 0))}</>
+              )}
+              {entry.action === 'settle' && (
+                <>终局评分 {entry.buyScore} → {entry.actionCardScore} · 出清收益 {fmtScore(entry.sellScore ?? 0)}</>
               )}
               {entry.action === 'wait' && `回气 +${fmtScore(entry.settlement.baseQiRecover + entry.settlement.waitQiRecover)}`}
             </div>
@@ -407,9 +421,9 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
   );
 }
 
-/** 行动明细：买入/卖出时显示卡牌评分上下文 */
+/** 行动明细：买入/卖出/出清时显示卡牌评分上下文 */
 function ActionDetail({ entry }: { entry: RoundLogEntry }) {
-  if (entry.action === 'sell') {
+  if (entry.action === 'sell' || entry.action === 'settle') {
     return (
       <span className="text-xs text-ink-light ml-1">
         {entry.buyScore != null && entry.actionCardScore != null
@@ -421,16 +435,16 @@ function ActionDetail({ entry }: { entry: RoundLogEntry }) {
   return null;
 }
 
-/** 行动结果：卖出=收益（红绿），买入=耗神（水蓝） */
+/** 行动结果：卖出/出清=收益（红绿），买入=耗神（水蓝） */
 function ActionResult({ entry }: { entry: RoundLogEntry }) {
-  if (entry.action === 'sell') {
+  if (entry.action === 'sell' || entry.action === 'settle') {
     const sell = entry.sellScore ?? 0;
     return (
       <div className="text-right shrink-0">
         <div className={`text-base font-bold tabular-nums ${sell >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
           {sell >= 0 ? '+' : ''}{fmtScore(sell)}
         </div>
-        <div className="text-[10px] text-ink-light">释灵收益</div>
+        <div className="text-[10px] text-ink-light">{entry.action === 'settle' ? '出清收益' : '释灵收益'}</div>
       </div>
     );
   }

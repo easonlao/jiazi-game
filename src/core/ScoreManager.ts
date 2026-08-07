@@ -14,6 +14,8 @@ export class ScoreManager {
   private score: number;
   private totalHoldEarnings: number;
   private totalSellEarnings: number;
+  /** 终局出清收益累计（独立口径：终局强制平仓，非玩家主动释灵，局终修为构成单独展示） */
+  private totalSettleEarnings: number;
   /** 反噬罚分累计（局终展示"反噬扣分"用；独立于买卖收益口径） */
   private totalMarginCallPenalty: number;
 
@@ -21,6 +23,7 @@ export class ScoreManager {
     this.score = 0;
     this.totalHoldEarnings = 0;
     this.totalSellEarnings = 0;
+    this.totalSettleEarnings = 0;
     this.totalMarginCallPenalty = 0;
   }
 
@@ -38,12 +41,14 @@ export class ScoreManager {
    * @param hold 总持仓收益
    * @param sell 总卖出收益
    * @param marginCallPenalty 反噬罚分累计（老存档无此字段时默认 0）
+   * @param settle 终局出清收益累计（老存档无此字段时默认 0）
    */
-  setScore(score: number, hold: number, sell: number, marginCallPenalty: number = 0): void {
+  setScore(score: number, hold: number, sell: number, marginCallPenalty: number = 0, settle: number = 0): void {
     this.score = score;
     this.totalHoldEarnings = hold;
     this.totalSellEarnings = sell;
     this.totalMarginCallPenalty = marginCallPenalty;
+    this.totalSettleEarnings = settle;
   }
 
   /**
@@ -113,6 +118,22 @@ export class ScoreManager {
   }
 
   /**
+   * 添加终局出清收益至总分（独立统计口径：终局强制平仓，非玩家主动释灵）。
+   * 计分规则与卖出相同（评分差 × 4 × 杠杆），但累计到 totalSettleEarnings，
+   * 与 totalSellEarnings 分开，避免污染"主动释灵收益"统计。
+   * @param amount 出清收益数额
+   */
+  addSettleEarnings(amount: number): void {
+    this.score += amount;
+    this.totalSettleEarnings += amount;
+  }
+
+  /** 获取终局出清收益累计 */
+  getTotalSettleEarnings(): number {
+    return this.totalSettleEarnings;
+  }
+
+  /**
    * 应用爆仓强平扣分惩罚
    * @param penaltyAmount 扣分额度（由调用方计算：杠杆 × |爆仓时卡牌评分| × marginCallPenaltyPerScore）
    *
@@ -136,6 +157,7 @@ export class ScoreManager {
     this.score = 0;
     this.totalHoldEarnings = 0;
     this.totalSellEarnings = 0;
+    this.totalSettleEarnings = 0;
     this.totalMarginCallPenalty = 0;
   }
 }

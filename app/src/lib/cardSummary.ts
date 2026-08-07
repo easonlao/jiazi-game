@@ -27,6 +27,10 @@ export interface CardSummary {
   sells: number;
   /** 卖出收益累计（sellScore） */
   sellEarnings: number;
+  /** 终局出清次数（action === 'settle'：系统强制平仓，非玩家主动释灵） */
+  settles: number;
+  /** 终局出清收益累计（settle 记录的 sellScore） */
+  settleEarnings: number;
   /** 炼化收益累计（settlement.holdItems[].earning） */
   holdEarnings: number;
   /** 反噬罚分累计（marginCallDetails[].penaltyScore） */
@@ -35,9 +39,9 @@ export interface CardSummary {
   marginCalls: number;
   /** 最后操作回合（买入或卖出的最大 round，用于排序） */
   lastRound: number;
-  /** 是否仍持有：净持仓 = 买入 - 卖出 - 反噬清仓 > 0 */
+  /** 是否仍持有：净持仓 = 买入 - 卖出 - 反噬清仓 - 终局出清 > 0 */
   holding: boolean;
-  /** 单卡总收益 = 卖出 + 炼化 - 反噬罚分 */
+  /** 单卡总收益 = 卖出 + 炼化 + 出清 - 反噬罚分 */
   total: number;
 }
 
@@ -73,6 +77,8 @@ export function aggregateCardSummaries(roundLog: RoundLogEntry[]): CardSummary[]
         buys: 0,
         sells: 0,
         sellEarnings: 0,
+        settles: 0,
+        settleEarnings: 0,
         holdEarnings: 0,
         penalty: 0,
         marginCalls: 0,
@@ -97,6 +103,12 @@ export function aggregateCardSummaries(roundLog: RoundLogEntry[]): CardSummary[]
       s.sells++;
       s.sellEarnings += entry.sellScore ?? 0;
     }
+    // 终局出清（系统强制平仓，非玩家主动释灵——独立计数与收益口径）
+    if (entry.action === 'settle' && entry.actionCardName) {
+      const s = ensure(entry.actionCardName, entry.round);
+      s.settles++;
+      s.settleEarnings += entry.sellScore ?? 0;
+    }
     // 结算层：持仓炼化收益（可能不匹配行动层，单独按卡名聚合）
     for (const item of entry.settlement.holdItems) {
       ensure(item.cardName, entry.round).holdEarnings += item.earning;
@@ -111,9 +123,9 @@ export function aggregateCardSummaries(roundLog: RoundLogEntry[]): CardSummary[]
 
   const summaries = [...map.values()];
   for (const s of summaries) {
-    // 净持仓 = 买入 - 卖出 - 反噬清仓；> 0 才算仍在持有
-    s.holding = s.buys - s.sells - s.marginCalls > 0;
-    s.total = s.sellEarnings + s.holdEarnings - s.penalty;
+    // 净持仓 = 买入 - 卖出 - 反噬清仓 - 终局出清；> 0 才算仍在持有
+    s.holding = s.buys - s.sells - s.marginCalls - s.settles > 0;
+    s.total = s.sellEarnings + s.holdEarnings + s.settleEarnings - s.penalty;
   }
   // 最后操作回合倒序（最近操作的卡在前）
   summaries.sort((a, b) => b.lastRound - a.lastRound);
@@ -131,8 +143,8 @@ export interface CardTraceItem {
   round: number;
   /** 季节英文 */
   season: string;
-  /** 条目类型 */
-  kind: 'buy' | 'sell' | 'hold' | 'margin';
+  /** 条目类型（settle = 终局出清，系统强制平仓） */
+  kind: 'buy' | 'sell' | 'hold' | 'margin' | 'settle';
   /** buy: 买入评分；sell: 卖出评分；hold: 累计炼化；margin: 罚分 */
   value: number;
   /** buy: 耗神（负数，如 -5）；其余 null/0 */
@@ -177,6 +189,19 @@ export function cardTrace(roundLog: RoundLogEntry[], name: string): CardTraceIte
         round: entry.round,
         season: entry.season,
         kind: 'sell',
+        value: entry.actionCardScore ?? 0,
+        qiCost: 0,
+        buyScore: entry.buyScore ?? 0,
+        holdRange: null,
+        earnings: entry.sellScore ?? 0,
+      });
+    }
+    // 终局出清（系统强制平仓，同 sell 信息结构，kind 区分）
+    if (entry.action === 'settle' && entry.actionCardName === name) {
+      items.push({
+        round: entry.round,
+        season: entry.season,
+        kind: 'settle',
         value: entry.actionCardScore ?? 0,
         qiCost: 0,
         buyScore: entry.buyScore ?? 0,
