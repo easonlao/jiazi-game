@@ -49,7 +49,15 @@ global.fetch = vi.fn().mockImplementation(() =>
 function expectInvariants(tm: TurnManager): void {
   const summaries = aggregateCardSummaries(tm.getRoundLog() as never);
   expect(summaries.length).toBeLessThanOrEqual(tm.getTotalBuys());
-  expect(countSettled(summaries)).toBeLessThanOrEqual(tm.getTotalSells() + tm.getMarginCallCount());
+  // 了结卡数 ≤ 释灵 + 反噬 + 终局出清。
+  // 2026-08-08 修复断言漏项：终局被系统强制出清的卡（action='settle'）也会让
+  // holding=false 而计入 countSettled，但此前右侧只有 totalSells + marginCallCount，
+  // 漏了终局出清项——凡终局时有持仓被出清的局，断言必失败（CI 随机撞出 19>18）。
+  // 正确口径：了结途径 = 主动释灵 / 反噬强平 / 终局出清，三者都要计入右侧。
+  const settleCount = summaries.reduce((acc, s) => acc + s.settles, 0);
+  expect(countSettled(summaries)).toBeLessThanOrEqual(
+    tm.getTotalSells() + tm.getMarginCallCount() + settleCount
+  );
   // 无幽灵卡：每张有炼化/反噬的卡必有买入记录
   for (const s of summaries) {
     if (s.holdEarnings !== 0 || s.penalty !== 0) {
