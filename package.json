@@ -4,9 +4,9 @@
   "description": "甲子纪 - 六十甲子回合制策略卡牌游戏",
   "type": "module",
   "scripts": {
-    "build": "npm --prefix app run build",
-    "dev": "npm --prefix app run dev",
-    "preview": "npm --prefix app run preview",
+    "build": "pnpm --filter jiazi-game-react run build",
+    "dev": "pnpm --filter jiazi-game-react run dev",
+    "preview": "pnpm --filter jiazi-game-react run preview",
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:preview": "E2E_TARGET=preview playwright test"
@@ -14,6 +14,7 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.20.1",
+    "tsx": "^4.23.11",
     "typescript": "^5.9.3",
     "vite": "^6.4.3",
     "vitest": "^4.1.8"

@@ -14,13 +14,13 @@ const isPreview = process.env.E2E_TARGET === 'preview';
 
 const webServer = isPreview
   ? {
-      command: 'npm run build && npx vite preview --port 4173 --host',
+      command: 'pnpm run build && pnpm exec vite preview --port 4173 --host',
       port: 4173,
       baseURL: 'http://localhost:4173',
       timeout: 60_000,
     }
   : {
-      command: 'npx vite --port 5173 --host',
+      command: 'pnpm exec vite --port 5173 --host',
       port: 5173,
       baseURL: 'http://localhost:5173',
       timeout: 30_000,

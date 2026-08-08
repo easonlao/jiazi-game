@@ -52,6 +52,13 @@ vercel.json
 __pycache__/
 *.pyc
 
+# pytest cache (Python engine retired 2026-08-04, never recreate)
+.pytest_cache/
+# wrangler local state
+.wrangler/
+# safe-delete rename leftovers (2026-08-08 audit)
+*.deleted-tmp
+
 # === Archives ===
 *.zip
 *.tar.gz
