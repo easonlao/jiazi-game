@@ -50,7 +50,7 @@ function play(tm: TurnManager, p: Params) {
 
     const slots = hand.map((s, i) => ({ s, i })).filter((x) => x.s !== null);
     for (const { s, i } of slots) {
-      const cur = s.card.getSeasonScore(season);
+      const cur = s!.card.getSeasonScore(season);
       peak.set(i, Math.max(peak.get(i) ?? cur, cur));
     }
     const levCount = slots.filter(({ s }) => s!.useLeverage).length;

@@ -113,7 +113,8 @@ function play(tm: TurnManager, mode: Mode) {
     }
 
     // ── 锁定（OPT/LATE/CONS 都锁高峰 30；PASSIVE 不锁）──
-    if (mode !== 'PASSIVE' && tm.getLockedCardIds().length < 2 && qi > 30 && cards.length > 0 && !acted) {
+    // PASSIVE 分支已提前 continue，此处 mode 恒非 PASSIVE（TS 收窄），比较冗余
+    if (tm.getLockedCardIds().length < 2 && qi > 30 && cards.length > 0 && !acted) {
       const afterIdx = (['spring', 'summer', 'autumn', 'winter'].indexOf(nextSeason) + 1) % 4;
       const afterNext = ['spring', 'summer', 'autumn', 'winter'][afterIdx];
       const cand = cards.map((c, idx) => {

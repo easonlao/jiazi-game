@@ -211,7 +211,7 @@ export interface ScenarioQuality {
  * 每类情境：做对率 = 选最优动作次数 / 遇到次数。
  * 建议：做对率 < 60% 的情境给出反向行动建议。
  */
-export function evaluateDecisions(decisionLog: DecisionEntry[]): ScenarioQuality[] {
+export function evaluateDecisions(decisionLog: readonly DecisionEntry[]): ScenarioQuality[] {
   const stat = new Map<string, { total: number; right: number }>();
   for (const d of decisionLog) {
     const s = stat.get(d.scenario) ?? { total: 0, right: 0 };
@@ -303,7 +303,7 @@ export interface CeilingInput {
  *   弃浊存清 0.10  坏牌止损做对率
  *   牵神预置 0.10  锁定高峰频率
  */
-export function evaluateCeiling(b: BehaviorInput, decisionLog: DecisionEntry[] = []): { dims: CeilingDim[]; total: number } {
+export function evaluateCeiling(b: BehaviorInput, decisionLog: readonly DecisionEntry[] = []): { dims: CeilingDim[]; total: number } {
   const hold = Math.abs(b.totalHoldEarnings ?? 0);
   const sell = Math.abs(b.totalSellEarnings ?? 0);
   const settle = Math.abs(b.totalSettleEarnings ?? 0);
