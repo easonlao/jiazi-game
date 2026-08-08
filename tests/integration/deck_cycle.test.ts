@@ -31,13 +31,17 @@ describe('卡牌循环：卖出回牌堆验证', () => {
     expect(tm.getHand().filter((s) => s !== null).length).toBe(1);
 
     // 卖出 1 张：
-    //   sell: 卡牌回堆（deck +1 → 57）
-    //   advanceTurn → 下回合 drawCards 抽 3（deck -3 → 54）
+    //   sell: 手牌回堆（deck +1 → 57）+ 公共池未锁定牌回堆（deck +3 → 60）。
+    //   （2026-08-08 修复：此前 executeSell 不回堆公共池未锁牌，残留旧牌在
+    //     下回合 drawCards 重建时被直接丢弃，每卖一次全局少 3 张——公共池缩水根因。）
+    //   advanceTurn → 下回合 drawCards 抽 3（deck -3 → 57）
     const sellOk = tm.executeSell(0);
     expect(sellOk).toBe(true);
     const deckAfterSell = tm.getDeckSize();
-    expect(deckAfterSell).toBe(54);
+    expect(deckAfterSell).toBe(57);
     expect(tm.getHand().filter((s) => s !== null).length).toBe(0);
+    // 守恒：deck + 公共池 + 手牌 = 60（甲子牌不增不减）
+    expect(deckAfterSell + tm.getPublicCards().length).toBe(60);
 
     console.log(`deck: 开局后 ${deckAfterStart} → 买入后 ${deckAfterBuy} → 卖出后 ${deckAfterSell}`);
   });

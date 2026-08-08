@@ -699,6 +699,14 @@ export class TurnManager {
 
     this.lastAction = 'sell';
     this.recordDecision('sell');
+    // 卖出后公共牌回牌堆（锁定中的牌保留在公共区）。
+    // 2026-08-08 修复「公共池缩水」：此前 executeSell 不回堆公共池的未锁定牌，
+    // 残留的旧牌会在下一回合 drawCards 重建时被直接丢弃（drawCards 只保留锁定牌+新抽牌），
+    // 导致牌总量每卖一次永久 -3，deck 越玩越少，最终公共池抽不满 3 张只剩 2 张
+    // （用户实测：反噬/连续卖出后公共池 2 张）。与 executeWait 对齐：未锁定牌回堆。
+    const publicCards = this.cardPoolManager.getPublicCards();
+    const { unlocked } = this.lockManager.partitionLocked(publicCards);
+    this.cardPoolManager.returnCards(unlocked);
     this.advanceTurn();
     return true;
   }
