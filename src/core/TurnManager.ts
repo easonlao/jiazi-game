@@ -355,6 +355,14 @@ export class TurnManager {
    */
   private processRound(): void {
     if (this.currentRound > TurnManager.TOTAL_ROUNDS) {
+      // 归档最后一回合（第 60 回合）的玩家操作：roundLog 的 round 字段是"归档回合"，
+      // 第 N 回合的操作在第 N+1 回合的 processRound 里归档；但第 60 回合操作后直接
+      // 进入终局分支，永远不会被归档。若不补，该操作从 roundLog 统计中丢失——
+      // 若第 60 回合是卖出，聚合会虚增"持有中"（2026-08-08 数据一致性回归测试撞出）。
+      // lastSettlementDetail 此时是第 60 回合的结算快照（R1 起每回合都设置，非空）。
+      if (this.lastSettlementDetail) {
+        this.roundLog.push(this.buildRoundLogEntry());
+      }
       this.endGame();
       return;
     }

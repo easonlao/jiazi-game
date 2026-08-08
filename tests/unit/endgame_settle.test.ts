@@ -174,4 +174,57 @@ describe('终局强制平仓', () => {
     tm3.importSnapshot(oldSnap);
     expect(tm3.getTotalSettleEarnings()).toBe(0);
   });
+
+  it('第 60 回合操作必须归档：卖出不虚增持有中、买入被终局强平', async () => {
+    // 回归（2026-08-08）：roundLog 的 round 是"归档回合"——第 N 回合操作在第 N+1 回合归档，
+    // 但第 60 回合操作后直接进终局分支，曾永不归档。若第 60 回合卖出，聚合虚增"持有中"。
+    const tm = new TurnManager();
+    await tm.initialize();
+    tm.startGame();
+    // 快速推进到第 59 回合（每回合调息）
+    for (let r = 0; r < 58; r++) tm.executeWait();
+    expect(tm.getCurrentRound()).toBe(59);
+    // 第 59 回合买入一张（第 60 回合开始）
+    expect(tm.executeBuy(0, false)).toBe(true);
+    expect(tm.getCurrentRound()).toBe(60);
+    // 第 60 回合卖出 → 直接进终局
+    expect(tm.executeSell(0)).toBe(true);
+    expect(tm.getState()).toBe('game_over');
+
+    const log = tm.getRoundLog();
+    // 终局归档了第 60 回合的卖出操作（最后一条非 settle 记录）
+    const lastActionEntry = [...log].reverse().find((e) => e.action !== 'settle');
+    expect(lastActionEntry).toBeDefined();
+    expect(lastActionEntry!.action).toBe('sell');
+    // 聚合：全部已了结，无假「持有中」
+    const summaries = aggregateCardSummaries(log as never);
+    expect(summaries.every((s) => !s.holding)).toBe(true);
+    // 卖出次数与买入次数抵消（第 60 回合卖出已计入）
+    const buyEntries = log.filter((e) => e.action === 'buy');
+    const sellEntries = log.filter((e) => e.action === 'sell');
+    expect(sellEntries.length).toBeGreaterThanOrEqual(1);
+    expect(buyEntries.length - sellEntries.length).toBe(0);
+  });
+
+  it('第 60 回合买入：终局强平该卡并归档', async () => {
+    const tm = new TurnManager();
+    await tm.initialize();
+    tm.startGame();
+    for (let r = 0; r < 58; r++) tm.executeWait();
+    expect(tm.getCurrentRound()).toBe(59);
+    // 第 59 回合买入（第 60 回合开始），第 60 回合调息 → 终局强平手牌
+    expect(tm.executeBuy(0, false)).toBe(true);
+    expect(tm.executeWait()).toBe(true);
+    expect(tm.getState()).toBe('game_over');
+
+    const log = tm.getRoundLog();
+    const settleEntries = log.filter((e) => e.action === 'settle');
+    expect(settleEntries.length).toBe(1);
+    // 第 60 回合的调息操作已归档
+    const lastActionEntry = [...log].reverse().find((e) => e.action !== 'settle');
+    expect(lastActionEntry!.action).toBe('wait');
+    // 聚合无持有中
+    const summaries = aggregateCardSummaries(log as never);
+    expect(summaries.every((s) => !s.holding)).toBe(true);
+  });
 });

@@ -40,10 +40,12 @@ html, body, #root {
 /* 窄屏（手机竖屏，壳恒满宽 ≤428px）兜底：游戏壳是 max-w-[428px] 固定壳，
    不能用视口 max-width:420px（手机视口 421~428 时不触发，壳却仍是 428 宽 → 溢出）。
    改用视口 <768px（max-md）覆盖整段手机区间。
-   只调尺寸不删信息：评分值保持可读字号且防换行，牌面文字小一档防撑出。 */
+   只调尺寸不删信息：评分值保持可读字号且防换行，牌面文字小一档防撑出。
+   注意：评分值字号必须与 CardVisual 的 max-md:text-[13px] 一致（本选择器特异性更高，
+   会覆盖 Tailwind 类——曾因此手机端实际 15px 导致评分溢出，2026-08-08 修复）。 */
 @media (max-width: 767px) {
   .card-score-trend .card-score-value {
-    font-size: 0.9375rem;
+    font-size: 0.8125rem;
     white-space: nowrap;
   }
 
