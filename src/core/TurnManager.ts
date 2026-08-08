@@ -118,7 +118,7 @@ export type DecisionScenario =
   | 'future_good_card'
   /** 神识告急：神识低 + 持仓耗神大 */
   | 'qi_low'
-  /** 强牌杠杆：神识极高 + 评分极高且下季不崩 */
+  /** 强牌杠杆：神识充足（>=25，够付杠杆成本）+ 评分高（>=15）且下季不崩 */
   | 'strong_card_leverage';
 
 /** 决策日志条目：某回合玩家面对某情境做出的选择 */
@@ -1276,12 +1276,14 @@ export class TurnManager {
       : null;
 
     // 情境判定（优先级：坏牌 > 神识告急 > 未来好牌 > 强牌杠杆 > 好牌当前）
+    // 阈值对齐 2026-08-08 参数扫描验证的高分路径（buyMinCur=13 / levThreshold=15 /
+    // 杠杆只需 qi≥25 足够付成本），避免高分牌因旧阈值（qi>50/cur≥20）漏判而脱钩。
     let scenario: DecisionScenario | null = null;
     if (hasBadCard) scenario = 'bad_card_holding';
     else if (qi < 20 && slots.length > 0) scenario = 'qi_low';
     else if (hasFutureGood && qi > 30) scenario = 'future_good_card';
-    else if (qi > 50 && canBuy && bestCard && bestCard.cur >= 20 && bestCard.next - bestCard.cur >= -5) scenario = 'strong_card_leverage';
-    else if (canBuy && qi > 20 && bestCardCur >= 15) scenario = 'good_card_available';
+    else if (qi >= 25 && canBuy && bestCard && bestCard.cur >= 15 && bestCard.next - bestCard.cur >= -5) scenario = 'strong_card_leverage';
+    else if (canBuy && qi > 20 && bestCardCur >= 13) scenario = 'good_card_available';
 
     if (scenario) {
       this.decisionLog.push({ round: this.currentRound, scenario, action });

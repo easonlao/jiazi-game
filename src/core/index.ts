@@ -48,3 +48,14 @@ export type { MarginCallEngineDeps } from './MarginCallEngine';
 
 export { buildProjectedHoldings } from './settlementProjection';
 export type { ProjectedHolding } from './settlementProjection';
+
+export {
+  isHighScoreCard,
+  countLeverageSlots,
+  shouldUseLeverage,
+  HIGH_SCORE_THRESHOLD,
+  MAX_LEVERAGE_SLOTS,
+  SECOND_LEVERAGE_MIN_QI,
+  SECOND_LEVERAGE_AVOID_SEASON_END,
+} from './LeverageStrategy';
+export type { LeverageDecisionContext } from './LeverageStrategy';

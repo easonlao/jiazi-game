@@ -1,13 +1,14 @@
 import { useGameStore } from '../store';
-import { evaluateGame, evaluateDecisions, decisionQualityScore } from '../lib/gameReview';
+import { evaluateGame, evaluateCeiling } from '../lib/gameReview';
 
 /**
  * 局终总结（游戏结束弹窗）
  *
- * 双层评价（2026-08-07 用户方向，分数与行为解耦）：
+ * 双层评价（2026-08-08 重写，评价与分数不再脱钩）：
  * - 境界：按最终修为分档（炼气→飞升七档，纯分数结果，运气+实力共同决定）
- * - 决策质量：五维画像（择机/止损/预判/避险/进取），数据定义最优动作，
- *   统计玩家每类情境的做对率，反向给出后续行动建议
+ * - 上限对齐：六维评价（炼化为本/燃灵进取/燃灵及时/反噬可承/弃浊存清/牵神预置），
+ *   每维锚定真引擎 20000 局调参验证过的冲顶机制，度量"行为离上限打法有多近"，
+ *   综合分与最终分数强相关（实测 Spearman ρ≥0.7，见 ceiling_validation 测试）
  *
  * 修为构成：炼化 + 卖出（正向来源），反噬是惩罚（不参与占比，单独标红）。
  */
@@ -31,12 +32,15 @@ export function GameOverModal() {
   // 境界（纯分数结果）
   const review = evaluateGame({
     totalBuys, totalSells, totalWaits, totalLeverageBuys, totalLocks, marginCallCount, score,
+    totalHoldEarnings, totalSellEarnings, totalSettleEarnings, totalMarginCallPenalty,
   });
   const { realm } = review;
 
-  // 决策质量（数据定义最优，五维做对率）
-  const quality = evaluateDecisions(decisionLog);
-  const qualityScore = decisionQualityScore(quality);
+  // 上限对齐（六维，锚定真引擎调参验证的冲顶机制，与分数强相关）
+  const ceiling = evaluateCeiling({
+    totalBuys, totalSells, totalWaits, totalLeverageBuys, totalLocks, marginCallCount, score,
+    totalHoldEarnings, totalSellEarnings, totalSettleEarnings, totalMarginCallPenalty,
+  }, decisionLog);
 
   // 修为构成：炼化 + 释灵 + 出清 是正向来源，反噬是惩罚（不参与占比，单独标红）
   const positive = Math.abs(totalHoldEarnings) + Math.abs(totalSellEarnings) + Math.abs(totalSettleEarnings);
@@ -95,34 +99,33 @@ export function GameOverModal() {
           </div>
         </div>
 
-        {/* 决策质量：五维做对率（数据定义最优，反向给建议） */}
+        {/* 上限对齐：六维（锚定真引擎调参验证的冲顶机制，与分数强相关） */}
         <div className="mb-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold font-serif text-ink">决策质量</span>
+            <span className="text-xs font-bold font-serif text-ink">巅峰之鉴</span>
             <span className="text-[11px] text-ink-light tabular-nums">
-              综合 {qualityScore}/100
+              综合 {ceiling.total}/100
             </span>
           </div>
-          {quality.length === 0 ? (
-            <div className="text-[11px] text-ink-light py-2 text-center bg-white rounded-lg">本局未触发关键决策情境</div>
-          ) : (
-            <div className="space-y-1.5">
-              {quality.map((q) => (
-                <div key={q.scenario} className="bg-white rounded-lg px-3 py-2 flex items-center gap-2">
-                  <span className="text-[11px] text-ink-light w-8 shrink-0">{q.label}</span>
+          <div className="space-y-1.5">
+            {ceiling.dims.map((d) => (
+              <div key={d.key} className="bg-white rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] text-ink-light w-14 shrink-0">{d.label}</span>
                   <div className="flex-1 h-1.5 rounded-full bg-[#E9E1CE] overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${q.rate >= 0.6 ? 'bg-qi-full' : 'bg-qi-danger'}`}
-                      style={{ width: `${Math.round(q.rate * 100)}%` }}
+                      className={`h-full rounded-full ${d.score >= 0.6 ? 'bg-qi-full' : 'bg-qi-danger'}`}
+                      style={{ width: `${Math.round(d.score * 100)}%` }}
                     />
                   </div>
-                  <span className={`text-[11px] font-bold tabular-nums shrink-0 ${q.rate >= 0.6 ? 'text-qi-full' : 'text-qi-critical'}`}>
-                    {Math.round(q.rate * 100)}%
+                  <span className={`text-[11px] font-bold tabular-nums shrink-0 ${d.score >= 0.6 ? 'text-qi-full' : 'text-qi-critical'}`}>
+                    {Math.round(d.score * 100)}
                   </span>
                 </div>
-              ))}
-            </div>
-          )}
+                <p className="text-[10px] text-ink-light text-left">{d.desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* 行动统计小字 */}

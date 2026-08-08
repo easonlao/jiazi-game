@@ -62,6 +62,14 @@ export interface BehaviorInput {
   marginCallCount: number;
   /** 最终修为 */
   score: number;
+  /** 炼化收益累计（上限对齐评价用，store 可提供） */
+  totalHoldEarnings?: number;
+  /** 释灵收益累计（上限对齐评价用） */
+  totalSellEarnings?: number;
+  /** 出清收益累计（上限对齐评价用） */
+  totalSettleEarnings?: number;
+  /** 反噬罚分累计（上限对齐评价用） */
+  totalMarginCallPenalty?: number;
 }
 
 export interface BehaviorProfile {
@@ -176,7 +184,7 @@ export const SCENARIO_LABEL: Record<string, string> = {
 /** 情境描述（建议用） */
 export const SCENARIO_DESC: Record<string, string> = {
   good_card_available: '好牌当前，当果断纳灵',
-  bad_card_holding: '坏牌在手，当弃浊存清（止损）',
+  bad_card_holding: '坏牌在手，当弃浊存清',
   future_good_card: '未来好牌，当顺势而为',
   qi_low: '神识告急，当调息避险',
   strong_card_leverage: '强牌当前，当燃灵进取',
@@ -245,5 +253,127 @@ export function decisionQualityScore(quality: ScenarioQuality[]): number {
     score += q.rate * w;
   }
   return wSum > 0 ? Math.round((score / wSum) * 100) : 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 上限对齐评价（2026-08-08 重写，替代旧"情境做对率"决策质量分）
+//
+// 背景：旧决策质量分 = 情境做对率加权，与最终分数脱钩（高手策略分数 P50≈3164
+// 但决策质量分仅 P50≈19）。根因：① 情境阈值与高分机制错位——strong_card_leverage
+// 要求 qi>50+cur≥20，而真引擎调参验证的高分路径是 cur≤13 潜力牌 + 季初就杠杆 +
+// 持有为主；② 做对率度量"动作是否符合预设表"，不度量收益贡献。
+//
+// 新方法：六维评价，每个维度直接锚定 2026-08-08 三轮参数扫描 + 20000 局大样本
+// 验证过的冲顶机制（最优簇：levThreshold=15 / lockFuturePeak=30 / buyMinCur=13 /
+// leverageTiming='any' / 持有为主 / 冲顶局 hold 占比 95%+）。评价度量"行为离上限
+// 打法有多近"，靠近上限打法 → 分数高，故评价分与分数强相关（由
+// tests/unit/ceiling_validation.test.ts 真引擎实测 Spearman ρ）。
+// ═══════════════════════════════════════════════════════════
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+/** 单维度上限对齐结果 */
+export interface CeilingDim {
+  /** 维度 key */
+  key: string;
+  /** 维度名（如"炼化为本"） */
+  label: string;
+  /** 权重（0~1，和为 1） */
+  weight: number;
+  /** 得分（0~1） */
+  score: number;
+  /** 行为描述 */
+  desc: string;
+}
+
+/** 上限对齐评价输入：行为统计 + 决策日志（决策日志缺省时按时序维度中性处理） */
+export interface CeilingInput {
+  b: BehaviorInput;
+  decisionLog?: DecisionEntry[];
+}
+
+/**
+ * 上限对齐评价：行为与冲顶打法对齐度（0~100）。
+ *
+ * 六维（权重锚定分数主引擎——炼化收益占绝对主力）：
+ *   炼化为本 0.30  收益构成中持有占比（冲顶局 hold≈95%+）
+ *   燃灵进取 0.20  好牌杠杆运用率（上限打法：高分牌必杠杆）
+ *   燃灵及时 0.15  首次杠杆的季内时机（any：季初就该杠杆，不死等 3.5x）
+ *   反噬可承 0.15  爆仓罚分占收益比例（上限打法爆仓率高但罚分被炼化覆盖）
+ *   弃浊存清 0.10  坏牌止损做对率
+ *   牵神预置 0.10  锁定高峰频率
+ */
+export function evaluateCeiling(b: BehaviorInput, decisionLog: DecisionEntry[] = []): { dims: CeilingDim[]; total: number } {
+  const hold = Math.abs(b.totalHoldEarnings ?? 0);
+  const sell = Math.abs(b.totalSellEarnings ?? 0);
+  const settle = Math.abs(b.totalSettleEarnings ?? 0);
+  const mcPen = Math.abs(b.totalMarginCallPenalty ?? 0);
+  const posTotal = hold + sell + settle + mcPen;
+
+  // 1. 炼化为本：持有收益占比（冲顶局 0.95+）× 炼化绝对量门槛（≥1500 才给满占比分，
+  //    防止"只买一手牌持有"的摆烂局在占比维度虚高）
+  const holdShare = posTotal > 0 ? hold / posTotal : 0;
+  const holdScore = clamp01(holdShare / 0.95) * clamp01(hold / 1500);
+  const holdDesc = holdScore >= 0.85 ? '炼化为本，收益几近全来自持有'
+    : holdScore >= 0.5 ? '炼化为主，偶有释灵'
+    : '释灵过频，错失炼化复利';
+
+  // 2. 燃灵进取：杠杆买入占买入比例（上限打法：好牌必杠杆，约 8 成买入杠杆）
+  const levRatio = b.totalBuys > 0 ? b.totalLeverageBuys / b.totalBuys : 0;
+  const aggScore = clamp01(levRatio / 0.8);
+  const aggDesc = aggScore >= 0.8 ? '燃灵进取，好牌必燃灵'
+    : aggScore >= 0.4 ? '择机燃灵，收放有度'
+    : '少燃灵，收益放大不足';
+
+  // 3. 燃灵及时：strong_card_leverage 情境首次杠杆的季内时机
+  //    any 打法允许季初（回合≤5）就杠杆；late 打法死等回合≥8 的 3.5x——大样本证实 any 远优。
+  //    未燃灵的局给中性 0.3（"有无杠杆"已由燃灵进取维度度量，此处只评燃灵者的时机早晚，
+  //    避免与 leverage 维度共线造成双重惩罚）；档位单调：未燃灵 < 过晚 < 偏晚 < 及时
+  const levEntries = decisionLog.filter((d) => d.scenario === 'strong_card_leverage' && d.action === 'buy');
+  let timingScore = 0.3;
+  if (levEntries.length > 0) {
+    const minInSeason = Math.min(...levEntries.map((d) => ((d.round - 1) % 15) + 1));
+    timingScore = minInSeason <= 5 ? 1 : minInSeason <= 8 ? 0.75 : minInSeason <= 11 ? 0.55 : 0.4;
+  }
+  const timingDesc = timingScore >= 0.7 ? '燃灵及时，季初即燃灵'
+    : timingScore >= 0.5 ? '燃灵偏晚，仍可'
+    : timingScore >= 0.35 ? '燃灵过晚，倍数太贪'
+    : '未燃灵，时机无从谈起';
+
+  // 4. 反噬可承：爆仓罚分占收益比例（上限打法 mc%≈80% 但罚分被炼化收益覆盖，冲顶局 mc=0）。
+  //    反噬是燃灵的风险——未燃灵谈不上反噬（中性 0.5，不奖励摆烂局"没爆仓"）；
+  //    燃灵过则看罚分占比：零罚分（冲顶局）满分，占比越高越不可承。
+  //    收益为负是炼化/释灵维度的事，反噬可承只评"燃灵反噬是否伤本"
+  const mcScore = b.totalLeverageBuys === 0 ? 0.5
+    : mcPen <= 0 ? 1
+    : 1 - clamp01(mcPen / Math.max(1, posTotal) / 0.5);
+  const mcDesc = mcScore >= 0.8 ? '反噬可承，爆仓不伤大局'
+    : mcScore >= 0.4 ? '反噬略重，仍有余力'
+    : '反噬伤本，燃灵失控';
+
+  // 5. 弃浊存清：坏牌止损做对率（无坏牌局面中性 0.5）
+  const stopEntries = decisionLog.filter((d) => d.scenario === 'bad_card_holding');
+  const stopRate = stopEntries.length > 0 ? stopEntries.filter((d) => d.action === 'sell').length / stopEntries.length : 0.5;
+  const stopDesc = stopRate >= 0.8 ? '弃浊存清，弃浊果断'
+    : stopRate >= 0.5 ? '弃浊偶有迟疑'
+    : '浊气缠手，弃之无力';
+
+  // 6. 牵神预置：锁定高峰频率（上限打法 lockFuturePeak=30，best 局 lock=4~9）
+  const locks = b.totalLocks;
+  const lockScore = locks === 0 ? 0.2 : locks <= 12 ? (locks >= 2 ? 1 : 0.6) : 0.5;
+  const lockDesc = lockScore >= 0.8 ? '牵神预置，锁定高峰'
+    : lockScore >= 0.4 ? '偶有牵神'
+    : '不预置，随缘而纳';
+
+  const dims: CeilingDim[] = [
+    { key: 'hold', label: '炼化为本', weight: 0.3, score: holdScore, desc: holdDesc },
+    { key: 'leverage', label: '燃灵进取', weight: 0.2, score: aggScore, desc: aggDesc },
+    { key: 'timing', label: '燃灵及时', weight: 0.15, score: timingScore, desc: timingDesc },
+    { key: 'mc', label: '反噬可承', weight: 0.15, score: mcScore, desc: mcDesc },
+    { key: 'stop', label: '弃浊存清', weight: 0.1, score: stopRate, desc: stopDesc },
+    { key: 'lock', label: '牵神预置', weight: 0.1, score: lockScore, desc: lockDesc },
+  ];
+  const total = Math.round(dims.reduce((s, d) => s + d.weight * d.score, 0) * 100);
+  return { dims, total };
 }
 

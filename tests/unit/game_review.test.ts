@@ -7,7 +7,7 @@
  * 3. 评语可复算（同输入同输出）
  */
 import { describe, it, expect } from 'vitest';
-import { getRealm, evaluateGame, REALMS, evaluateDecisions, decisionQualityScore, type BehaviorInput } from '../../app/src/lib/gameReview';
+import { getRealm, evaluateGame, REALMS, evaluateDecisions, decisionQualityScore, evaluateCeiling, type BehaviorInput } from '../../app/src/lib/gameReview';
 
 const base: BehaviorInput = {
   totalBuys: 10,
@@ -134,5 +134,88 @@ describe('evaluateDecisions 决策质量', () => {
   it('空日志 → 空结果 + 0 分', () => {
     expect(evaluateDecisions([])).toEqual([]);
     expect(decisionQualityScore([])).toBe(0);
+  });
+});
+
+describe('evaluateCeiling 上限对齐', () => {
+  // 冲顶局形态：炼化占 95%+、好牌必杠杆、季初杠杆、零爆仓、止损果断、锁定高峰
+  const ceilingShape: BehaviorInput = {
+    totalBuys: 10, totalSells: 3, totalWaits: 20, totalLeverageBuys: 8, totalLocks: 4,
+    marginCallCount: 0, score: 6200,
+    totalHoldEarnings: 6000, totalSellEarnings: 300, totalSettleEarnings: 0, totalMarginCallPenalty: 0,
+  };
+  const ceilingLog = [
+    { round: 3, scenario: 'strong_card_leverage', action: 'buy' },
+    { round: 4, scenario: 'strong_card_leverage', action: 'buy' },
+    { round: 12, scenario: 'bad_card_holding', action: 'sell' },
+    { round: 20, scenario: 'strong_card_leverage', action: 'buy' },
+  ] as any;
+
+  // 摆烂形态：几乎不买、无杠杆、无锁定、零炼化
+  const passiveShape: BehaviorInput = {
+    totalBuys: 1, totalSells: 0, totalWaits: 59, totalLeverageBuys: 0, totalLocks: 0,
+    marginCallCount: 0, score: 200,
+    totalHoldEarnings: 100, totalSellEarnings: 0, totalSettleEarnings: 0, totalMarginCallPenalty: 0,
+  };
+
+  it('冲顶局形态 → 高分（≥80）', () => {
+    const r = evaluateCeiling(ceilingShape, ceilingLog);
+    expect(r.total).toBeGreaterThanOrEqual(80);
+    expect(r.dims.find((d) => d.key === 'hold')!.score).toBeGreaterThanOrEqual(0.9);
+    expect(r.dims.find((d) => d.key === 'leverage')!.score).toBeGreaterThanOrEqual(0.9);
+    expect(r.dims.find((d) => d.key === 'timing')!.score).toBe(1); // 季初回合3就杠杆
+  });
+
+  it('摆烂形态 → 低分（<40）', () => {
+    const r = evaluateCeiling(passiveShape, []);
+    expect(r.total).toBeLessThan(40);
+    expect(r.dims.find((d) => d.key === 'leverage')!.score).toBe(0);
+  });
+
+  it('燃灵及时：季初杠杆优于季末杠杆，未燃灵中性', () => {
+    const early = evaluateCeiling(ceilingShape, [{ round: 3, scenario: 'strong_card_leverage', action: 'buy' }] as any);
+    const late = evaluateCeiling(ceilingShape, [{ round: 58, scenario: 'strong_card_leverage', action: 'buy' }] as any);
+    const noLev = evaluateCeiling(ceilingShape, []);
+    const tEarly = early.dims.find((d) => d.key === 'timing')!.score;
+    const tLate = late.dims.find((d) => d.key === 'timing')!.score;
+    const tNone = noLev.dims.find((d) => d.key === 'timing')!.score;
+    expect(tEarly).toBe(1); // 回合3 → 季内第3回合 ≤5
+    expect(tLate).toBe(0.4); // 回合58 → 季内第13回合 >11，仍高于未燃灵
+    expect(tNone).toBe(0.3); // 未燃灵中性，不因"无杠杆"双重惩罚
+  });
+
+  it('反噬可承：爆仓罚分占比越小分越高；亏损但未爆仓不在此维度扣分', () => {
+    const mcOk: BehaviorInput = { ...ceilingShape, marginCallCount: 3, totalMarginCallPenalty: 300 };
+    const rOk = evaluateCeiling(mcOk, ceilingLog);
+    const sOk = rOk.dims.find((d) => d.key === 'mc')!.score;
+    expect(sOk).toBeGreaterThan(0.8); // 罚分 300/6300 ≈ 4.8% << 50% 阈值
+
+    const bad: BehaviorInput = { ...ceilingShape, score: -800, totalHoldEarnings: -600, totalSellEarnings: -200, totalMarginCallPenalty: 500 };
+    const rBad = evaluateCeiling(bad, ceilingLog);
+    // 亏损 + 爆仓罚分 500/1300 ≈ 38.5% → 1 - 0.769 ≈ 0.23（罚分占比扣分）
+    expect(rBad.dims.find((d) => d.key === 'mc')!.score).toBeCloseTo(1 - 500 / 1300 / 0.5, 5);
+
+    const lossNoMc: BehaviorInput = { ...ceilingShape, score: -400, totalHoldEarnings: -600, totalSellEarnings: -200, totalMarginCallPenalty: 0 };
+    const rLoss = evaluateCeiling(lossNoMc, ceilingLog);
+    expect(rLoss.dims.find((d) => d.key === 'mc')!.score).toBe(1); // 亏损但未爆仓 → 反噬维度满分
+
+    const noLev: BehaviorInput = { ...ceilingShape, totalLeverageBuys: 0, totalMarginCallPenalty: 0 };
+    const rNoLev = evaluateCeiling(noLev, ceilingLog);
+    expect(rNoLev.dims.find((d) => d.key === 'mc')!.score).toBe(0.5); // 未燃灵 → 反噬无从谈起，中性
+  });
+
+  it('权重和为 1，综合分 = 加权和 × 100', () => {
+    const r = evaluateCeiling(ceilingShape, ceilingLog);
+    const wSum = r.dims.reduce((s, d) => s + d.weight, 0);
+    expect(wSum).toBeCloseTo(1, 5);
+    const manual = Math.round(r.dims.reduce((s, d) => s + d.weight * d.score, 0) * 100);
+    expect(r.total).toBe(manual);
+  });
+
+  it('空 decisionLog 不崩，缺省字段按 0 处理', () => {
+    const r = evaluateCeiling({ totalBuys: 0, totalSells: 0, totalWaits: 60, totalLeverageBuys: 0, totalLocks: 0, marginCallCount: 0, score: 0 });
+    expect(r.total).toBeGreaterThanOrEqual(0);
+    expect(r.total).toBeLessThanOrEqual(100);
+    expect(r.dims.length).toBe(6);
   });
 });
