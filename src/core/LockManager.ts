@@ -30,12 +30,12 @@ export interface LockManagerDeps {
 }
 
 export class LockManager {
-  /** 锁定费常量：每张锁定牌每回合消耗气 */
+  /** 锁定费常量：每张锁定牌每回合消耗神识 */
   static readonly LOCK_COST_PER_CARD = 5;
   /** 锁定张数上限：展示牌数 - 1（锁满则公共位全占，每回合 0 张新牌，游戏僵死） */
   static readonly MAX_LOCKED_CARDS = 2;
 
-  /** 锁定中的公共牌 ID 列表（锁定机制：占公共位，每张每回合扣 5 气） */
+  /** 锁定中的公共牌 ID 列表（锁定机制：占公共位，每张每回合扣 5 神识） */
   private lockedCardIds: number[] = [];
   private readonly deps: LockManagerDeps;
 
@@ -87,7 +87,7 @@ export class LockManager {
 
   /**
    * 尝试解锁一张公共牌（牌回牌堆）。
-   * 本动作不扣气也不退气（锁定费只在回合结束结算，锁→解锁无费用）。
+   * 本动作不扣神识也不退神识（锁定费只在回合结束结算，锁→解锁无费用）。
    * @returns 是否解锁成功；解锁时牌回牌堆由本方法处理
    */
   tryUnlock(publicCards: JiaziCard[], cardIndex: number): boolean {
@@ -121,8 +121,8 @@ export class LockManager {
   }
 
   /**
-   * 锁定费结算：每张锁定牌每回合扣 LOCK_COST_PER_CARD 气。
-   * 气不足时自动解锁（先解评分最低的），锁定牌回牌堆。
+   * 锁定费结算：每张锁定牌每回合扣 LOCK_COST_PER_CARD 神识。
+   * 神识不足时自动解锁（先解评分最低的），锁定牌回牌堆。
    * @returns 被自动解锁的牌 ID 列表（未触发自动解锁时为空数组）。
    *           调用方应据此向玩家给出明确提示，避免"锁定牌无故消失"的体验。
    */
@@ -134,7 +134,7 @@ export class LockManager {
     this.deps.qiManager.deductQi(totalCost);
 
     const autoUnlockedIds: number[] = [];
-    // 气不足：从评分最低的锁定牌开始自动解锁，直到气回正
+    // 神识不足：从评分最低的锁定牌开始自动解锁，直到神识回正
     while (this.lockedCardIds.length > 0 && this.deps.qiManager.getQi() <= 0) {
       const publicCards = this.deps.cardPoolManager.getPublicCards();
       let worstId: number | null = null;

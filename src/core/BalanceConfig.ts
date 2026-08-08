@@ -12,7 +12,7 @@ export interface BalanceConfig {
   /** 阴阳波动系数：最终分 = polarity * (raw - 四季均值) */
   yangPolarityFactor: number;
   yinPolarityFactor: number;
-  // 气
+  // 神识
   maxQi: number;
   initialQi: number;
   /** 每回合自然回气 */
@@ -29,7 +29,7 @@ export interface BalanceConfig {
   lqc: number;
   /** 买入入场手续费，lockedQi = buyCost - buyEntryFee */
   buyEntryFee: number;
-  /** 强平占用气退还系数 */
+  /** 强平占用气退还系数（占用气=仓位锁定气，机制名保留） */
   forcedLiquidationQiReturnFactor: number;
 
   /** 强平扣分系数：penalty = 杠杆 × |爆仓时评分| × marginCallPenaltyPerScore */

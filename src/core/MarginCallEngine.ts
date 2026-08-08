@@ -59,7 +59,7 @@ export class MarginCallEngine {
       balanceConfig,
     } = this.deps;
 
-    console.log('[MarginCallEngine] 爆仓！气耗尽');
+    console.log('[MarginCallEngine] 爆仓！神识耗尽');
     const details: MarginCallDetail[] = [];
 
     while (qiManager.getQi() <= 0) {
@@ -78,7 +78,7 @@ export class MarginCallEngine {
         }
       }
 
-      // 若已无杠杆牌，强平终止（仅剩的普通无杠杆牌允许气为 0 持有，下回合被迫等待）
+      // 若已无杠杆牌，强平终止（仅剩的普通无杠杆牌允许神识为 0 持有，下回合被迫等待）
       if (leverageSlots.length === 0) {
         break;
       }
@@ -126,7 +126,7 @@ export class MarginCallEngine {
         reason: `气量归零强制平仓，杠杆 ${effectiveLeverage}x，卡牌评分 ${currentScore}，扣分 ${marginCallPenalty}（杠杆 × |评分| × ${penaltyCoeff}）`
       });
 
-      console.log(`[MarginCallEngine] 爆仓强平：移除卡牌 ${slot.card.name}（评分最高 ${currentScore}），无卖出收益，扣分 ${marginCallPenalty}（${effectiveLeverage} × |${currentScore}| × ${penaltyCoeff}），退回占用气 ${forcedLiquidationQiReturn}`);
+      console.log(`[MarginCallEngine] 爆仓强平：移除卡牌 ${slot.card.name}（评分最高 ${currentScore}），无卖出收益，扣分 ${marginCallPenalty}（${effectiveLeverage} × |${currentScore}| × ${penaltyCoeff}），退回锁定气 ${forcedLiquidationQiReturn}`);
 
       // 强平成功后退出，不再提供低保缓冲——玩家必须自行管理气量，感受到爆仓的持续压力
       break;

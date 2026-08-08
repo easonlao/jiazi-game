@@ -110,7 +110,7 @@ function evalForesight(b: BehaviorInput): { label: string; desc: string } {
 
 /** 风控：反噬次数 + 亏损局 */
 function evalRisk(b: BehaviorInput): { label: string; desc: string } {
-  if (b.marginCallCount === 0) return { label: '稳若磐石', desc: '未遭反噬，心神稳固' };
+  if (b.marginCallCount === 0) return { label: '稳若磐石', desc: '未遭反噬，神识稳固' };
   if (b.marginCallCount === 1) return { label: '偶有失守', desc: '曾逢反噬，险而能回' };
   if (b.marginCallCount <= 3) return { label: '险象环生', desc: '数度反噬，险象环生' };
   return { label: '九死一生', desc: '屡遭反噬，近乎道崩' };

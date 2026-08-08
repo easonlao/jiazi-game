@@ -34,7 +34,7 @@ export class LeverageCalculator {
    * 设计意图：杠杆同时放大收益和持仓压力，让高杠杆位置有真实的持续风险。
    * 土牌无季节风险、可安全长持杠杆，用更高的专属系数补偿——否则"买入土牌杠杆躺着不动"
    * 成为无脑最优（2026-08-02 蒙特卡洛：土牌专属系数 2→5 后，土牌杠杆 290→129，策略空间打开）。
-   * 向上取整保证气为整数（2026-08-03 验证：ceil 对平衡零影响——气是"足够"的资源）。
+   * 向上取整保证神识为整数（2026-08-03 验证：ceil 对平衡零影响——神识是"足够"的资源）。
    */
   calculateHoldQiCost(cardScore: number, leverage: number, isEarth: boolean = false): number {
     const baseCost = Math.ceil(Math.max(

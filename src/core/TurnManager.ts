@@ -147,7 +147,7 @@ export interface SalePreviewBreakdown {
  * 行动确认前的下一回合结算预览。
  *
  * 预览只读取现有状态和计算器；它不调用抽牌、回牌或随机强平，因此不会改变游戏状态
- * 或推进注入的随机源。发生强平时，随机选择的仓位会影响最终气和分数，相关字段保持
+ * 或推进注入的随机源。发生强平时，随机选择的仓位会影响最终神识和分数，相关字段保持
  * null，避免把不确定结果伪装成确定值。
  */
 export interface SettlementPreview {
@@ -202,7 +202,7 @@ interface LastActionCardInfo {
 /**
  * 回合管理器
  * 
- * 游戏最核心的控制器与状态机骨架。负责流程控制、状态维护和各个子模块（气、计分、手牌、牌池、季节）的协调工作。
+ * 游戏最核心的控制器与状态机骨架。负责流程控制、状态维护和各个子模块（神识、计分、手牌、牌池、季节）的协调工作。
  * 单局限制 60 个回合。管理完整的游戏生命周期以及一键存档/读档机制。
  * 
  * @see {@link design/gdd/system-turn-flow.md} 回合流程设计文档
@@ -235,7 +235,7 @@ export class TurnManager {
   private readonly lockManager: LockManager;
   /** 强平引擎（爆仓时对杠杆仓位强制平仓） */
   private readonly marginCallEngine: MarginCallEngine;
-  /** 锁定费常量：每张锁定牌每回合消耗气（转发 LockManager，单一真源） */
+  /** 锁定费常量：每张锁定牌每回合消耗神识（转发 LockManager，单一真源） */
   static readonly LOCK_COST_PER_CARD = LockManager.LOCK_COST_PER_CARD;
   /** 锁定张数上限：展示牌数 - 1（锁满则公共位全占，每回合 0 张新牌，游戏僵死） */
   static readonly MAX_LOCKED_CARDS = LockManager.MAX_LOCKED_CARDS;
@@ -351,7 +351,7 @@ export class TurnManager {
   }
 
   /**
-   * 单回合的处理引擎，串联结算、抽牌、气回复
+   * 单回合的处理引擎，串联结算、抽牌、神识回复
    */
   private processRound(): void {
     if (this.currentRound > TurnManager.TOTAL_ROUNDS) {
@@ -385,8 +385,8 @@ export class TurnManager {
     // 1. 持仓结算
     this.settleHoldings();
 
-    // 1.5 锁定费结算：每张锁定牌每回合扣 LOCK_COST，气不足自动解锁（先解评分最低的）。
-    // 被自动解锁的牌要通知 UI 弹 Toast，否则玩家会以为锁定牌"无故消失"（卖出/等待低气导火索）。
+    // 1.5 锁定费结算：每张锁定牌每回合扣 LOCK_COST，神识不足自动解锁（先解评分最低的）。
+    // 被自动解锁的牌要通知 UI 弹 Toast，否则玩家会以为锁定牌"无故消失"（卖出/等待低神识导火索）。
     const autoUnlockedIds = this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason());
     if (autoUnlockedIds.length > 0) {
       this.onLockAutoUnlocked?.(autoUnlockedIds);
@@ -395,10 +395,10 @@ export class TurnManager {
     // 2. 抽牌（锁定牌保留在公共区，抽 drawCount - 锁定数 张新牌）
     this.cardPoolManager.drawCards(this.lockManager.getLockedCardIds());
 
-    // 3. 气回复
+    // 3. 神识回复
     this.recoverQi();
 
-    // 记录本回合最终分和气数值
+    // 记录本回合最终分和神识数值
     if (this.lastSettlementDetail) {
       this.lastSettlementDetail.finalQi = this.qiManager.getQi();
       this.lastSettlementDetail.finalScore = this.scoreManager.getScore();
@@ -477,7 +477,7 @@ export class TurnManager {
   }
 
   /**
-   * 执行对玩家手牌中持仓卡牌的阶段结算（加分并扣气，进行爆仓检查）
+   * 执行对玩家手牌中持仓卡牌的阶段结算（加分并扣神识，进行爆仓检查）
    */
   private settleHoldings(): void {
     const hand = this.handManager.getHand();
@@ -528,7 +528,7 @@ export class TurnManager {
 
 
   /**
-   * 自然回复玩家的气，若上回合选择等待则提供额外奖励
+   * 自然回复玩家的神识，若上回合选择等待则提供额外奖励
    */
   private recoverQi(): void {
     const totalLocked = this.getTotalLockedQi();
@@ -578,9 +578,9 @@ export class TurnManager {
       leverage
     );
 
-    // 检查气是否足够
+    // 检查神识是否足够
     if (!this.qiManager.canAfford(buyCost)) {
-      console.log('[TurnManager] 气不足');
+      console.log('[TurnManager] 神识不足');
       return false;
     }
 
@@ -712,7 +712,7 @@ export class TurnManager {
   }
 
   /**
-   * 执行等待动作（本回合弃牌，无消耗且下回合额外回复气）
+   * 执行等待动作（本回合弃牌，无消耗且下回合额外回复神识）
    * @returns 操作是否成功
    */
   executeWait(): boolean {
@@ -757,7 +757,7 @@ export class TurnManager {
 
   /**
    * 解锁一张公共牌：牌回牌堆。
-   * 本动作不扣气也不退气（锁定费只在回合结束结算，锁→解锁无费用）。
+   * 本动作不扣神识也不退神识（锁定费只在回合结束结算，锁→解锁无费用）。
    * @param cardIndex 公共牌索引
    * @returns 是否解锁成功
    */
@@ -1114,7 +1114,7 @@ export class TurnManager {
     return TurnManager.TOTAL_ROUNDS;
   }
 
-  /** 获取当前气 */
+  /** 获取当前神识 */
   getQi(): number {
     return this.qiManager.getQi();
   }
@@ -1124,7 +1124,7 @@ export class TurnManager {
     return this.qiManager.getBaseRecovery();
   }
 
-  /** 气上限 */
+  /** 神识上限 */
   getMaxQi(): number {
     return this.qiManager.getMaxQi();
   }
@@ -1303,7 +1303,7 @@ export class TurnManager {
     return this.scoreManager.getTotalMarginCallPenalty();
   }
 
-  /** 预览买入卡牌气消耗 */
+  /** 预览买入卡牌神识消耗 */
   previewBuyCost(card: JiaziCard, useLeverage: boolean): number {
     const score = this.getCardScore(card, this.getCurrentSeason());
     return this.qiManager.calculateBuyCost(score, useLeverage);
@@ -1314,7 +1314,7 @@ export class TurnManager {
     return this.scoreManager.calculateHoldEarnings(cardScore, leverage);
   }
 
-  /** 预览持仓卡牌每回合的气消耗 */
+  /** 预览持仓卡牌每回合的神识消耗 */
   previewHoldQiCost(cardScore: number, leverage: number, isEarth: boolean = false): number {
     return this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth);
   }

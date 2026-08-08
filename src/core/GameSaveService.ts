@@ -124,7 +124,7 @@ export class GameSaveService {
         return false;
       }
 
-      // 2. 校验无效存档（Round 1 且无手牌且气 <= 0 视为无效坏档）
+      // 2. 校验无效存档（Round 1 且无手牌且神识 <= 0 视为无效坏档）
       const isHandEmpty = !data.hand || data.hand.every((slot) => slot === null);
       if (data.currentRound <= 1 && isHandEmpty && data.qi <= 0) {
         console.warn('[GameSaveService] 检测到 Round 1 的无效坏档');

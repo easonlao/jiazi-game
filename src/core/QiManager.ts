@@ -51,7 +51,7 @@ export class QiManager {
   /**
    * 消耗特定额度的气
    * @param amount 消耗额度
-   * @returns 是否扣除成功（气不足返回 false 且不扣除）
+   * @returns 是否扣除成功（神识不足返回 false 且不扣除）
    */
   spend(amount: number): boolean {
     if (this.qi < amount) return false;

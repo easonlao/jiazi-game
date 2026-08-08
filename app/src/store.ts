@@ -536,7 +536,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const result = tm.executeLockCard(index);
     if (result.ok) {
       get()._sync();
-      get().showToast(`已锁定（每回合 -${TurnManager.LOCK_COST_PER_CARD} 气）`);
+      get().showToast(`已锁定（每回合 -${TurnManager.LOCK_COST_PER_CARD} 神识）`);
       return;
     }
     const msg =

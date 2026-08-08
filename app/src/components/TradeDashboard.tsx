@@ -394,7 +394,7 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
               {entry.action === 'settle' && (
                 <>终局评分 {entry.buyScore} → {entry.actionCardScore} · 出清收益 {fmtScore(entry.sellScore ?? 0)}</>
               )}
-              {entry.action === 'wait' && `回气 +${fmtScore(entry.settlement.baseQiRecover + entry.settlement.waitQiRecover)}`}
+              {entry.action === 'wait' && `回神 +${fmtScore(entry.settlement.baseQiRecover + entry.settlement.waitQiRecover)}`}
             </div>
           </div>
           <ActionResult entry={entry} />
@@ -406,11 +406,11 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
         </div>
       )}
 
-      {/* 结算层：炼化/耗神/回气/反噬 */}
+      {/* 结算层：炼化/耗神/回神/反噬 */}
       <div className="flex items-center gap-3 mt-2 text-xs">
         <SettleItem label="炼化" value={`${entry.settlement.holdEarnings >= 0 ? '+' : ''}${fmtScore(entry.settlement.holdEarnings)}`} color={entry.settlement.holdEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'} />
         <SettleItem label="耗神" value={fmtScore(-entry.settlement.holdQiCost)} color="text-sky-600" />
-        <SettleItem label="回气" value={`+${fmtScore(entry.settlement.baseQiRecover + entry.settlement.waitQiRecover)}`} color="text-sky-600" />
+        <SettleItem label="回神" value={`+${fmtScore(entry.settlement.baseQiRecover + entry.settlement.waitQiRecover)}`} color="text-sky-600" />
         {entry.settlement.marginCallTriggered && (
           <span className="ml-auto text-[11px] font-bold text-qi-critical">
             反噬 {entry.settlement.marginCallDetails.length} 张
