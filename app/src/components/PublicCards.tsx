@@ -40,7 +40,10 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
         </div>
       </div>
       {/* 当季提示 */}
-      <SeasonHint season={useGameStore((s) => s.season)} />
+      <SeasonHint
+        season={useGameStore((s) => s.season)}
+        volatilityActive={turnManager?.getScoreVolatilityState() !== null}
+      />
       <div className="grid grid-cols-3 gap-1.5">
         {publicCards
           // 2026-08-07 防「影子牌」：同一种牌只渲染一张（重复 id 是底层残留/异常，
@@ -98,6 +101,7 @@ function PublicCardItem({
   const canAfford = cost <= qi;
   const holdEarning = previewHoldEarning(index);
   const holdQiCost = previewHoldQiCost(index);
+  const volatilityTrend = turnManager?.getCardVolatilityTrend(card) ?? undefined;
 
   return (
     <PublicCard
@@ -110,6 +114,7 @@ function PublicCardItem({
       canAfford={canAfford}
       holdEarning={holdEarning}
       holdQiCost={holdQiCost}
+      volatilityTrend={volatilityTrend}
       locked={locked}
       onToggleLock={onToggleLock}
     />
@@ -117,7 +122,7 @@ function PublicCardItem({
 }
 
 /** 当季元素提示：告诉玩家当前季节哪种元素的牌评分最高 */
-function SeasonHint({ season }: { season: string }) {
+function SeasonHint({ season, volatilityActive }: { season: string; volatilityActive: boolean }) {
   const map: Record<string, { element: string; cls: string; text: string }> = {
     spring: { element: '木', cls: 'text-emerald-700', text: '当前是春季，木牌评分最高' },
     summer: { element: '火', cls: 'text-red-600', text: '当前是夏季，火牌评分最高' },
@@ -127,8 +132,18 @@ function SeasonHint({ season }: { season: string }) {
   const info = map[season];
   if (!info) return null;
   return (
-    <div className={`text-xs font-medium ${info.cls} bg-white/60 border border-wood-light rounded px-2 py-1 mb-1`}>
-      {info.text} · 土牌四季稳定
+    <div className="mb-1 flex flex-wrap items-center gap-1">
+      <div className={`text-xs font-medium ${info.cls} bg-white/60 border border-wood-light rounded px-2 py-1`}>
+        {info.text} · 土牌四季稳定
+      </div>
+      {volatilityActive && (
+        <span
+          data-volatility-experiment
+          className="rounded border border-wood-light/70 bg-white/60 px-1.5 py-1 text-[10px] text-ink-light"
+        >
+          短期趋势实验 · 箭头只表示方向
+        </span>
+      )}
     </div>
   );
 }

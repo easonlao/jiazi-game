@@ -73,6 +73,19 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await page.getByRole('button', { name: '关闭帮助' }).click();
   });
 
+  test('普通入口不显示季内趋势实验提示', async ({ page }) => {
+    await startGameAndDismiss(page);
+    await expect(page.locator('[data-volatility-experiment]')).toHaveCount(0);
+    await expect(page.locator('[data-volatility-trend]')).toHaveCount(0);
+  });
+
+  test('volatility=1 实验入口显示趋势提示与箭头', async ({ page }) => {
+    await page.goto('/?volatility=1');
+    await startGameAndDismiss(page);
+    await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
+    await expect(page.locator('[data-volatility-trend]')).toHaveCount(3);
+  });
+
   test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {
     await startGameAndDismiss(page);
 

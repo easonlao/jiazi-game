@@ -42,6 +42,7 @@ export type {
   ScoreVolatilityConfig,
   ScoreVolatilitySnapshot,
   VolatilityModel,
+  VolatilityTrend,
   RelationBand,
 } from './ScoreVolatility';
 

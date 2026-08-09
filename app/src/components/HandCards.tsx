@@ -52,6 +52,7 @@ export function HandCards() {
             if (!slot) return <EmptySlot key={i} shattered={shatteredSlots.has(i)} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             const nextScore = turnManager ? turnManager.getCardScore(slot.card, turnManager.getFollowingSeason()) : score;
+            const volatilityTrend = turnManager?.getCardVolatilityTrend(slot.card) ?? undefined;
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
             // 持仓卡面展示当前回合已经生效的收益/气耗；"→下回合倍数"箭头用
@@ -88,6 +89,7 @@ export function HandCards() {
                 holdQiCost={holdQiCost}
                 sellPreview={sellPreview}
                 shattered={shatteredSlots.has(i)}
+                volatilityTrend={volatilityTrend}
               />
             );
           })}

@@ -21,6 +21,7 @@ import {
   isSupportedVolatilityModel,
   type ScoreVolatilityConfig,
   type ScoreVolatilitySnapshot,
+  type VolatilityTrend,
 } from './ScoreVolatility';
 
 /** 游戏主状态 */
@@ -409,6 +410,29 @@ export class TurnManager {
       scale: this.scoreVolatilityState.scale ?? this.activeVolatilityConfig.scale ?? DEFAULT_SCORE_VOLATILITY_CONFIG.scale ?? 2,
       directionByDiZhi: { ...this.scoreVolatilityState.directionByDiZhi },
     };
+  }
+
+  /**
+   * 卡牌在当前活跃波动状态下的短期趋势（实验 UI 紧凑箭头数据源）。
+   *
+   * 返回 null 的条件与 getCardScore 叠加波动的门控一致：活跃规则版本必须精确命中
+   * RULES_VERSION_VOLATILE 且波动状态存在（base 规则 / 旧档 / 未知未来版本返回 null，
+   * UI 不渲染箭头）。方向来源按当前生效模型分支：
+   * - conflict_banded：读 directionByDiZhi[card.diZhi]（地支共享方向）；
+   * - uniform：读 deltaByDiZhi[card.diZhi]（地支整数偏移）。
+   * 值 >0 → rising，<0 → falling，=0 → steady。
+   */
+  getCardVolatilityTrend(card: JiaziCard): VolatilityTrend | null {
+    if (this.rulesVersion !== RULES_VERSION_VOLATILE || !this.scoreVolatilityState) return null;
+
+    const model = this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform';
+    const direction = model === 'conflict_banded'
+      ? this.scoreVolatilityState.directionByDiZhi?.[card.diZhi] ?? 0
+      : this.scoreVolatilityState.deltaByDiZhi[card.diZhi] ?? 0;
+
+    if (direction > 0) return 'rising';
+    if (direction < 0) return 'falling';
+    return 'steady';
   }
 
   /**

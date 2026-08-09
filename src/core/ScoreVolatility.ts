@@ -11,6 +11,15 @@ import { Element, YinYang } from './JiaziCard';
 export type VolatilityModel = 'uniform' | 'conflict_banded';
 
 /**
+ * 卡牌在当前活跃波动状态下的短期趋势（实验 UI 的紧凑箭头数据源）。
+ * - rising  = 当前波动方向为正（当季评分被短期推高）
+ * - falling = 当前波动方向为负（当季评分被短期压低）
+ * - steady  = 当前波动方向为零（无明显短期偏移）
+ * 波动未启用（base 规则 / 旧档）时由 TurnManager 返回 null，UI 不渲染箭头。
+ */
+export type VolatilityTrend = 'rising' | 'falling' | 'steady';
+
+/**
  * 实验性季内评分波动配置。
  *
  * 波动不是每张牌独立掷骰，而是按地支族共享一个短期偏移；这样同一地支的

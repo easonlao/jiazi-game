@@ -35,6 +35,15 @@ let _initializing = false;
  */
 let _pendingAutoUnlockToast: string | null = null;
 
+/**
+ * 显式实验入口：普通 URL 永远使用 base 规则；只有手动附加 ?volatility=1 才启用
+ * conflict_banded scale=2。该开关用于体验趋势 UI，不代表产品默认或正式规则发布。
+ */
+function isVolatilityExperimentEnabled(): boolean {
+  return typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('volatility') === '1';
+}
+
 /** 展示行动反馈 Toast：有自动解锁提示时优先展示并清空，否则用常规文案。 */
 function _showActionToast(get: () => GameStore, fallback: string): void {
   const pending = _pendingAutoUnlockToast;
@@ -303,7 +312,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (_initializing) return;
     _initializing = true;
     try {
-      const tm = new TurnManager(undefined, undefined, { storage: localStorageProvider });
+      const tm = new TurnManager(undefined, undefined, {
+        storage: localStorageProvider,
+        ...(isVolatilityExperimentEnabled()
+          ? { volatility: { enabled: true, model: 'conflict_banded' as const, scale: 2 } }
+          : {}),
+      });
       await tm.initialize();
 
       tm.setOnStateChange(() => {

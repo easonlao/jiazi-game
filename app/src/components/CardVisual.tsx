@@ -1,4 +1,5 @@
 import { type JiaziCard, Element, YinYang } from '@core/JiaziCard';
+import type { VolatilityTrend } from '@core/index';
 
 const elementBorder: Record<Element, string> = {
   [Element.WOOD]: 'border-emerald-400 bg-emerald-50/50',
@@ -29,6 +30,8 @@ interface CardVisualProps {
   badges?: React.ReactNode;
   /** 评分标签行右侧徽章（如杠杆倍率），由 HandCard 注入 */
   scoreBadge?: React.ReactNode;
+  /** 实验模式下的季内短期趋势；只显示方向，不显示幅度。 */
+  volatilityTrend?: VolatilityTrend;
   /** 底部信息区域，由 PublicCard/HandCard 各自填充 */
   children?: React.ReactNode;
 }
@@ -37,9 +40,16 @@ interface CardVisualProps {
  * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、当季→下季评分趋势。
  * 公共牌和手牌的差异（买入成本 vs 累计收益等）通过 badges 和 children 注入。
  */
-export function CardVisual({ card, score, nextScore, selected, highlight, onClick, badges, scoreBadge, children }: CardVisualProps) {
+export function CardVisual({ card, score, nextScore, selected, highlight, onClick, badges, scoreBadge, volatilityTrend, children }: CardVisualProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
   const baseBorder = elementBorder[card.mainElement];
+  const trendMeta = volatilityTrend === 'rising'
+    ? { icon: '↑', label: '短期趋势上行', className: 'text-qi-full' }
+    : volatilityTrend === 'falling'
+      ? { icon: '↓', label: '短期趋势下行', className: 'text-qi-critical' }
+      : volatilityTrend === 'steady'
+        ? { icon: '→', label: '短期趋势平稳', className: 'text-ink-light' }
+        : null;
 
   return (
     <div
@@ -83,6 +93,16 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
               {score >= 0 ? '+' : ''}{score.toFixed(1)}
               {nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
             </span>
+            {trendMeta && (
+              <span
+                data-volatility-trend={volatilityTrend}
+                aria-label={trendMeta.label}
+                title={trendMeta.label}
+                className={`text-sm font-bold leading-none ${trendMeta.className}`}
+              >
+                {trendMeta.icon}
+              </span>
+            )}
             {scoreBadge}
           </div>
         </div>

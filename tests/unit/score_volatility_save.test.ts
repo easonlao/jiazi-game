@@ -486,3 +486,37 @@ describe('rulesVersion=2 波动存档完整校验（importSnapshot 改动引擎�
     expect(tm.getQi()).toBe(beforeQi);
   });
 });
+
+describe('卡牌短期趋势辅助方法', () => {
+  async function makeConflictTrendTm() {
+    const tm = await makeTm(42, {
+      volSeed: 7,
+      volatility: { model: 'conflict_banded', scale: 2 },
+    });
+    tm.startGame();
+    return tm;
+  }
+
+  it('base 规则未启用波动时返回 null', async () => {
+    const tm = await makeTm(42);
+    tm.startGame();
+    expect(tm.getCardVolatilityTrend(tm.getPublicCards()[0]!)).toBeNull();
+  });
+
+  it.each([
+    [1, 'rising'],
+    [-1, 'falling'],
+    [0, 'steady'],
+  ] as const)('conflict_banded 方向 %s 映射为 %s', async (direction, expected) => {
+    const tm = await makeConflictTrendTm();
+    const card = tm.getPublicCards()[0]!;
+    const snapshot = tm.exportSnapshot();
+    const volatility = snapshot.scoreVolatility!;
+    volatility.directionByDiZhi = {
+      ...volatility.directionByDiZhi,
+      [card.diZhi]: direction,
+    };
+    tm.importSnapshot(snapshot);
+    expect(tm.getCardVolatilityTrend(card)).toBe(expected);
+  });
+});

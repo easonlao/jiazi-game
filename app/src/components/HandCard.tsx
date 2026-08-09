@@ -1,4 +1,5 @@
 import type { JiaziCard } from '@core/JiaziCard';
+import type { VolatilityTrend } from '@core/index';
 import { CardVisual } from './CardVisual';
 
 /** 神识消耗统一色（2026-08-06 issue 01 P3：神识消耗=资源冷色，修为才用红绿） */
@@ -23,6 +24,8 @@ interface HandCardProps {
   sellPreview: { score: number; qiChange: number } | null;
   /** 反噬崩坏：被反噬的丹田槽位播红闪碎裂效果（issue 04，2026-08-05） */
   shattered?: boolean;
+  /** 实验模式下的季内短期趋势。 */
+  volatilityTrend?: VolatilityTrend;
 }
 
 /**
@@ -44,6 +47,7 @@ export function HandCard({
   holdQiCost,
   sellPreview,
   shattered,
+  volatilityTrend,
 }: HandCardProps) {
   return (
     <div
@@ -53,6 +57,7 @@ export function HandCard({
         card={card}
         score={score}
         nextScore={nextScore}
+        volatilityTrend={volatilityTrend}
         selected={selected}
         onClick={onClick}
         badges={isLeverage ? (
