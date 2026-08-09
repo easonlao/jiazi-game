@@ -9,7 +9,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TurnManager } from '../../src/core/TurnManager';
 import { SeededRandomSource } from '../../src/core/RandomSource';
-import { GameSaveService } from '../../src/core/GameSaveService';
+import { GameSaveService, CURRENT_SCHEMA_VERSION, RULES_BASE, RULES_VERSION_VOLATILE } from '../../src/core/GameSaveService';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { GameSnapshot } from '../../src/core/GameSaveService';
@@ -59,6 +59,18 @@ function makeValidSnapshot(overrides: Partial<GameSnapshot> = {}): GameSnapshot 
     lockedCardIds: [],
     ...overrides,
   };
+}
+
+/** 构造 volatility 开启的 TurnManager（显式实验模式）：验证"存档声明优先"门控。 */
+async function makeVolatileTm(seed = 42, volSeed = 7) {
+  const cardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => cardData }));
+  const tm = new TurnManager(undefined, new SeededRandomSource(seed), {
+    volatility: { enabled: true },
+    volatilityRandom: new SeededRandomSource(volSeed),
+  });
+  await tm.initialize();
+  return tm;
 }
 
 describe('存档版本兼容（旧档 → 新代码）', () => {
@@ -158,8 +170,150 @@ describe('存档版本兼容（旧档 → 新代码）', () => {
   });
 });
 
+describe('规则版本化存档（schemaVersion / rulesVersion）', () => {
+  it('旧档（无版本字段）：按 base 规则导入，score / buyScore 事实不变，不启用波动', async () => {
+    const tm = await makeTm();
+    const oldSave = makeValidSnapshot();
+    delete (oldSave as any).schemaVersion;
+    delete (oldSave as any).rulesVersion;
+
+    expect(() => tm.importSnapshot(oldSave)).not.toThrow();
+    expect(tm.getScore()).toBe(120);
+    expect(tm.getHand()[0]!.buyScore).toBe(10);
+    expect(tm.getHand()[0]!.holdEarnings).toBe(5);
+    // 缺 rulesVersion → 显式归属 base 规则：波动状态不还原
+    expect(tm.getScoreVolatilityState()).toBeNull();
+  });
+
+  it('旧档继续游戏后再次保存：写时归属，自声明 schemaVersion / rulesVersion = base', async () => {
+    const tm = await makeTm();
+    const oldSave = makeValidSnapshot();
+    delete (oldSave as any).schemaVersion;
+    delete (oldSave as any).rulesVersion;
+    tm.importSnapshot(oldSave);
+
+    const re = tm.exportSnapshot();
+    expect(re.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(re.rulesVersion).toBe(RULES_BASE);
+  });
+
+  it('新档（带 schemaVersion / rulesVersion=1）：完整还原', async () => {
+    const tm = await makeTm();
+    tm.importSnapshot(makeValidSnapshot({ schemaVersion: 1, rulesVersion: 1 }));
+    expect(tm.getCurrentRound()).toBe(5);
+    expect(tm.getScore()).toBe(120);
+    expect(tm.getHand().filter(Boolean)).toHaveLength(1);
+    expect(tm.getScoreVolatilityState()).toBeNull();
+    expect(tm.exportSnapshot().rulesVersion).toBe(RULES_BASE);
+  });
+
+  it('构造时 volatility enabled，旧档（无 rulesVersion）仍按 base 导入：不继承构造期随机波动', async () => {
+    const tm = await makeVolatileTm();
+    // 构造期已创建了波动状态（volatility enabled），读旧档必须被覆盖为 null
+    expect(tm.getScoreVolatilityState()).not.toBeNull();
+    const oldSave = makeValidSnapshot();
+    delete (oldSave as any).schemaVersion;
+    delete (oldSave as any).rulesVersion;
+
+    tm.importSnapshot(oldSave);
+    expect(tm.getScoreVolatilityState()).toBeNull();
+    expect(tm.exportSnapshot().rulesVersion).toBe(RULES_BASE);
+  });
+
+  it('构造时 volatility enabled + 旧档无 rulesVersion：换季也不自动重新启用波动', async () => {
+    const tm = await makeVolatileTm();
+    // 存档放在季末（roundInSeason=12）：下一步行动必然换季 → refreshScoreVolatility 被 rulesVersion 门挡掉
+    const oldSave = makeValidSnapshot({ season: { index: 0, roundInSeason: 12, lengths: [12, 12, 12, 12] } });
+    delete (oldSave as any).schemaVersion;
+    delete (oldSave as any).rulesVersion;
+    tm.importSnapshot(oldSave);
+    expect(tm.getScoreVolatilityState()).toBeNull();
+
+    tm.executeWait(); // 换季
+    expect(tm.getCurrentSeason()).not.toBe('spring');
+    expect(tm.getScoreVolatilityState()).toBeNull();
+    // 换季后 getCardScore 不叠加任何波动偏移
+    const card = tm.getPublicCards()[0];
+    expect(tm.getCardScore(card, tm.getCurrentSeason()))
+      .toBe(card.getSeasonScore(tm.getCurrentSeason(), (tm as any).balanceConfig));
+  });
+
+  it('构造时 volatility enabled + 旧档无 rulesVersion：季内倒计时刷新（不换季）也不重新启用波动', async () => {
+    const tm = await makeVolatileTm();
+    // 存档放季中（roundInSeason=10）：连续等待不跨季，走 advanceTurn 的"倒计时递减"分支
+    const oldSave = makeValidSnapshot({ season: { index: 0, roundInSeason: 10, lengths: [12, 12, 12, 12] } });
+    delete (oldSave as any).schemaVersion;
+    delete (oldSave as any).rulesVersion;
+    tm.importSnapshot(oldSave);
+    expect(tm.getScoreVolatilityState()).toBeNull();
+
+    // 连续两个等待（仍在春季）：倒计时分支因状态为 null 而整体跳过，波动保持关闭
+    tm.executeWait();
+    tm.executeWait();
+    expect(tm.getCurrentSeason()).toBe('spring');
+    expect(tm.getScoreVolatilityState()).toBeNull();
+    // 季内 getCardScore 也不叠加任何波动偏移
+    const card = tm.getPublicCards()[0];
+    expect(tm.getCardScore(card, tm.getCurrentSeason()))
+      .toBe(card.getSeasonScore(tm.getCurrentSeason(), (tm as any).balanceConfig));
+  });
+
+  it('reset 是"开新局"：读旧档（base）后 reset，规则回到构造默认，不继承旧档声明', async () => {
+    const oldSave = makeValidSnapshot();
+    delete (oldSave as any).schemaVersion;
+    delete (oldSave as any).rulesVersion;
+
+    // 实验构造（volatility enabled）：reset 后新局按构造默认开波动规则
+    const tm = await makeVolatileTm();
+    tm.importSnapshot(oldSave);
+    expect(tm.getScoreVolatilityState()).toBeNull();
+    tm.reset();
+    expect(tm.getScoreVolatilityState()).not.toBeNull();
+    expect(tm.exportSnapshot().rulesVersion).toBe(RULES_VERSION_VOLATILE);
+
+    // 产品构造（base）：reset 后新局仍是 base 规则
+    const productTm = await makeTm();
+    productTm.importSnapshot(oldSave);
+    productTm.reset();
+    expect(productTm.getScoreVolatilityState()).toBeNull();
+    expect(productTm.exportSnapshot().rulesVersion).toBe(RULES_BASE);
+  });
+
+  it('旧档含 scoreVolatility 数据但无 rulesVersion：波动不还原（base 规则）', async () => {
+    const tm = await makeTm();
+    const oldSave = makeValidSnapshot();
+    delete (oldSave as any).rulesVersion;
+    oldSave.scoreVolatility = { remainingRounds: 2, deltaByDiZhi: { 子: 1, 丑: -1 } };
+
+    tm.importSnapshot(oldSave);
+    expect(tm.getScoreVolatilityState()).toBeNull();
+    // 再次保存：该档自声明 base 规则，scoreVolatility 数据不再随档保留
+    const re = tm.exportSnapshot();
+    expect(re.rulesVersion).toBe(RULES_BASE);
+    expect(re.scoreVolatility).toBeUndefined();
+  });
+
+  it('夹具档声明 rulesVersion=2 且含 scoreVolatility：波动状态还原（构造函数开关不覆盖读档声明）', async () => {
+    // 用"未开启波动"的构造（base 默认）读 volatile 档：还原门控只看存档声明
+    const tm = await makeTm();
+    const fixture = makeValidSnapshot({
+      schemaVersion: 1,
+      rulesVersion: RULES_VERSION_VOLATILE,
+      scoreVolatility: { remainingRounds: 3, deltaByDiZhi: { 子: 2, 丑: -2, 寅: 1 } },
+    });
+
+    tm.importSnapshot(fixture);
+    const restored = tm.getScoreVolatilityState();
+    expect(restored).not.toBeNull();
+    expect(restored!.remainingRounds).toBe(3);
+    expect(restored!.deltaByDiZhi).toEqual({ 子: 2, 丑: -2, 寅: 1 });
+    // 再次保存：写时归属该档自声明的 volatile 规则
+    expect(tm.exportSnapshot().rulesVersion).toBe(RULES_VERSION_VOLATILE);
+  });
+});
+
 describe('GameSaveService 坏档防护（load 路径）', () => {
-  it('qi 为 NaN / 缺失：拒绝并清理存档', () => {
+  it('qi 为 NaN / 缺失：拒绝并清理存档，失败原因 invalid_or_import_failed', () => {
     const store: Record<string, string> = {};
     const storage = {
       getItem: (k: string) => store[k] ?? null,
@@ -173,9 +327,10 @@ describe('GameSaveService 坏档防护（load 路径）', () => {
     const ok = svc.load(() => {});
     expect(ok).toBe(false);
     expect(store['jiazi_game_save']).toBeUndefined(); // 坏档已清理
+    expect(svc.getLastLoadError()).toBe('invalid_or_import_failed');
   });
 
-  it('JSON 损坏：load 捕获异常返回 false 不崩溃', () => {
+  it('JSON 损坏：load 捕获异常返回 false 不崩溃，失败原因 invalid_or_import_failed', () => {
     const store: Record<string, string> = { 'jiazi_game_save': '{broken json' };
     const storage = {
       getItem: (k: string) => store[k] ?? null,
@@ -184,5 +339,67 @@ describe('GameSaveService 坏档防护（load 路径）', () => {
     };
     const svc = new GameSaveService(storage as any);
     expect(() => svc.load(() => {})).not.toThrow();
+    expect(svc.getLastLoadError()).toBe('invalid_or_import_failed');
+  });
+
+  it('schemaVersion 超前（99）：拒绝读档返回 false，存档保留不清理，失败原因 schema_too_new', () => {
+    const store: Record<string, string> = {};
+    const storage = {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+    };
+    const svc = new GameSaveService(storage as any);
+
+    // 未来版本存档（即使 qi 等字段合法）也拒绝解析，绝不按坏档清理
+    store['jiazi_game_save'] = JSON.stringify(makeValidSnapshot({ schemaVersion: 99, rulesVersion: 1 }));
+    let called = false;
+    const ok = svc.load(() => { called = true; });
+    expect(ok).toBe(false);
+    expect(called).toBe(false);
+    expect(store['jiazi_game_save']).toBeDefined(); // 存档保留
+    expect(svc.getLastLoadError()).toBe('schema_too_new');
+
+    // 当前版本（schemaVersion = 1）正常读档
+    store['jiazi_game_save'] = JSON.stringify(makeValidSnapshot({ schemaVersion: 1, rulesVersion: 1 }));
+    const ok2 = svc.load(() => { called = true; });
+    expect(ok2).toBe(true);
+    expect(called).toBe(true);
+    expect(svc.getLastLoadError()).toBeNull(); // 成功后失败原因清空
+  });
+
+  it('未知 rulesVersion（99）：拒绝读档返回 false，存档保留不清理，失败原因 rules_version_unsupported', () => {
+    const store: Record<string, string> = {};
+    const storage = {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+    };
+    const svc = new GameSaveService(storage as any);
+
+    // 未知规则版本档：拒绝解析并保留原始存档（与 schemaVersion 超前同一策略）
+    store['jiazi_game_save'] = JSON.stringify(makeValidSnapshot({ schemaVersion: 1, rulesVersion: 99 }));
+    let called = false;
+    const ok = svc.load(() => { called = true; });
+    expect(ok).toBe(false);
+    expect(called).toBe(false);
+    expect(store['jiazi_game_save']).toBeDefined(); // 存档保留
+    expect(svc.getLastLoadError()).toBe('rules_version_unsupported');
+  });
+
+  it('schemaVersion 超前（99）：即使 qi 无效也不清理（保留原始存档）', () => {
+    const store: Record<string, string> = {};
+    const storage = {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+    };
+    const svc = new GameSaveService(storage as any);
+
+    // 未来版本的坏档：版本拒绝优先于坏档清理，原始数据保留
+    store['jiazi_game_save'] = JSON.stringify({ schemaVersion: 99, currentRound: 3, qi: 'not-a-number' });
+    const ok = svc.load(() => {});
+    expect(ok).toBe(false);
+    expect(store['jiazi_game_save']).toBeDefined();
   });
 });

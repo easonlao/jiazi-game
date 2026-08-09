@@ -12,6 +12,45 @@
 
 import type { StorageProvider } from './StorageProvider';
 import type { RoundLogEntry } from './TurnManager';
+import type { ScoreVolatilitySnapshot } from './ScoreVolatility';
+
+/** 读档失败分类原因：GameSaveService.load 最近一次失败的原因（成功或尚未 load 时为 null）。 */
+export type GameSaveLoadError =
+  /** 存档 schemaVersion 高于当前支持版本：拒绝读档、保留存档（PRD §5 Q6） */
+  | 'schema_too_new'
+  /** 存档声明未知 rulesVersion：拒绝读档、保留存档 */
+  | 'rules_version_unsupported'
+  /** 格式损坏 / 无效坏档 / importSnapshot 抛错：拒绝读档（qi 无效、Round 1 坏档会清理存档） */
+  | 'invalid_or_import_failed';
+
+/**
+ * 存档结构版本（schemaVersion）：描述 GameSnapshot 的字段布局 / 类型 / 必填性。
+ * 新增字段、字段改名/改类型、必填性变化时递增。阶段 1 初始化 = 1（当前协议结构）。
+ * 缺该字段的旧档 → 按字段缺失回退默认值（save_compat 既有模式）。
+ */
+export const CURRENT_SCHEMA_VERSION = 1;
+
+/**
+ * 游戏规则语义版本（rulesVersion）：描述"这一局按哪套结算规则运行"
+ * （评分模型 / 机制启用集，如是否启用季内评分波动）。
+ * 阶段 1 只有 base 规则（无季内波动），产品默认路径只能产出本版本。
+ */
+export const RULES_BASE = 1;
+
+/**
+ * 预留的波动规则版本：季内评分波动规则集，波动模型冻结后启用。
+ * 阶段 1 产品默认路径不产出该版本档（产品默认 base）；
+ * 仅测试 / 显式实验模式（构造函数 volatility 开启 + volatilityRandom）
+ * 可经 round-trip 验证其读档还原，见 tests/unit/score_volatility_save.test.ts。
+ */
+export const RULES_VERSION_VOLATILE = 2;
+
+/** 当前代码可解释的规则版本集合；存档层与引擎层共用，避免两处规则门控漂移。 */
+export type SupportedRulesVersion = typeof RULES_BASE | typeof RULES_VERSION_VOLATILE;
+
+export function isSupportedRulesVersion(version: unknown): version is SupportedRulesVersion {
+  return version === RULES_BASE || version === RULES_VERSION_VOLATILE;
+}
 
 /** 可序列化的手牌槽位快照。 */
 export interface HandSlotSnapshot {
@@ -59,8 +98,14 @@ export interface GameSnapshot {
   pool: CardPoolSnapshot;
   /** 锁定中的公共牌 ID 列表（锁定机制） */
   lockedCardIds?: number[];
+  /** 存档结构版本。新档必写，旧档可缺；缺失按字段级回退解析。 */
+  schemaVersion?: number;
+  /** 游戏规则语义版本。新档必写，旧档可缺；缺失按 base 规则读档（写时归属）。 */
+  rulesVersion?: number;
   /** 回合数据留存（交易看板数据源）。可选：老存档无此字段，读档时空数组。 */
   roundLog?: RoundLogEntry[];
+  /** 实验性季内评分波动状态；老存档无此字段时视为未启用。 */
+  scoreVolatility?: ScoreVolatilitySnapshot;
 }
 
 const SAVE_KEY = 'jiazi_game_save';
@@ -71,6 +116,8 @@ const SAVE_KEY = 'jiazi_game_save';
  */
 export class GameSaveService {
   private readonly storage: StorageProvider;
+  /** 最近一次 load() 的失败原因（成功 / 尚未调用 load / 无存档时为 null）。 */
+  private lastLoadError: GameSaveLoadError | null = null;
 
   /**
    * @param provider 存储实现；省略时回退浏览器 localStorage（web 平台）
@@ -78,6 +125,14 @@ export class GameSaveService {
   constructor(provider?: StorageProvider) {
     // globalThis 引用而非裸标识符：测试环境通过 mock globalThis.localStorage 提供实现
     this.storage = provider ?? (globalThis as { localStorage?: StorageProvider }).localStorage!;
+  }
+
+  /**
+   * 最近一次 load() 的失败原因，供 UI 区分「存档版本过新（提示更新游戏）」
+   * 与一般读档失败。成功或尚无失败时为 null。
+   */
+  getLastLoadError(): GameSaveLoadError | null {
+    return this.lastLoadError;
   }
 
   /**
@@ -105,12 +160,38 @@ export class GameSaveService {
     onStateRestore?: () => void,
   ): boolean {
     try {
+      // 每次 load 先清空上次的失败原因：本次成功或失败后再重新写入
+      this.lastLoadError = null;
       const raw = this.storage.getItem(SAVE_KEY);
       if (!raw) {
         console.log('[GameSaveService] 找不到存档');
         return false;
       }
       const data = JSON.parse(raw) as GameSnapshot;
+
+      // 0. 未来 schemaVersion（> 当前支持版本）：拒绝读档、返回 false、**不清理存档**。
+      //    PRD §5 Q6 阶段 1 建议默认（TODO 待用户确认）：版本过新的档当前代码无法安全解析，
+      //    保留原始存档供未来版本升级或手动迁移，绝不按坏档清理（否则老数据永久丢失）。
+      if (typeof data.schemaVersion === 'number' && data.schemaVersion > CURRENT_SCHEMA_VERSION) {
+        this.lastLoadError = 'schema_too_new';
+        console.warn(
+          `[GameSaveService] 存档 schemaVersion=${data.schemaVersion} 高于当前支持版本 ${CURRENT_SCHEMA_VERSION}，拒绝读档（保留存档，不清理）`,
+        );
+        return false;
+      }
+
+      // 0.5 未知规则版本（非 RULES_BASE、非 RULES_VERSION_VOLATILE）：拒绝读档、
+      //     返回 false、**不清理存档**。未知规则若按 base 静默继续，会把未来规则
+      //     存档用错误规则运行（写时还会把错误归属固化回档）——与 schemaVersion
+      //     一样保留原始存档供升级。缺 rulesVersion 的旧档显式归属 base（兼容）。
+      const declaredRules = data.rulesVersion ?? RULES_BASE;
+      if (!isSupportedRulesVersion(declaredRules)) {
+        this.lastLoadError = 'rules_version_unsupported';
+        console.warn(
+          `[GameSaveService] 存档 rulesVersion=${data.rulesVersion} 不是支持的规则版本（只支持 RULES_BASE=${RULES_BASE} / RULES_VERSION_VOLATILE=${RULES_VERSION_VOLATILE}），拒绝读档（保留存档，不清理）`,
+        );
+        return false;
+      }
 
       // 1. 基础字段验证，确保 qi 是有效数值
       if (
@@ -119,6 +200,7 @@ export class GameSaveService {
         typeof data.qi !== 'number' ||
         isNaN(data.qi)
       ) {
+        this.lastLoadError = 'invalid_or_import_failed';
         console.warn('[GameSaveService] 存档数据格式不正确，qi 为无效数值');
         this.clear();
         return false;
@@ -127,6 +209,7 @@ export class GameSaveService {
       // 2. 校验无效存档（Round 1 且无手牌且神识 <= 0 视为无效坏档）
       const isHandEmpty = !data.hand || data.hand.every((slot) => slot === null);
       if (data.currentRound <= 1 && isHandEmpty && data.qi <= 0) {
+        this.lastLoadError = 'invalid_or_import_failed';
         console.warn('[GameSaveService] 检测到 Round 1 的无效坏档');
         this.clear();
         return false;
@@ -138,6 +221,7 @@ export class GameSaveService {
       onStateRestore?.();
       return true;
     } catch (e) {
+      this.lastLoadError = 'invalid_or_import_failed';
       console.error('[GameSaveService] 读档失败:', e);
       return false;
     }

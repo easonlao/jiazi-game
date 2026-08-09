@@ -396,7 +396,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
       get()._sync();
       set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, hasSave: false });
+      return ok;
     }
+    // 读档失败：区分「存档版本过新」与一般失败（App 不再无条件弹"继续游戏"）
+    const loadError = tm.getLastLoadError();
+    get().showToast(
+      loadError === 'schema_too_new' || loadError === 'rules_version_unsupported'
+        ? '存档版本过新，请更新游戏'
+        : '读档失败',
+    );
     return ok;
   },
 
