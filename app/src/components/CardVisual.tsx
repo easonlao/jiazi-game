@@ -37,18 +37,19 @@ interface CardVisualProps {
 }
 
 /**
- * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、当季→下季评分趋势。
+ * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、评分与短期波动提示。
  * 公共牌和手牌的差异（买入成本 vs 累计收益等）通过 badges 和 children 注入。
  */
 export function CardVisual({ card, score, nextScore, selected, highlight, onClick, badges, scoreBadge, volatilityTrend, children }: CardVisualProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
   const baseBorder = elementBorder[card.mainElement];
+  const volatilityActive = volatilityTrend !== undefined;
   const trendMeta = volatilityTrend === 'rising'
-    ? { icon: '↑', label: '短期趋势上行', className: 'text-qi-full' }
+    ? { text: '波动↑', label: '短期波动上行', className: 'text-qi-full' }
     : volatilityTrend === 'falling'
-      ? { icon: '↓', label: '短期趋势下行', className: 'text-qi-critical' }
+      ? { text: '波动↓', label: '短期波动下行', className: 'text-qi-critical' }
       : volatilityTrend === 'steady'
-        ? { icon: '→', label: '短期趋势平稳', className: 'text-ink-light' }
+        ? { text: '波动稳', label: '短期波动平稳', className: 'text-ink-light' }
         : null;
 
   return (
@@ -83,24 +84,30 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
         </div>
       </div>
 
-      {/* 当前→下季价值：与结算预览使用同一评分口径。
-          grid-cols-3 窄卡适配：评分值固定 14px（去掉 sm/md 放大），评分区 py-1.5 增加呼吸间距。 */}
+      {/* 普通模式显示确定的季节基准变化；波动模式只显示已含短期波动的当前分，
+          避免把未来基础分和当前波动方向拼成一条误导性的“预测箭头”。 */}
       <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5 max-md:py-1">
         <div className="min-w-0 flex-1">
-          <span className="card-score-label block text-[10px] max-md:text-[9px] leading-tight text-ink-light">当季 → 下季评分</span>
+          <span
+            className="card-score-label block text-[10px] max-md:text-[9px] leading-tight text-ink-light"
+            data-volatility-score={volatilityActive ? 'current' : undefined}
+            title={volatilityActive ? '当前评分已包含短期波动；换季后会重新计算' : undefined}
+          >
+            {volatilityActive ? '当前评分' : '当季 → 下季评分'}
+          </span>
           <div className="flex items-baseline gap-1">
             <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
               {score >= 0 ? '+' : ''}{score.toFixed(1)}
-              {nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
+              {!volatilityActive && nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
             </span>
-            {trendMeta && (
+            {volatilityActive && trendMeta && (
               <span
                 data-volatility-trend={volatilityTrend}
                 aria-label={trendMeta.label}
                 title={trendMeta.label}
-                className={`text-sm font-bold leading-none ${trendMeta.className}`}
+                className={`text-[10px] max-md:text-[9px] font-bold leading-none whitespace-nowrap ${trendMeta.className}`}
               >
-                {trendMeta.icon}
+                {trendMeta.text}
               </span>
             )}
             {scoreBadge}

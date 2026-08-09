@@ -79,11 +79,16 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.locator('[data-volatility-trend]')).toHaveCount(0);
   });
 
-  test('volatility=1 实验入口显示趋势提示与箭头', async ({ page }) => {
+  test('volatility=1 实验入口显示波动提示与明确标记', async ({ page }) => {
     await page.goto('/?volatility=1');
     await startGameAndDismiss(page);
     await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
     await expect(page.locator('[data-volatility-trend]')).toHaveCount(3);
+
+    const cards = page.locator('.card-in');
+    const texts = await cards.allInnerTexts();
+    expect(texts.every((text) => !/[+-]?\d+\.\d\s*→\s*[+-]?\d+\.\d/.test(text))).toBe(true);
+    expect(texts.every((text) => text.includes('当前评分'))).toBe(true);
   });
 
   test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {
