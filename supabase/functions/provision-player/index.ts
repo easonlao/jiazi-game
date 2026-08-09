@@ -37,7 +37,10 @@ Deno.serve(async (req) => {
     .select('auth_user_id')
     .eq('auth_user_id', authUserId)
     .maybeSingle();
-  if (existingError) return json({ error: 'internal_error' }, 500);
+  if (existingError) {
+    console.error('provision-player existing identity lookup failed', existingError);
+    return json({ error: 'internal_error' }, 500);
+  }
   if (existing) return json({ error: 'already_linked' }, 409);
 
   const playerId = crypto.randomUUID();
@@ -50,6 +53,7 @@ Deno.serve(async (req) => {
     .from('player_profiles')
     .insert({ id: playerId, public_player_id: publicPlayerId, display_name: displayName });
   if (profileError) {
+    console.error('provision-player profile insert failed', profileError);
     return isUniqueViolation(profileError)
       ? json({ error: 'already_linked' }, 409)
       : json({ error: 'internal_error' }, 500);
@@ -60,6 +64,7 @@ Deno.serve(async (req) => {
     .from('recovery_secrets')
     .insert({ player_id: playerId, secret_hash: secretHash });
   if (secretError) {
+    console.error('provision-player recovery secret insert failed', secretError);
     await supabase.from('player_profiles').delete().eq('id', playerId);
     return json({ error: 'internal_error' }, 500);
   }
@@ -68,6 +73,7 @@ Deno.serve(async (req) => {
     .from('player_identity_links')
     .insert({ player_id: playerId, auth_user_id: authUserId });
   if (linkError) {
+    console.error('provision-player identity link insert failed', linkError);
     await supabase.schema('private').from('recovery_secrets').delete().eq('player_id', playerId);
     await supabase.from('player_profiles').delete().eq('id', playerId);
     return isUniqueViolation(linkError)
