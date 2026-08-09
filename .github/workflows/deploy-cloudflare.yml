@@ -30,7 +30,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build project
-        run: pnpm build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL"
+          test -n "$VITE_SUPABASE_PUBLISHABLE_KEY"
+          pnpm build
 
       # 2026-08-04: wrangler-action 的自动安装在 pnpm workspace 下两条路都不通：
       #   1) 按 lockfile 检测到 pnpm-lock.yaml → 走 `pnpm add wrangler` → workspace 根目录
