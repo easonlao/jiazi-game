@@ -207,6 +207,11 @@ interface LastActionCardInfo {
   qiReturn: number;
 }
 
+/** 判断是否为非 null 且非数组的对象（Record 形状）。 */
+function isNonNilRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 /**
  * 回合管理器
  * 
@@ -1052,12 +1057,13 @@ export class TurnManager {
     ) {
       throw new Error('rulesVersion=2 存档缺少 scoreVolatility，拒绝读档');
     }
-    if (
-      declaredRules === RULES_VERSION_VOLATILE &&
-      data.scoreVolatility?.model === 'conflict_banded' &&
-      (typeof data.scoreVolatility.scale !== 'number' || !Number.isFinite(data.scoreVolatility.scale) || !data.scoreVolatility.directionByDiZhi)
-    ) {
-      throw new Error('conflict_banded 存档缺少有效的 scale 或 directionByDiZhi，拒绝读档');
+    // 波动快照完整校验（在任何状态改动之前）：rulesVersion=2 档的 scoreVolatility
+    // 必须字段齐全且数值合法，任何一项不合格都明确拒绝，绝不带病还原。
+    // 仅对 volatile 规则档生效；base 规则（rulesVersion=1 / 缺省旧档）不还原
+    // scoreVolatility，故不校验（保持既有行为）。
+    if (declaredRules === RULES_VERSION_VOLATILE) {
+      // 缺省分支已在上方门控拒绝：此处 scoreVolatility 保证非空。
+      this.validateVolatileScoreVolatility(data.scoreVolatility!);
     }
     this.rulesVersion = declaredRules;
 
@@ -1194,6 +1200,58 @@ export class TurnManager {
     }
     // 补录记录 round 可能小于现有记录，统一按回合排序保证看板正序展示
     this.roundLog.sort((a, b) => a.round - b.round);
+  }
+
+  /**
+   * 完整校验 volatile 规则档（rulesVersion=2）的 scoreVolatility 快照。
+   *
+   * 必须在改动任何引擎状态之前调用：任何一项不合格都直接抛明确错误，拒绝读档。
+   * - scoreVolatility 必须是非 null 对象；
+   * - remainingRounds 必须是有限非负整数；
+   * - deltaByDiZhi 必须是非 null 对象，且所有值都是有限数字；
+   * - conflict_banded 模型还需 scale 有限非负、directionByDiZhi 非 null 对象
+   *   且所有值都是 [-1, 1] 内的有限数字（模型缺省按 uniform 处理）。
+   * base 规则（rulesVersion=1 / 缺省旧档）不调用本方法：其 scoreVolatility 不还原。
+   */
+  private validateVolatileScoreVolatility(vol: ScoreVolatilitySnapshot): void {
+    if (!isNonNilRecord(vol)) {
+      throw new Error('rulesVersion=2 存档的 scoreVolatility 必须是对象，拒绝读档');
+    }
+
+    const { remainingRounds, deltaByDiZhi, model, scale, directionByDiZhi } = vol;
+
+    if (
+      typeof remainingRounds !== 'number' ||
+      !Number.isInteger(remainingRounds) ||
+      remainingRounds < 0
+    ) {
+      throw new Error(
+        `rulesVersion=2 存档的 scoreVolatility.remainingRounds=${remainingRounds} 必须是有限非负整数，拒绝读档`,
+      );
+    }
+
+    if (
+      !isNonNilRecord(deltaByDiZhi) ||
+      !Object.values(deltaByDiZhi).every((v) => typeof v === 'number' && Number.isFinite(v))
+    ) {
+      throw new Error('rulesVersion=2 存档的 scoreVolatility.deltaByDiZhi 必须是值为有限数字的对象，拒绝读档');
+    }
+
+    if ((model ?? 'uniform') === 'conflict_banded') {
+      if (typeof scale !== 'number' || !Number.isFinite(scale) || scale < 0) {
+        throw new Error(
+          `conflict_banded 存档的 scoreVolatility.scale=${scale} 必须是有限非负数字，拒绝读档`,
+        );
+      }
+      if (
+        !isNonNilRecord(directionByDiZhi) ||
+        !Object.values(directionByDiZhi).every(
+          (v) => typeof v === 'number' && Number.isFinite(v) && v >= -1 && v <= 1,
+        )
+      ) {
+        throw new Error('conflict_banded 存档的 scoreVolatility.directionByDiZhi 必须是值在 [-1, 1] 的有限数字对象，拒绝读档');
+      }
+    }
   }
 
   /**

@@ -358,3 +358,131 @@ describe('波动状态持久化（scoreVolatility save → load → continue）'
     expect(tm.exportSnapshot().rulesVersion).toBe(RULES_VERSION_VOLATILE);
   });
 });
+
+describe('rulesVersion=2 波动存档完整校验（importSnapshot 改动引擎状态前拒绝坏档）', () => {
+  /**
+   * 在内存存储中写入一份 scoreVolatility 被篡改的 volatile 存档，并经真实
+   * GameSaveService.load 链路验证：loadGame 返回 false、失败原因分类为
+   * invalid_or_import_failed、原始存档被保留（不清理）。
+   */
+  async function expectLoadRejects(corrupt: (raw: GameSnapshot) => void | string) {
+    const storage = makeMemoryStorage();
+    const source = await makeTm(42, { volSeed: 7, storage });
+    source.startGame();
+    source.executeBuy(0, false);
+    expect(source.saveGame()).toBe(true);
+
+    const raw = JSON.parse(storage.getItem('jiazi_game_save')!) as GameSnapshot;
+    raw.rulesVersion = RULES_VERSION_VOLATILE;
+    // 统一构造一份合法的 uniform 波动快照，再由各用例破坏字段
+    raw.scoreVolatility = { remainingRounds: 2, deltaByDiZhi: { 子: 1, 丑: -1 } };
+
+    const written = corrupt(raw);
+    storage.setItem('jiazi_game_save', typeof written === 'string' ? written : JSON.stringify(raw));
+
+    const tm = await makeTm(42, { storage });
+    expect(tm.loadGame()).toBe(false);
+    expect(tm.getLastLoadError()).toBe('invalid_or_import_failed');
+    expect(storage.getItem('jiazi_game_save')).not.toBeNull();
+  }
+
+  const malformedCases: [string, (raw: GameSnapshot) => void | string][] = [
+    ['scoreVolatility 非对象（number）', (raw) => { (raw as any).scoreVolatility = 42; }],
+    ['remainingRounds 为负', (raw) => { (raw.scoreVolatility as any).remainingRounds = -1; }],
+    ['remainingRounds 非整数', (raw) => { (raw.scoreVolatility as any).remainingRounds = 1.5; }],
+    ['remainingRounds 非数字', (raw) => { (raw.scoreVolatility as any).remainingRounds = '2'; }],
+    ['deltaByDiZhi 缺失', (raw) => { delete (raw.scoreVolatility as any).deltaByDiZhi; }],
+    ['deltaByDiZhi 为 null', (raw) => { (raw.scoreVolatility as any).deltaByDiZhi = null; }],
+    ['deltaByDiZhi 值为非数字', (raw) => { (raw.scoreVolatility as any).deltaByDiZhi = { 子: 'high' }; }],
+    [
+      'deltaByDiZhi 值为非有限数字（1e999 溢出 → Infinity）',
+      (raw) => {
+        (raw.scoreVolatility as any).deltaByDiZhi = { 子: 1234567, 丑: -1 };
+        // JSON.stringify(Infinity) 会序列化成 null，故直接写入含溢出字面量的原始字符串
+        return JSON.stringify(raw).replace('1234567', '1e999');
+      },
+    ],
+  ];
+
+  it.each(malformedCases)(
+    '%s：loadGame 拒绝、invalid_or_import_failed、保留原始存档',
+    async (_name, corrupt) => {
+      await expectLoadRejects(corrupt);
+    },
+  );
+
+  const malformedConflictCases: [string, (vol: any) => void][] = [
+    ['scale 为负', (vol) => { vol.scale = -1; }],
+    ['scale 非数字', (vol) => { vol.scale = '2'; }],
+    ['scale 非有限（1e999 溢出 → Infinity）', (vol) => { vol.scale = 1234567; }],
+    ['directionByDiZhi 缺失', (vol) => { delete vol.directionByDiZhi; }],
+    ['directionByDiZhi 为 null', (vol) => { vol.directionByDiZhi = null; }],
+    ['directionByDiZhi 值超出 [-1, 1]', (vol) => { vol.directionByDiZhi = { 子: 5 }; }],
+    ['directionByDiZhi 值为非数字', (vol) => { vol.directionByDiZhi = { 子: 'up' }; }],
+  ];
+
+  it.each(malformedConflictCases)(
+    'conflict_banded：%s：loadGame 拒绝、invalid_or_import_failed、保留原始存档',
+    async (_name, corrupt) => {
+      await expectLoadRejects((raw) => {
+        const vol = raw.scoreVolatility as any;
+        vol.model = 'conflict_banded';
+        vol.scale = 2;
+        vol.directionByDiZhi = { 子: 1, 丑: -1 };
+        corrupt(vol);
+        if (vol.scale === 1234567) {
+          // 溢出字面量：直接写入原始字符串，JSON.parse 后得到 Infinity（非有限数字）
+          return JSON.stringify(raw).replace('1234567', '1e999');
+        }
+      });
+    },
+  );
+
+  it('valid conflict_banded 存档（含 scale / directionByDiZhi）：正常读档还原', async () => {
+    const storage = makeMemoryStorage();
+    const source = await makeTm(42, { volSeed: 7, storage });
+    source.startGame();
+    expect(source.saveGame()).toBe(true);
+
+    const raw = JSON.parse(storage.getItem('jiazi_game_save')!) as GameSnapshot;
+    raw.rulesVersion = RULES_VERSION_VOLATILE;
+    raw.scoreVolatility = {
+      model: 'conflict_banded',
+      scale: 2,
+      remainingRounds: 1,
+      deltaByDiZhi: {},
+      directionByDiZhi: { 子: 1, 丑: -0.5 },
+    };
+    storage.setItem('jiazi_game_save', JSON.stringify(raw));
+
+    const tm = await makeTm(42, { storage });
+    expect(tm.loadGame()).toBe(true);
+    expect(tm.getScoreVolatilityState()?.model).toBe('conflict_banded');
+    expect(tm.getScoreVolatilityState()?.scale).toBe(2);
+    expect(tm.getScoreVolatilityState()?.remainingRounds).toBe(1);
+  });
+
+  it('direct importSnapshot 校验失败：不改动读档前已有的规则/波动状态', async () => {
+    const tm = await makeTm(42, { volSeed: 7 }); // volatile 构造：有预置波动状态
+    tm.startGame();
+    tm.executeBuy(0, false);
+    const beforeVol = tm.getScoreVolatilityState()!;
+    expect(beforeVol).not.toBeNull();
+    const beforeRound = tm.getCurrentRound();
+    const beforeScore = tm.getScore();
+    const beforeQi = tm.getQi();
+
+    const snapshot = tm.exportSnapshot();
+    expect(snapshot.rulesVersion).toBe(RULES_VERSION_VOLATILE);
+    (snapshot.scoreVolatility as any).remainingRounds = -5;
+
+    expect(() => tm.importSnapshot(snapshot)).toThrowError(/remainingRounds/);
+    // 读档失败即止：引擎保持读档前状态——波动状态原样、规则归属未写回、基础数值未动
+    expect(tm.getScoreVolatilityState()).toEqual(beforeVol);
+    expect(tm.getScoreVolatilityState()).not.toBeNull();
+    expect(tm.exportSnapshot().rulesVersion).toBe(RULES_VERSION_VOLATILE);
+    expect(tm.getCurrentRound()).toBe(beforeRound);
+    expect(tm.getScore()).toBe(beforeScore);
+    expect(tm.getQi()).toBe(beforeQi);
+  });
+});
