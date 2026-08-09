@@ -11,6 +11,9 @@ import {
   type LeaderboardEntry,
   type RoundLogEntry,
   type DecisionEntry,
+  BAND_FACTOR,
+  RULES_VERSION_TRADE,
+  TRADE_SCORE_RULES,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -37,7 +40,8 @@ let _pendingAutoUnlockToast: string | null = null;
 
 /**
  * 显式实验入口：普通 URL 永远使用 base 规则；只有手动附加 ?volatility=1 才启用
- * conflict_banded scale=2。该开关用于体验趋势 UI，不代表产品默认或正式规则发布。
+ * v3 conflict_banded 交易规则。普通 URL 永远使用 base 规则；该开关用于体验
+ * 交易主导的趋势 UI，不代表普通生产路径自动升级旧存档。
  */
 function isVolatilityExperimentEnabled(): boolean {
   return typeof window !== 'undefined'
@@ -315,7 +319,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const tm = new TurnManager(undefined, undefined, {
         storage: localStorageProvider,
         ...(isVolatilityExperimentEnabled()
-          ? { volatility: { enabled: true, model: 'conflict_banded' as const, scale: 2 } }
+          ? {
+            rulesVersion: RULES_VERSION_TRADE,
+            scoreRules: TRADE_SCORE_RULES,
+            volatility: {
+              enabled: true,
+              model: 'conflict_banded' as const,
+              scale: 4,
+              bandFactors: { ...BAND_FACTOR, conflict: 6 },
+            },
+          }
           : {}),
       });
       await tm.initialize();

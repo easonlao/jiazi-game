@@ -10,6 +10,17 @@ import { Element, YinYang } from './JiaziCard';
  */
 export type VolatilityModel = 'uniform' | 'conflict_banded';
 
+/** 卡牌波动档位（从现有天干/地支五行关系推导，不读分数、不新增第二套牌型数据）。 */
+export type RelationBand = 'stable' | 'mixed' | 'conflict' | 'earth';
+
+/** 各档位的基础幅度系数。 */
+export const BAND_FACTOR: Record<RelationBand, number> = {
+  earth: 0.5,
+  stable: 0.75,
+  mixed: 1.0,
+  conflict: 1.5,
+};
+
 /**
  * 卡牌在当前活跃波动状态下的短期趋势（实验 UI 的紧凑箭头数据源）。
  * - rising  = 当前波动方向为正（当季评分被短期推高）
@@ -35,6 +46,8 @@ export interface ScoreVolatilityConfig {
   maxScoreDelta: number;
   /** conflict_banded 模型全局 scale（唯一可调参数）；0 → 零偏移但仍走真实核心路径。 */
   scale?: number;
+  /** 可选的牌区幅度覆盖；未提供时使用 BAND_FACTOR，旧 v2 规则保持原语义。 */
+  bandFactors?: Partial<Record<RelationBand, number>>;
 }
 
 export const DEFAULT_SCORE_VOLATILITY_CONFIG: ScoreVolatilityConfig = {
@@ -63,6 +76,8 @@ export interface ScoreVolatilitySnapshot {
   scale?: number;
   /** conflict_banded 模型：每个地支共享的方向（-1/-0.5/0/0.5/1）。 */
   directionByDiZhi?: Record<string, number>;
+  /** v3 交易规则冻结的牌区幅度；旧 v2 存档没有此字段。 */
+  bandFactors?: Partial<Record<RelationBand, number>>;
 }
 
 const DI_ZHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
@@ -92,6 +107,7 @@ export function createScoreVolatilityState(
       remainingRounds,
       deltaByDiZhi: {},
       directionByDiZhi,
+      ...(config.bandFactors ? { bandFactors: { ...config.bandFactors } } : {}),
     };
   }
 
@@ -106,17 +122,6 @@ export function createScoreVolatilityState(
   // 保持旧 uniform 存档形状：新增模型字段只属于 conflict_banded 存档。
   return { remainingRounds: random.int(minDuration, maxDuration + 1), deltaByDiZhi };
 }
-
-/** 卡牌波动档位（从现有天干/地支五行关系推导，不读分数、不新增第二套牌型数据）。 */
-export type RelationBand = 'stable' | 'mixed' | 'conflict' | 'earth';
-
-/** 各档位的基础幅度系数。 */
-export const BAND_FACTOR: Record<RelationBand, number> = {
-  earth: 0.5,
-  stable: 0.75,
-  mixed: 1.0,
-  conflict: 1.5,
-};
 
 function isSameGroup(a: Element, b: Element): boolean {
   const woodFire = [Element.WOOD, Element.FIRE];
@@ -147,12 +152,19 @@ export function relationBand(card: JiaziCard): RelationBand {
  * 低分门控不是额外配置：由当前季节基础分归一化得到，保护当季强牌的持有稳定性。
  * Yin/yang 只复用现有 1.1/0.9 极性比例，不新增可调参数。
  */
-export function cardAmplitude(card: JiaziCard, scale: number, baseScore: number): number {
+export function cardAmplitude(
+  card: JiaziCard,
+  scale: number,
+  baseScore: number,
+  bandFactors: Partial<Record<RelationBand, number>> = {},
+): number {
   const polarity = card.yinYang === YinYang.YANG ? 1.1 : 0.9;
   // 评分上限约为 +35：强牌保留约四分之一噪声，分数越低越接近满幅度。
   // 负分牌封顶为满幅度，避免因负分继续无限放大。
   const lowScoreFactor = Math.max(0.25, Math.min(1, 1 - baseScore / 35));
-  return scale * BAND_FACTOR[relationBand(card)] * polarity * lowScoreFactor;
+  const band = relationBand(card);
+  const bandFactor = bandFactors[band] ?? BAND_FACTOR[band];
+  return scale * bandFactor * polarity * lowScoreFactor;
 }
 
 /** 判断一个波动模型值是否被当前代码支持（缺省/undefined 不算未知，属旧格式）。 */

@@ -9,7 +9,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TurnManager } from '../../src/core/TurnManager';
 import { SeededRandomSource } from '../../src/core/RandomSource';
-import { GameSaveService, CURRENT_SCHEMA_VERSION, RULES_BASE, RULES_VERSION_VOLATILE } from '../../src/core/GameSaveService';
+import { GameSaveService, CURRENT_SCHEMA_VERSION, RULES_BASE, RULES_VERSION_TRADE, RULES_VERSION_VOLATILE } from '../../src/core/GameSaveService';
+import { BAND_FACTOR } from '../../src/core/ScoreVolatility';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { GameSnapshot } from '../../src/core/GameSaveService';
@@ -67,6 +68,25 @@ async function makeVolatileTm(seed = 42, volSeed = 7) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => cardData }));
   const tm = new TurnManager(undefined, new SeededRandomSource(seed), {
     volatility: { enabled: true },
+    volatilityRandom: new SeededRandomSource(volSeed),
+  });
+  await tm.initialize();
+  return tm;
+}
+
+/** 构造 v3 交易实验局：用于验证读旧档时不会继承当前构造函数的卖出倍率。 */
+async function makeTradeTm(seed = 42, volSeed = 7) {
+  const cardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => cardData }));
+  const tm = new TurnManager(undefined, new SeededRandomSource(seed), {
+    rulesVersion: RULES_VERSION_TRADE,
+    scoreRules: { holdBonus: 1.2, sellMultiplier: 14 },
+    volatility: {
+      enabled: true,
+      model: 'conflict_banded',
+      scale: 4,
+      bandFactors: { ...BAND_FACTOR, conflict: 6 },
+    },
     volatilityRandom: new SeededRandomSource(volSeed),
   });
   await tm.initialize();
@@ -309,6 +329,30 @@ describe('规则版本化存档（schemaVersion / rulesVersion）', () => {
     expect(restored!.deltaByDiZhi).toEqual({ 子: 2, 丑: -2, 寅: 1 });
     // 再次保存：写时归属该档自声明的 volatile 规则
     expect(tm.exportSnapshot().rulesVersion).toBe(RULES_VERSION_VOLATILE);
+  });
+
+  it('v3 构造读取 v2 旧波动档：恢复旧卖出倍率 4，且不写入 v3 scoreRules', async () => {
+    const tm = await makeTradeTm();
+    const fixture = makeValidSnapshot({
+      schemaVersion: 1,
+      rulesVersion: RULES_VERSION_VOLATILE,
+      scoreVolatility: { remainingRounds: 3, deltaByDiZhi: {} },
+      hand: [{
+        cardId: 1,
+        buyScore: -1000,
+        useLeverage: false,
+        leverage: 1,
+        buyRound: 1,
+        lockedQi: 10,
+        holdEarnings: 5,
+      }, null, null],
+    });
+
+    tm.importSnapshot(fixture);
+    const slot = tm.getHand()[0]!;
+    const currentScore = tm.getCardScore(slot.card, tm.getCurrentSeason());
+    expect(tm.previewSellScore(slot)).toBe((currentScore - slot.buyScore) * 4);
+    expect(tm.exportSnapshot().scoreRules).toBeUndefined();
   });
 });
 

@@ -13,6 +13,7 @@
 import type { StorageProvider } from './StorageProvider';
 import type { RoundLogEntry } from './TurnManager';
 import type { ScoreVolatilitySnapshot } from './ScoreVolatility';
+import type { ScoreRules } from './ScoreManager';
 
 /** 读档失败分类原因：GameSaveService.load 最近一次失败的原因（成功或尚未 load 时为 null）。 */
 export type GameSaveLoadError =
@@ -45,11 +46,14 @@ export const RULES_BASE = 1;
  */
 export const RULES_VERSION_VOLATILE = 2;
 
+/** 交易主导波动规则：局部冲突波动 + 独立卖出收益倍率。 */
+export const RULES_VERSION_TRADE = 3;
+
 /** 当前代码可解释的规则版本集合；存档层与引擎层共用，避免两处规则门控漂移。 */
-export type SupportedRulesVersion = typeof RULES_BASE | typeof RULES_VERSION_VOLATILE;
+export type SupportedRulesVersion = typeof RULES_BASE | typeof RULES_VERSION_VOLATILE | typeof RULES_VERSION_TRADE;
 
 export function isSupportedRulesVersion(version: unknown): version is SupportedRulesVersion {
-  return version === RULES_BASE || version === RULES_VERSION_VOLATILE;
+  return version === RULES_BASE || version === RULES_VERSION_VOLATILE || version === RULES_VERSION_TRADE;
 }
 
 /** 可序列化的手牌槽位快照。 */
@@ -106,6 +110,8 @@ export interface GameSnapshot {
   roundLog?: RoundLogEntry[];
   /** 实验性季内评分波动状态；老存档无此字段时视为未启用。 */
   scoreVolatility?: ScoreVolatilitySnapshot;
+  /** v3 交易规则的计分参数；v1/v2 不写入，保持旧档形状与语义。 */
+  scoreRules?: ScoreRules;
 }
 
 const SAVE_KEY = 'jiazi_game_save';
