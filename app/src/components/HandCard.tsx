@@ -1,5 +1,4 @@
 import type { JiaziCard } from '@core/JiaziCard';
-import type { VolatilityTrend } from '@core/index';
 import { CardVisual } from './CardVisual';
 
 /** 神识消耗统一色（2026-08-06 issue 01 P3：神识消耗=资源冷色，修为才用红绿） */
@@ -8,7 +7,8 @@ const QI_COST_COLOR = 'text-sky-600';
 interface HandCardProps {
   card: JiaziCard;
   score: number;
-  nextScore?: number;
+  /** 纳灵时记录的买入评分，用于展示当前价差。 */
+  buyScore: number;
   selected?: boolean;
   onClick?: () => void;
   /** 杠杆信息：当前倍数、下回合结算倍数、是否启用 */
@@ -24,8 +24,6 @@ interface HandCardProps {
   sellPreview: { score: number; qiChange: number } | null;
   /** 反噬崩坏：被反噬的丹田槽位播红闪碎裂效果（issue 04，2026-08-05） */
   shattered?: boolean;
-  /** 实验模式下的季内短期趋势。 */
-  volatilityTrend?: VolatilityTrend;
 }
 
 /**
@@ -36,7 +34,7 @@ interface HandCardProps {
 export function HandCard({
   card,
   score,
-  nextScore,
+  buyScore,
   selected,
   onClick,
   leverage,
@@ -47,7 +45,6 @@ export function HandCard({
   holdQiCost,
   sellPreview,
   shattered,
-  volatilityTrend,
 }: HandCardProps) {
   return (
     <div
@@ -56,8 +53,8 @@ export function HandCard({
       <CardVisual
         card={card}
         score={score}
-        nextScore={nextScore}
-        volatilityTrend={volatilityTrend}
+        scoreMode="position"
+        buyScore={buyScore}
         selected={selected}
         onClick={onClick}
         badges={isLeverage ? (

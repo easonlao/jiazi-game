@@ -19,10 +19,16 @@ const elementScoreColor: Record<Element, string> = {
 
 export { elementBorder, elementScoreColor };
 
+type ScoreDisplayMode = 'market' | 'position';
+
 interface CardVisualProps {
   card: JiaziCard;
   score: number;
   nextScore?: number;
+  /** market=公共牌的季节/趋势视图；position=手牌的买入成本/价差视图。 */
+  scoreMode?: ScoreDisplayMode;
+  /** 手牌买入时记录的评分；仅 position 模式使用。 */
+  buyScore?: number;
   selected?: boolean;
   highlight?: boolean;
   onClick?: () => void;
@@ -38,12 +44,21 @@ interface CardVisualProps {
 
 /**
  * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、评分与短期波动提示。
- * 公共牌和手牌的差异（买入成本 vs 累计收益等）通过 badges 和 children 注入。
+ * 公共牌和手牌的评分口径通过 scoreMode 区分，底部持有信息仍由 children 注入。
  */
-export function CardVisual({ card, score, nextScore, selected, highlight, onClick, badges, scoreBadge, volatilityTrend, children }: CardVisualProps) {
+export function CardVisual({ card, score, nextScore, scoreMode = 'market', buyScore, selected, highlight, onClick, badges, scoreBadge, volatilityTrend, children }: CardVisualProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
   const baseBorder = elementBorder[card.mainElement];
-  const volatilityActive = volatilityTrend !== undefined;
+  const positionView = scoreMode === 'position' && buyScore !== undefined;
+  const volatilityActive = !positionView && volatilityTrend !== undefined;
+  const positionDelta = positionView ? score - buyScore : null;
+  const positionDeltaClass = positionDelta === null
+    ? 'text-ink-light'
+    : positionDelta > 0
+      ? 'text-qi-full'
+      : positionDelta < 0
+        ? 'text-qi-critical'
+        : 'text-ink-light';
   const trendMeta = volatilityTrend === 'rising'
     ? { text: '↑', label: '短期波动上行', className: 'text-qi-full' }
     : volatilityTrend === 'falling'
@@ -84,34 +99,50 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
         </div>
       </div>
 
-      {/* 普通模式显示确定的季节基准变化；波动模式只显示已含短期波动的当前分，
-          避免把未来基础分和当前波动方向拼成一条误导性的“预测箭头”。 */}
+      {/* 公共牌显示市场当前分与短期趋势；手牌改显示买入成本与当前价差，
+          让两类卡片分别服务于“要不要纳灵”和“要不要释灵”。 */}
       <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5 max-md:py-1">
         <div className="min-w-0 flex-1">
           <span
             className="card-score-label block text-[10px] max-md:text-[9px] leading-tight text-ink-light"
             data-volatility-score={volatilityActive ? 'current' : undefined}
-            title={volatilityActive ? '当前评分已包含短期波动；换季后会重新计算' : undefined}
+            title={positionView ? '手牌显示买入评分与当前价差' : volatilityActive ? '当前评分已包含短期波动；换季后会重新计算' : undefined}
           >
-            {volatilityActive ? '当前评分' : '当季 → 下季评分'}
+            {positionView ? '买入评分' : volatilityActive ? '当前评分' : '当季 → 下季评分'}
           </span>
-          <div className="flex items-baseline gap-1">
-            <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
-              {score >= 0 ? '+' : ''}{score.toFixed(1)}
-              {!volatilityActive && nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
-            </span>
-            {volatilityActive && trendMeta && (
-              <span
-                data-volatility-trend={volatilityTrend}
-                aria-label={trendMeta.label}
-                title={trendMeta.label}
-                className={`text-[10px] max-md:text-[9px] font-bold leading-none whitespace-nowrap ${trendMeta.className}`}
-              >
-                {trendMeta.text}
+          {positionView ? (
+            <div
+              className="flex items-baseline gap-1"
+              data-position-score
+              aria-label={`买入评分 ${buyScore! >= 0 ? '+' : ''}${buyScore!.toFixed(1)}，当前价差 ${positionDelta! >= 0 ? '+' : ''}${positionDelta!.toFixed(1)}`}
+              title={`当前评分 ${score >= 0 ? '+' : ''}${score.toFixed(1)} − 买入评分 ${buyScore! >= 0 ? '+' : ''}${buyScore!.toFixed(1)} = 价差 ${positionDelta! >= 0 ? '+' : ''}${positionDelta!.toFixed(1)}`}
+            >
+              <span className="card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap text-ink">
+                {buyScore! >= 0 ? '+' : ''}{buyScore!.toFixed(1)}
               </span>
-            )}
-            {scoreBadge}
-          </div>
+              <span className={`text-[10px] max-md:text-[9px] leading-none font-bold tabular-nums whitespace-nowrap ${positionDeltaClass}`}>
+                价差{positionDelta! >= 0 ? '+' : ''}{positionDelta!.toFixed(1)}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-baseline gap-1">
+              <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
+                {score >= 0 ? '+' : ''}{score.toFixed(1)}
+                {!volatilityActive && nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
+              </span>
+              {volatilityActive && trendMeta && (
+                <span
+                  data-volatility-trend={volatilityTrend}
+                  aria-label={trendMeta.label}
+                  title={trendMeta.label}
+                  className={`text-[10px] max-md:text-[9px] font-bold leading-none whitespace-nowrap ${trendMeta.className}`}
+                >
+                  {trendMeta.text}
+                </span>
+              )}
+              {scoreBadge}
+            </div>
+          )}
         </div>
       </div>
 
