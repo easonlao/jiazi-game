@@ -56,6 +56,8 @@ export type { LeaderboardEntry } from './LeaderboardService';
 
 export type { StorageProvider } from './StorageProvider';
 
+export * from './telemetry';
+
 export { LockManager } from './LockManager';
 export type { LockManagerDeps } from './LockManager';
 

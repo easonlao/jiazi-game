@@ -9,7 +9,7 @@
     "preview": "pnpm --filter jiazi-game-react run preview",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:preview": "E2E_TARGET=preview playwright test"
+    "test:e2e:preview": "node e2e-preview.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
