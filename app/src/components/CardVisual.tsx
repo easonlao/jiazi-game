@@ -45,11 +45,11 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
   const baseBorder = elementBorder[card.mainElement];
   const volatilityActive = volatilityTrend !== undefined;
   const trendMeta = volatilityTrend === 'rising'
-    ? { text: '波动↑', label: '短期波动上行', className: 'text-qi-full' }
+    ? { text: '↑', label: '短期波动上行', className: 'text-qi-full' }
     : volatilityTrend === 'falling'
-      ? { text: '波动↓', label: '短期波动下行', className: 'text-qi-critical' }
+      ? { text: '↓', label: '短期波动下行', className: 'text-qi-critical' }
       : volatilityTrend === 'steady'
-        ? { text: '波动稳', label: '短期波动平稳', className: 'text-ink-light' }
+        ? { text: '—', label: '短期波动平稳', className: 'text-ink-light' }
         : null;
 
   return (

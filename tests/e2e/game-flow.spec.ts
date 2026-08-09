@@ -89,6 +89,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     const texts = await cards.allInnerTexts();
     expect(texts.every((text) => !/[+-]?\d+\.\d\s*→\s*[+-]?\d+\.\d/.test(text))).toBe(true);
     expect(texts.every((text) => text.includes('当前评分'))).toBe(true);
+    const trendLabels = await page.locator('[data-volatility-trend]').allTextContents();
+    expect(trendLabels.every((text) => ['↑', '↓', '—'].includes(text.trim()))).toBe(true);
   });
 
   test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {
