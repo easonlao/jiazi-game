@@ -101,7 +101,7 @@ function PublicCardItem({
   const canAfford = cost <= qi;
   const holdEarning = previewHoldEarning(index);
   const holdQiCost = previewHoldQiCost(index);
-  const volatilityTrend = turnManager?.getCardVolatilityTrend(card) ?? undefined;
+  const volatilityDelta = turnManager?.getCardVolatilityDelta(card) ?? undefined;
 
   return (
     <PublicCard
@@ -114,7 +114,7 @@ function PublicCardItem({
       canAfford={canAfford}
       holdEarning={holdEarning}
       holdQiCost={holdQiCost}
-      volatilityTrend={volatilityTrend}
+      volatilityDelta={volatilityDelta}
       locked={locked}
       onToggleLock={onToggleLock}
     />
@@ -141,7 +141,7 @@ function SeasonHint({ season, volatilityActive }: { season: string; volatilityAc
           data-volatility-experiment
           className="rounded border border-wood-light/70 bg-white/60 px-1.5 py-1 text-[10px] text-ink-light"
         >
-          短期波动实验 · 当前分含波动，换季重算
+          短期波动实验 · 括号内为相对基础评分变化，换季重算
         </span>
       )}
     </div>

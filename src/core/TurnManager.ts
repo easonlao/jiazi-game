@@ -436,6 +436,19 @@ export class TurnManager {
   }
 
   /**
+   * 当前卡牌相对本季基础评分的实际波动值。
+   *
+   * 只在波动规则当前生效且卡牌处于当前季时返回数值；旧规则、旧存档和未来季节
+   * 返回 null，避免把未应用的波动误显示成已知信息。
+   */
+  getCardVolatilityDelta(card: JiaziCard): number | null {
+    if (this.rulesVersion !== RULES_VERSION_VOLATILE || !this.scoreVolatilityState) return null;
+
+    const season = this.seasonCycle.getCurrentSeason();
+    return this.getCardScore(card, season) - card.getSeasonScore(season, this.balanceConfig);
+  }
+
+  /**
    * 初始化游戏，拉取卡牌数据，并初始化牌池
    */
   async initialize(): Promise<void> {

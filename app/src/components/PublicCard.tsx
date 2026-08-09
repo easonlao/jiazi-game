@@ -1,5 +1,4 @@
 import type { JiaziCard } from '@core/JiaziCard';
-import type { VolatilityTrend } from '@core/index';
 import { CardVisual } from './CardVisual';
 
 /** 神识消耗统一色（2026-08-06 issue 01 P3：神识消耗=资源冷色，修为才用红绿） */
@@ -19,8 +18,8 @@ interface PublicCardProps {
   locked?: boolean;
   /** 锁定回调（点击锁按钮触发） */
   onToggleLock?: () => void;
-  /** 实验模式下的季内短期趋势。 */
-  volatilityTrend?: VolatilityTrend;
+  /** 实验模式下相对基础评分的实际变化。 */
+  volatilityDelta?: number;
 }
 
 /**
@@ -30,14 +29,14 @@ interface PublicCardProps {
 export function PublicCard({
   card, score, nextScore, selected, onClick, buyCost, canAfford,
   holdEarning, holdQiCost, locked, onToggleLock,
-  volatilityTrend,
+  volatilityDelta,
 }: PublicCardProps) {
   return (
     <CardVisual
       card={card}
       score={score}
       nextScore={nextScore}
-      volatilityTrend={volatilityTrend}
+      volatilityDelta={volatilityDelta}
       selected={selected}
       onClick={onClick}
       badges={

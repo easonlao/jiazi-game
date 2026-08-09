@@ -73,24 +73,24 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await page.getByRole('button', { name: '关闭帮助' }).click();
   });
 
-  test('普通入口不显示季内趋势实验提示', async ({ page }) => {
+  test('普通入口不显示季内波动实验提示', async ({ page }) => {
     await startGameAndDismiss(page);
     await expect(page.locator('[data-volatility-experiment]')).toHaveCount(0);
-    await expect(page.locator('[data-volatility-trend]')).toHaveCount(0);
+    await expect(page.locator('[data-volatility-delta]')).toHaveCount(0);
   });
 
-  test('volatility=1 实验入口显示波动提示与明确标记', async ({ page }) => {
+  test('volatility=1 实验入口显示波动提示与实际变化值', async ({ page }) => {
     await page.goto('/?volatility=1');
     await startGameAndDismiss(page);
     await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
-    await expect(page.locator('[data-volatility-trend]')).toHaveCount(3);
+    await expect(page.locator('[data-volatility-delta]')).toHaveCount(3);
 
     const cards = page.locator('.card-in');
     const texts = await cards.allInnerTexts();
     expect(texts.every((text) => !/[+-]?\d+\.\d\s*→\s*[+-]?\d+\.\d/.test(text))).toBe(true);
     expect(texts.every((text) => text.includes('当前评分'))).toBe(true);
-    const trendLabels = await page.locator('[data-volatility-trend]').allTextContents();
-    expect(trendLabels.every((text) => ['↑', '↓', '—'].includes(text.trim()))).toBe(true);
+    const deltaLabels = await page.locator('[data-volatility-delta]').allTextContents();
+    expect(deltaLabels.every((text) => /^\([+-]\d+\)$/.test(text.trim()))).toBe(true);
   });
 
   test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {

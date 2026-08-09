@@ -1,5 +1,4 @@
 import { type JiaziCard, Element, YinYang } from '@core/JiaziCard';
-import type { VolatilityTrend } from '@core/index';
 
 const elementBorder: Record<Element, string> = {
   [Element.WOOD]: 'border-emerald-400 bg-emerald-50/50',
@@ -25,7 +24,7 @@ interface CardVisualProps {
   card: JiaziCard;
   score: number;
   nextScore?: number;
-  /** market=公共牌的季节/趋势视图；position=手牌的纳灵/当前评分视图。 */
+  /** market=公共牌的季节/实际波动视图；position=手牌的纳灵/当前评分视图。 */
   scoreMode?: ScoreDisplayMode;
   /** 手牌纳灵时记录的评分；仅 position 模式使用。 */
   buyScore?: number;
@@ -36,28 +35,31 @@ interface CardVisualProps {
   badges?: React.ReactNode;
   /** 评分标签行右侧徽章（如杠杆倍率），由 HandCard 注入 */
   scoreBadge?: React.ReactNode;
-  /** 实验模式下的季内短期趋势；只显示方向，不显示幅度。 */
-  volatilityTrend?: VolatilityTrend;
+  /** 实验模式下当前相对基础评分的实际波动值；只用于公共牌。 */
+  volatilityDelta?: number;
   /** 底部信息区域，由 PublicCard/HandCard 各自填充 */
   children?: React.ReactNode;
 }
 
 /**
- * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、评分与短期波动提示。
+ * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、评分与实际波动提示。
  * 公共牌和手牌的评分口径通过 scoreMode 区分，底部持有信息仍由 children 注入。
  */
-export function CardVisual({ card, score, nextScore, scoreMode = 'market', buyScore, selected, highlight, onClick, badges, scoreBadge, volatilityTrend, children }: CardVisualProps) {
+export function CardVisual({ card, score, nextScore, scoreMode = 'market', buyScore, selected, highlight, onClick, badges, scoreBadge, volatilityDelta, children }: CardVisualProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
   const baseBorder = elementBorder[card.mainElement];
   const positionView = scoreMode === 'position' && buyScore !== undefined;
-  const volatilityActive = !positionView && volatilityTrend !== undefined;
-  const trendMeta = volatilityTrend === 'rising'
-    ? { text: '↑', label: '短期波动上行', className: 'text-qi-full' }
-    : volatilityTrend === 'falling'
-      ? { text: '↓', label: '短期波动下行', className: 'text-qi-critical' }
-      : volatilityTrend === 'steady'
-        ? { text: '—', label: '短期波动平稳', className: 'text-ink-light' }
-        : null;
+  const volatilityActive = !positionView && volatilityDelta !== undefined;
+  const volatilityDeltaMeta = volatilityDelta === undefined
+    ? null
+    : {
+        text: `${volatilityDelta >= 0 ? '+' : ''}${volatilityDelta.toFixed(0)}`,
+        className: volatilityDelta > 0
+          ? 'text-qi-full'
+          : volatilityDelta < 0
+            ? 'text-qi-critical'
+            : 'text-ink-light',
+      };
 
   return (
     <div
@@ -91,7 +93,7 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
         </div>
       </div>
 
-      {/* 公共牌显示市场当前分与短期趋势；手牌改显示纳灵评分与当前评分，
+      {/* 公共牌显示市场当前分与实际波动值；手牌改显示纳灵评分与当前评分，
           让两类卡片分别服务于“要不要纳灵”和“要不要释灵”。 */}
       <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5 max-md:py-1">
         <div className="min-w-0 flex-1">
@@ -123,14 +125,14 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
                 {score >= 0 ? '+' : ''}{score.toFixed(1)}
                 {!volatilityActive && nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
               </span>
-              {volatilityActive && trendMeta && (
+              {volatilityActive && volatilityDeltaMeta && (
                 <span
-                  data-volatility-trend={volatilityTrend}
-                  aria-label={trendMeta.label}
-                  title={trendMeta.label}
-                  className={`text-[10px] max-md:text-[9px] font-bold leading-none whitespace-nowrap ${trendMeta.className}`}
+                  data-volatility-delta
+                  aria-label={`相对基础评分 ${volatilityDeltaMeta.text}`}
+                  title="相对基础评分的实际变化"
+                  className={`text-[10px] max-md:text-[9px] font-bold leading-none whitespace-nowrap ${volatilityDeltaMeta.className}`}
                 >
-                  {trendMeta.text}
+                  ({volatilityDeltaMeta.text})
                 </span>
               )}
               {scoreBadge}
