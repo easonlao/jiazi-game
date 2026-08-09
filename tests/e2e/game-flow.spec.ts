@@ -142,7 +142,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 未开燃灵：手牌卡面可见且无"燃"字徽章（杠杆信息暴露方式：仅开启时显示"燃"字徽章 + title）
     await expect(handSection.locator('.card-in')).toBeVisible({ timeout: 5_000 });
     await expect(handSection.locator('[data-position-score]')).toHaveCount(1);
-    await expect(handSection.locator('[data-position-score]')).toContainText('价差');
+    await expect(handSection.locator('[data-position-score]')).toContainText('释灵');
     await expect(handSection.getByText('燃', { exact: true })).toHaveCount(0);
   });
 
@@ -224,7 +224,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 点击释灵
     await page.getByRole('button', { name: /释灵/ }).click();
     await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
-    await expect(page.getByText('实现价差', { exact: true })).toBeVisible();
+    await expect(page.getByText('释灵前后评分', { exact: true })).toBeVisible();
     await expect(page.getByText('神识流转', { exact: true })).toBeVisible();
     await expect(page.getByText(/归还牵神 \+/)).toBeVisible();
     await confirmSettlementPreview(page);

@@ -145,7 +145,7 @@ export function SettlementPreviewModal() {
                   <span className="tabular-nums">{scoreBeforeAction.toFixed(1)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>{preview.action.type === 'sell' ? '释灵价差' : '行动即时'}</span>
+                  <span>{preview.action.type === 'sell' ? '释灵收益' : '行动即时'}</span>
                   <span className={preview.actionScoreChange >= 0 ? 'text-qi-full' : 'text-qi-critical'}>{signed(preview.actionScoreChange)}</span>
                 </div>
                 <div className="flex justify-between border-t border-gold/25 pt-1">
@@ -159,7 +159,7 @@ export function SettlementPreviewModal() {
           {preview.saleBreakdown && (
             <div className="rounded-lg border border-wood-light bg-[#faf6ee] px-3 py-2 text-xs text-ink-light space-y-1.5">
               <div className="flex items-center justify-between">
-                <span>实现价差</span>
+                <span>释灵前后评分</span>
                 <span className="font-bold tabular-nums">
                   纳灵 {signed(preview.saleBreakdown.buyScore)}
                   <span className="mx-1 text-wood-light">→</span>
@@ -168,7 +168,7 @@ export function SettlementPreviewModal() {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>价差结算</span>
+                  <span>释灵收益</span>
                 <span className={preview.saleBreakdown.scoreChange >= 0 ? 'font-bold text-qi-full' : 'font-bold text-qi-critical'}>
                   {signed(preview.saleBreakdown.scoreChange)}修为
                 </span>

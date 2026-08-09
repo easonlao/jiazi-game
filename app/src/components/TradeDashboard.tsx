@@ -389,7 +389,7 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
             <div className="text-[11px] text-ink-light mt-0.5">
               {entry.action === 'buy' && `评分 ${entry.actionCardScore} · 耗神 ${fmtScore(entry.actionQiChange)}`}
               {entry.action === 'sell' && (
-                <>评分 {entry.buyScore} → {entry.actionCardScore} · 价差 {fmtScore((entry.actionCardScore ?? 0) - (entry.buyScore ?? 0))}</>
+                <>评分 {entry.buyScore} → {entry.actionCardScore} · 释灵收益 {fmtScore(entry.sellScore ?? 0)}</>
               )}
               {entry.action === 'settle' && (
                 <>终局评分 {entry.buyScore} → {entry.actionCardScore} · 出清收益 {fmtScore(entry.sellScore ?? 0)}</>

@@ -7,8 +7,10 @@ const QI_COST_COLOR = 'text-sky-600';
 interface HandCardProps {
   card: JiaziCard;
   score: number;
-  /** 纳灵时记录的买入评分，用于展示当前价差。 */
+  /** 纳灵时记录的评分，用于展示释灵收益。 */
   buyScore: number;
+  /** 当前回合释灵可获得的修为变化。 */
+  sellEarning: number;
   selected?: boolean;
   onClick?: () => void;
   /** 杠杆信息：当前倍数、下回合结算倍数、是否启用 */
@@ -35,6 +37,7 @@ export function HandCard({
   card,
   score,
   buyScore,
+  sellEarning,
   selected,
   onClick,
   leverage,
@@ -55,6 +58,7 @@ export function HandCard({
         score={score}
         scoreMode="position"
         buyScore={buyScore}
+        sellEarning={sellEarning}
         selected={selected}
         onClick={onClick}
         badges={isLeverage ? (
