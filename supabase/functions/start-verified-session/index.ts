@@ -138,9 +138,9 @@ function generateSeed(): number {
   return bytes[0] & 0x7fffffff;
 }
 
-/** 默认只开放生产 V3；开发后端需显式设置 VERIFIED_RULES_VERSIONS=3,4。 */
+/** 生产已切换 V4；开发客户端仍由 VITE_VERIFIED_RULES_VERSIONS 门控，默认只跑本地模式。 */
 function isVerifiedRulesVersionEnabled(rulesVersion: string): boolean {
-  const configured = Deno.env.get('VERIFIED_RULES_VERSIONS')?.trim() || '3';
+  const configured = Deno.env.get('VERIFIED_RULES_VERSIONS')?.trim() || '3,4';
   return configured.split(',').map((value) => value.trim()).includes(rulesVersion);
 }
 
