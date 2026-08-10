@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   TurnManager,
+  SeededRandomSource,
   LeaderboardService,
   Element,
   type GameState,
@@ -35,6 +36,11 @@ import {
   TelemetryController,
   type TelemetryControllerState,
 } from './lib/telemetryController';
+import {
+  isRecordForDisplay,
+  type VerificationRecord,
+} from './lib/verificationState';
+import { LeaderboardRefreshGate } from './lib/leaderboardRefresh';
 
 // 重新导出 FX 事件类型，供 hooks/useScreenShake 等消费者使用
 export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent };
@@ -44,6 +50,8 @@ let _initializing = false;
 
 /** TelemetryController 单例：store.initialize 内惰性创建（不阻塞初始化） */
 let _telemetryController: TelemetryController | null = null;
+
+const _leaderboardRefreshGate = new LeaderboardRefreshGate();
 
 /**
  * 回合末「锁定牌被自动解锁」事件的 Toast 文案（如「神识难继，灵气甲子自行散去」）。
@@ -169,12 +177,20 @@ interface GameStore {
   telemetryState: TelemetryControllerState | null;
   /** 云端排行榜（娱乐榜公开字段；云端未配置时为空数组） */
   cloudLeaderboard: CloudLeaderboardEntry[];
+  cloudLeaderboardStatus: 'idle' | 'loading' | 'ready' | 'error';
+  cloudLeaderboardError: string | null;
+  /** 最近一局结束后的云端校验状态（pending/verified/rejected/failed；本地局为 null） */
+  verificationState: VerificationRecord | null;
+  /** 最近一局结束的会话 id；用于显示守卫，隔离旧局异步回调不污染当前结算展示 */
+  _endedSessionId: string | null;
   grantTelemetryConsent: (recoveryCode?: string) => Promise<void>;
   declineTelemetryConsent: () => void;
   provisionPlayer: () => Promise<void>;
   recoverPlayer: (recoveryCode: string) => Promise<boolean>;
   updatePlayerDisplayName: (name: string) => Promise<void>;
   refreshCloudLeaderboard: () => Promise<void>;
+  /** 重试最近一局的云端校验（failed/rejected 时有效，不抛错） */
+  retryVerification: () => void;
 
   // 交易看板（行迹）
   dashboardOpen: boolean;
@@ -353,6 +369,51 @@ function recordActionTelemetry(
   });
 }
 
+type StoreSetter = (patch: Partial<GameStore> | ((state: GameStore) => Partial<GameStore>)) => void;
+
+/** 将游戏生命周期回调绑定到任意 TurnManager，供普通局与服务端 seed 局共用。 */
+function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get: () => GameStore): void {
+  tm.setOnStateChange(() => {
+    set((s) => ({ tick: s.tick + 1 }));
+  });
+  tm.setOnTurnStart(() => {
+    const wasLeverageOn = get().useLeverage;
+    set((s) => ({
+      tick: s.tick + 1,
+      selectedPublicCard: -1,
+      selectedHandCard: -1,
+      useLeverage: false,
+      pendingAction: null,
+      settlementPreview: null,
+    }));
+    if (wasLeverageOn) _pendingAutoUnlockToast = '燃灵已复位（新回合）';
+  });
+  tm.setOnGameEnd((finalScore) => {
+    set((s) => ({ tick: s.tick + 1 }));
+    const lb = new LeaderboardService(localStorageProvider);
+    lb.addEntry(finalScore);
+    set({ leaderboardEntries: lb.getEntries() });
+    // 记录本局结算展示锚点：云端校验回调只更新这个会话的记录，
+    // 旧局/身份切换后的异步回调不会污染本局结算界面。
+    const endedSessionId = _telemetryController?.getActiveSessionId() ?? null;
+    set({ _endedSessionId: endedSessionId, verificationState: null });
+    _telemetryController?.endSession({
+      reason: 'game_over',
+      rounds: Math.max(0, Math.min(tm.getCurrentRound() - 1, tm.getTotalRounds())),
+      final_score: finalScore,
+      margin_call_count: tm.getMarginCallCount(),
+    });
+    tm.clearSave();
+    set({ hasSave: false });
+    get().showToast(`一甲子终了！最终修为：${finalScore}`);
+  });
+  tm.setOnLockAutoUnlocked((cardIds) => {
+    const names = cardIds.map((id) => tm.getCardById(id)?.name ?? `#${id}`).join('、');
+    _pendingAutoUnlockToast = `神识难继，灵气${names}自行散去`;
+    get().showToast(_pendingAutoUnlockToast);
+  });
+}
+
 export const useGameStore = create<GameStore>((set, get) => ({
   turnManager: null,
 
@@ -398,6 +459,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   leaderboardOpen: false,
   telemetryState: null,
   cloudLeaderboard: [],
+  cloudLeaderboardStatus: 'idle',
+  cloudLeaderboardError: null,
+  verificationState: null,
+  _endedSessionId: null,
   dashboardOpen: false,
 
   // FX 事件（初始为 null，_sync diff 后才会产生）
@@ -502,55 +567,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
       await tm.initialize();
 
-      tm.setOnStateChange(() => {
-        set((s) => ({ tick: s.tick + 1 }));
-      });
-      tm.setOnTurnStart(() => {
-        // 燃灵开关是"一次性行动偏好"，每回合复位防止忘关导致意外杠杆买入。
-        // 复位时若玩家此前是 ON 状态，设 pending 提示——由随后的行动反馈 Toast 统一弹出
-        // （pending 优先于"纳灵成功/释灵成功/调息"等 fallback），避免玩家误以为"点击燃灵没响应"，
-        // 也不会产生双 Toast（2026-08-05 用户反馈）。
-        const wasLeverageOn = get().useLeverage;
-        set((s) => ({
-          tick: s.tick + 1,
-          selectedPublicCard: -1,
-          selectedHandCard: -1,
-          useLeverage: false,
-          pendingAction: null,
-          settlementPreview: null,
-        }));
-        if (wasLeverageOn) {
-          _pendingAutoUnlockToast = '燃灵已复位（新回合）';
-        }
-      });
-      tm.setOnGameEnd((finalScore) => {
-        set((s) => ({ tick: s.tick + 1 }));
-        // 记录到排行榜
-        const lb = new LeaderboardService(localStorageProvider);
-        lb.addEntry(finalScore);
-        set({ leaderboardEntries: lb.getEntries() });
-        // 遥测：正常结束会话（无 controller/未同意/无活跃会话时静默 no-op）
-        _telemetryController?.endSession({
-          reason: 'game_over',
-          rounds: Math.max(0, Math.min(tm.getCurrentRound() - 1, tm.getTotalRounds())),
-          final_score: finalScore,
-          margin_call_count: tm.getMarginCallCount(),
-        });
-        // 游戏结束清除存档
-        tm.clearSave();
-        set({ hasSave: false });
-        get().showToast(`一甲子终了！最终修为：${finalScore}`);
-      });
-
-      // 回合末锁定牌被自动解锁（付不起锁定费）：必须明确提示，不能静默丢锁定
-      tm.setOnLockAutoUnlocked((cardIds) => {
-        const names = cardIds
-          .map((id) => tm.getCardById(id)?.name ?? `#${id}`)
-          .join('、');
-        _pendingAutoUnlockToast = `神识难继，灵气${names}自行散去`;
-        // 立即提示；随后的行动反馈 Toast 会优先保留本提示（见 _showActionToast）
-        get().showToast(_pendingAutoUnlockToast);
-      });
+      bindTurnManagerCallbacks(tm, set, get);
 
       set({ turnManager: tm });
       get()._sync();
@@ -569,11 +586,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
           storage: localStorageProvider,
           backend,
           onStateChange: (state) => set({ telemetryState: state }),
+          // 显示守卫：只展示"当前已结束会话"的校验记录，旧局异步回调不污染新局展示。
+          onVerificationChange: (record) => {
+            set((s) => (
+              isRecordForDisplay(record, s._endedSessionId) ? { verificationState: record } : s
+            ));
+            if (record.status === 'verified') {
+              void get().refreshCloudLeaderboard();
+            }
+          },
         });
         set({ telemetryState: _telemetryController.getState() });
-        void _telemetryController.init().catch((e) => {
-          console.error('[store] 遥测初始化失败:', e);
-        });
+        void _telemetryController.init()
+          .then(() => {
+            if (isVolatilityEnabled()) {
+              void _telemetryController?.prepareVerifiedSession(getTelemetryGameMeta(tm));
+            }
+          })
+          .catch((e) => {
+            console.error('[store] 遥测初始化失败:', e);
+          });
       }
     } catch (e) {
       console.error('[store] 初始化失败:', e);
@@ -586,9 +618,51 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const tm = get().turnManager;
     if (!tm) return;
     _telemetryController?.abandonSession('reset');
+
+    // 若已提前拿到服务端 seed，则用同一 seed 创建新的真实引擎实例。
+    // 这条路径是异步的；云端未配置或 seed 尚未准备好时继续走下面的本地同步路径。
+    const prepared = _telemetryController?.takePreparedSession() ?? null;
+    if (prepared) {
+      tm.clearSave();
+      set({ hasSave: false, gameState: 'init', _endedSessionId: null, verificationState: null });
+      void (async () => {
+        try {
+          const random = new SeededRandomSource(prepared.seed);
+          const snapshot = prepared.rules_snapshot;
+          const verifiedTm = new TurnManager(undefined, random, {
+            storage: localStorageProvider,
+            rulesVersion: snapshot.rulesVersion,
+            scoreRules: snapshot.scoreRules,
+            volatility: snapshot.volatility,
+            volatilityRandom: random,
+          });
+          await verifiedTm.initialize();
+          bindTurnManagerCallbacks(verifiedTm, set, get);
+          set({ turnManager: verifiedTm });
+          verifiedTm.startGame();
+          get()._sync();
+          set({
+            selectedPublicCard: -1,
+            selectedHandCard: -1,
+            useLeverage: false,
+            pendingAction: null,
+            settlementPreview: null,
+          });
+          _telemetryController?.startSession(getTelemetryGameMeta(verifiedTm), prepared);
+        } catch (error) {
+          console.error('[store] 服务端校验局初始化失败，回退本地模式:', error);
+          get().showToast('云端校验暂不可用，本局仅保留在本地');
+          tm.reset();
+          tm.startGame();
+          get()._sync();
+        }
+      })();
+      return;
+    }
+
     // 开始新游戏前清除旧存档
     tm.clearSave();
-    set({ hasSave: false });
+    set({ hasSave: false, _endedSessionId: null, verificationState: null });
     // 重置引擎（清空上一局的 roundLog/decisionLog/手牌/牌池等），再开新局。
     // 否则复用同一 TurnManager 实例时，新局会残留上一局的回合记录（行迹可见旧数据）。
     // 注意：不能在重置后清空 FX 事件——首回合合法回气（+10）是正常事件，
@@ -649,6 +723,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   async grantTelemetryConsent(recoveryCode?: string) {
     await _telemetryController?.grantConsent(recoveryCode);
+    const tm = get().turnManager;
+    if (tm && isVolatilityEnabled()) {
+      void _telemetryController?.prepareVerifiedSession(getTelemetryGameMeta(tm));
+    }
   },
 
   declineTelemetryConsent() {
@@ -661,6 +739,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   async recoverPlayer(recoveryCode) {
     const identity = await _telemetryController?.recoverIdentity(recoveryCode);
+    const tm = get().turnManager;
+    if (identity && tm && isVolatilityEnabled()) {
+      void _telemetryController?.prepareVerifiedSession(getTelemetryGameMeta(tm));
+    }
     return identity !== null && identity !== undefined;
   },
 
@@ -671,7 +753,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
   async refreshCloudLeaderboard() {
     const controller = _telemetryController;
     if (!controller) return;
-    set({ cloudLeaderboard: await controller.fetchLeaderboard(50, getTelemetryGameMeta(get().turnManager ?? undefined).rules_version) });
+    const requestId = _leaderboardRefreshGate.begin();
+    set({ cloudLeaderboardStatus: 'loading', cloudLeaderboardError: null });
+    try {
+      const entries = await controller.fetchLeaderboard(
+        50,
+        getTelemetryGameMeta(get().turnManager ?? undefined).rules_version,
+      );
+      if (!_leaderboardRefreshGate.isCurrent(requestId)) return;
+      set({ cloudLeaderboard: entries, cloudLeaderboardStatus: 'ready', cloudLeaderboardError: null });
+    } catch {
+      if (!_leaderboardRefreshGate.isCurrent(requestId)) return;
+      set({ cloudLeaderboardStatus: 'error', cloudLeaderboardError: '云端榜暂时无法刷新' });
+    }
+  },
+
+  retryVerification() {
+    const sessionId = get()._endedSessionId;
+    if (!sessionId) return;
+    // 状态由 onVerificationChange 回写（重新进入 pending），这里无需手动 set。
+    _telemetryController?.retryVerification(sessionId);
   },
 
   openDashboard() {
@@ -710,6 +811,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       lastSettlement: null,
       roundLog: [],
       decisionLog: [],
+      _endedSessionId: null,
+      verificationState: null,
       // 清空 FX 事件，避免残留动画在重开时误触发
       seasonEvent: null,
       marginCallEvent: null,
@@ -737,7 +840,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const tm = get().turnManager;
     const idx = get().selectedPublicCard;
     if (!tm || idx < 0) return false;
+    const replayAction = { type: 'buy' as const, cardIndex: idx, leverage: get().useLeverage };
+    _telemetryController?.recordReplayAction(replayAction);
     const ok = tm.executeBuy(idx, get().useLeverage);
+    if (!ok) _telemetryController?.removeLastReplayAction();
     if (ok) {
       set({ selectedPublicCard: -1, useLeverage: false });
       get()._sync();
@@ -752,7 +858,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const tm = get().turnManager;
     const idx = get().selectedHandCard;
     if (!tm || idx < 0) return false;
+    const replayAction = { type: 'sell' as const, slotIndex: idx };
+    _telemetryController?.recordReplayAction(replayAction);
     const ok = tm.executeSell(idx);
+    if (!ok) _telemetryController?.removeLastReplayAction();
     if (ok) {
       set({ selectedHandCard: -1 });
       get()._sync();
@@ -766,7 +875,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   executeWait() {
     const tm = get().turnManager;
     if (!tm) return false;
+    _telemetryController?.recordReplayAction({ type: 'wait' });
     const ok = tm.executeWait();
+    if (!ok) _telemetryController?.removeLastReplayAction();
     if (ok) {
       get()._sync();
       // 最后一回合等待 = 直接结束游戏，不产生下回合回气
@@ -787,7 +898,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!card) return;
     const isLocked = tm.isCardLocked(card.id);
     if (isLocked) {
+      _telemetryController?.recordReplayAction({ type: 'unlock', cardIndex: index });
       const ok = tm.executeUnlockCard(index);
+      if (!ok) _telemetryController?.removeLastReplayAction();
       if (ok) {
         get()._sync();
         recordActionTelemetry(before, get(), tm, { type: 'wait' }, { type: 'unlock', card });
@@ -798,7 +911,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
     // 锁定动作：按具体失败原因提示（不混合展示多种可能）
+    _telemetryController?.recordReplayAction({ type: 'lock', cardIndex: index });
     const result = tm.executeLockCard(index);
+    if (!result.ok) _telemetryController?.removeLastReplayAction();
     if (result.ok) {
       get()._sync();
       recordActionTelemetry(before, get(), tm, { type: 'wait' }, { type: 'lock', card });
@@ -864,12 +979,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 先保存 session id，确保最终买/卖/等候与回合结算仍能入队。
     const telemetrySessionId = _telemetryController?.getActiveSessionId();
 
+    const replayAction = action.type === 'buy'
+      ? { type: 'buy' as const, cardIndex: action.cardIndex, leverage: action.leverage }
+      : action.type === 'sell'
+        ? { type: 'sell' as const, slotIndex: action.slotIndex }
+        : { type: 'wait' as const };
+    _telemetryController?.recordReplayAction(replayAction);
     const ok = action.type === 'buy'
       ? tm.executeBuy(action.cardIndex, action.leverage)
       : action.type === 'sell'
         ? tm.executeSell(action.slotIndex)
         : tm.executeWait();
     if (!ok) {
+      _telemetryController?.removeLastReplayAction();
       get().showToast('行动提交失败，请返回修改');
       return false;
     }

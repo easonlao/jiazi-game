@@ -28,6 +28,8 @@ export function GameOverModal() {
   const reset = useGameStore((s) => s.reset);
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
   const openDashboard = useGameStore((s) => s.openDashboard);
+  const verificationState = useGameStore((s) => s.verificationState);
+  const retryVerification = useGameStore((s) => s.retryVerification);
 
   // 境界（纯分数结果）
   const review = evaluateGame({
@@ -132,6 +134,41 @@ export function GameOverModal() {
         <p className="text-[10px] text-ink-light mb-4 tabular-nums">
           纳灵 {totalBuys} · 释灵 {totalSells} · 燃灵 {totalLeverageBuys} · 牵神 {totalLocks}
         </p>
+
+        {/* 云端校验状态：本地修为与本地榜已即时落榜；云端重放校验后台执行。
+            校验完成前绝不暗示已上榜。 */}
+        {verificationState && (
+          <div className="bg-white rounded-xl p-3 mb-3 shadow-sm text-left">
+            <div className="text-xs font-bold font-serif text-ink mb-1.5">云端校验</div>
+            {verificationState.status === 'pending' && (
+              <p className="text-xs text-ink-light flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 rounded-full border-2 border-gold border-t-transparent animate-spin" />
+                校验中…（服务端重放验证中，通过后将计入云端榜）
+              </p>
+            )}
+            {verificationState.status === 'verified' && (
+              <p className="text-xs text-qi-full">
+                {verificationState.leaderboardSubmitted
+                  ? `已校验${verificationState.score !== null ? `，修为 ${verificationState.score.toFixed(1)}` : ''}，已计入云端榜`
+                  : '已校验，暂未上榜（设置昵称后方可上榜）'}
+              </p>
+            )}
+            {(verificationState.status === 'rejected' || verificationState.status === 'failed') && (
+              <div>
+                <p className="text-xs text-qi-critical">
+                  {verificationState.status === 'rejected' ? '云端校验未通过' : '云端校验失败（网络/服务异常）'}
+                  {verificationState.message ? `：${verificationState.message}` : ''}
+                </p>
+                <button
+                  onClick={retryVerification}
+                  className="mt-1.5 text-[11px] font-bold text-ink underline underline-offset-2"
+                >
+                  重试校验
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-2">
           <button

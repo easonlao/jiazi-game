@@ -139,7 +139,7 @@ describe('TelemetryQueue', () => {
   it('启用后合法事件入队，fake transport 上传后清空', async () => {
     let resolveUpload!: (value: void) => void;
     const upload = vi.fn(
-      () =>
+      (_batch: TelemetryEvent[]) =>
         new Promise<void>((resolve) => {
           resolveUpload = resolve;
         }),

@@ -14,6 +14,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { ReplayAction, ReplayRulesSnapshot } from '@core/index';
 import type { TelemetryEvent } from '@core/telemetry';
 
 /** 服务端自动 provision 的默认占位名（未设置自定义用户名） */
@@ -56,12 +57,31 @@ export interface SessionUpsert {
   ended_at?: string | null;
 }
 
-/** leaderboard_entries 行（仅安全公开字段） */
-export interface LeaderboardSubmission {
-  public_player_id: string;
-  score: number;
-  rules_version: string;
+export interface VerifiedSessionStart {
   session_id: string;
+  started_at: string;
+  seed: number;
+  rules_snapshot: ReplayRulesSnapshot;
+}
+
+export interface VerifiedScoreSubmission {
+  session_id: string;
+  actions: readonly ReplayAction[];
+}
+
+/**
+ * 校验提交结果（服务端重放结果），永远以结果对象返回，不抛错。
+ * - verified：重放通过，分数已可信（score 为该服务端重放分数）；
+ * - rejected：服务端明确拒绝重放（动作序列不可信/不完整）；
+ * - 其余（网络失败、服务端错误等）为 verified=false && rejected=false。
+ */
+export interface VerifiedScoreOutcome {
+  verified: boolean;
+  rejected: boolean;
+  score: number | null;
+  /** 校验通过后是否已写入云端榜（未设置昵称等资格限制时为 false）。 */
+  leaderboard_submitted: boolean;
+  message: string | null;
 }
 
 /** 云端排行榜条目（公开安全字段） */
@@ -81,7 +101,8 @@ export interface AnalyticsBackend {
   updateDisplayName(playerId: string, name: string): Promise<void>;
   uploadEvents(playerId: string, events: TelemetryEvent[]): Promise<void>;
   upsertSession(playerId: string, session: SessionUpsert): Promise<void>;
-  submitLeaderboard(playerId: string, entry: LeaderboardSubmission): Promise<void>;
+  startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null>;
+  submitVerifiedScore(playerId: string, submission: VerifiedScoreSubmission): Promise<VerifiedScoreOutcome>;
   fetchLeaderboard(limit?: number, rulesVersion?: string): Promise<CloudLeaderboardEntry[]>;
 }
 
@@ -100,6 +121,46 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function requireString(v: unknown, field: string): string | null {
   return typeof v === 'string' && v.length > 0 && v.length <= 128 ? v : null;
+}
+
+/** 提取 Edge Function 调用的 HTTP 状态码与错误信息（Supabase FunctionsHttpError 等）。 */
+function extractFunctionError(error: unknown): { statusCode: number | null; message: string } {
+  if (typeof error === 'object' && error !== null) {
+    const ctx = (error as { context?: { status_code?: unknown } }).context;
+    const statusCode = ctx && typeof ctx.status_code === 'number' ? ctx.status_code : null;
+    const message =
+      typeof (error as { message?: unknown }).message === 'string'
+        ? ((error as { message?: unknown }).message as string)
+        : 'verification_error';
+    return { statusCode, message };
+  }
+  return { statusCode: null, message: 'verification_error' };
+}
+
+function parseVerifiedSessionStart(data: unknown): VerifiedSessionStart | null {
+  if (!isRecord(data)) return null;
+  const session_id = requireString(data.session_id, 'session_id');
+  const started_at = requireString(data.started_at, 'started_at');
+  const seed = data.seed;
+  const snapshot = data.rules_snapshot;
+  if (!session_id || !started_at || !Number.isSafeInteger(seed) || !isRecord(snapshot)) return null;
+  const volatility = snapshot.volatility;
+  const scoreRules = snapshot.scoreRules;
+  if (
+    !Number.isInteger(snapshot.rulesVersion) ||
+    snapshot.gameMode !== 'volatility_trade' ||
+    snapshot.volatilityEnabled !== true ||
+    !isRecord(volatility) ||
+    !isRecord(scoreRules) ||
+    typeof scoreRules.holdBonus !== 'number' ||
+    typeof scoreRules.sellMultiplier !== 'number'
+  ) return null;
+  return {
+    session_id,
+    started_at,
+    seed: seed as number,
+    rules_snapshot: snapshot as unknown as ReplayRulesSnapshot,
+  };
 }
 
 /** 解析 Edge Function 返回的公开身份（严格校验字段形状，防脏数据入库）。
@@ -216,19 +277,53 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     if (error) throw normalizeError(error);
   }
 
-  async submitLeaderboard(playerId: string, entry: LeaderboardSubmission): Promise<void> {
-    // 公开榜只收录非负成绩；负分仍保留在 session_end/round_settled 事件中，
-    // 避免丢失合法的反噬结果，同时不放宽榜单表的完整性约束。
-    if (entry.score < 0) return;
-    const { error } = await this.client
-      .from('leaderboard_entries')
-      .insert({
-        public_player_id: entry.public_player_id,
-        score: entry.score,
-        rules_version: entry.rules_version,
-        session_id: entry.session_id,
-      });
+  async startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null> {
+    const { data, error } = await this.client.functions.invoke('start-verified-session', {
+      body: {
+        client_session_id: meta.session_id,
+        app_version: meta.app_version,
+        consent_version: meta.consent_version,
+      },
+    });
     if (error) throw normalizeError(error);
+    return parseVerifiedSessionStart(data);
+  }
+
+  async submitVerifiedScore(playerId: string, submission: VerifiedScoreSubmission): Promise<VerifiedScoreOutcome> {
+    const { data, error } = await this.client.functions.invoke('submit-verified-score', {
+      body: {
+        session_id: submission.session_id,
+        actions: submission.actions,
+      },
+    });
+    if (!error) {
+      const ok = isRecord(data) && data.verified === true;
+      return {
+        verified: ok,
+        rejected: false,
+        score: ok && typeof data.score === 'number' ? data.score : null,
+        leaderboard_submitted: ok && data.leaderboard_submitted === true,
+        message: ok ? null : 'verified_score_rejected',
+      };
+    }
+    const { statusCode, message } = extractFunctionError(error);
+    if (statusCode === 409) {
+      // 会话此前已成功校验（重复提交/响应丢失后重试）：视为已校验，云端记录已存在。
+      return {
+        verified: true,
+        rejected: false,
+        score: null,
+        leaderboard_submitted: true,
+        message: message || 'session_already_completed',
+      };
+    }
+    return {
+      verified: false,
+      rejected: statusCode === 422,
+      score: null,
+      leaderboard_submitted: false,
+      message: message || 'verification_error',
+    };
   }
 
   async fetchLeaderboard(limit = 50, rulesVersion?: string): Promise<CloudLeaderboardEntry[]> {
@@ -319,8 +414,18 @@ export class NoopAnalyticsBackend implements AnalyticsBackend {
     return undefined;
   }
 
-  async submitLeaderboard(): Promise<void> {
-    return undefined;
+  async startVerifiedSession(): Promise<VerifiedSessionStart | null> {
+    return null;
+  }
+
+  async submitVerifiedScore(): Promise<VerifiedScoreOutcome> {
+    return {
+      verified: false,
+      rejected: false,
+      score: null,
+      leaderboard_submitted: false,
+      message: '云端未配置',
+    };
   }
 
   async fetchLeaderboard(): Promise<CloudLeaderboardEntry[]> {

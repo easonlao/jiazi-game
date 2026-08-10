@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
-import type { AnalyticsBackend, SessionUpsert } from '../../app/src/lib/analyticsBackend';
-import type { StorageProvider } from '../../app/src/core/StorageProvider';
+import type { AnalyticsBackend, SessionUpsert, VerifiedSessionStart } from '../../app/src/lib/analyticsBackend';
+import type { StorageProvider } from '../../src/core/StorageProvider';
+import { cloneReplayRulesSnapshot } from '../../src/core';
 
 class MemoryStorage implements StorageProvider {
   private readonly values = new Map<string, string>();
@@ -26,8 +27,15 @@ function createBackend() {
     recoverIdentity: vi.fn(),
     updateDisplayName: vi.fn(async () => undefined),
     uploadEvents: vi.fn(async () => undefined),
-    upsertSession: vi.fn(async () => undefined),
-    submitLeaderboard: vi.fn(async () => undefined),
+    upsertSession: vi.fn(async (_playerId: string, _session: SessionUpsert) => undefined),
+    startVerifiedSession: vi.fn(async (): Promise<VerifiedSessionStart | null> => null),
+    submitVerifiedScore: vi.fn(async () => ({
+      verified: true,
+      rejected: false,
+      score: 0,
+      leaderboard_submitted: false,
+      message: null,
+    })),
     fetchLeaderboard: vi.fn(async () => []),
   } satisfies AnalyticsBackend;
 }
@@ -87,10 +95,10 @@ describe('TelemetryController leaderboard eligibility', () => {
 
     await Promise.resolve();
     await Promise.resolve();
-    expect(backend.submitLeaderboard).not.toHaveBeenCalled();
+    expect(backend.submitVerifiedScore).not.toHaveBeenCalled();
   });
 
-  it('设置用户名后提交用户名对应的公开编码和分数', async () => {
+  it('即使设置用户名，未拿到服务端 seed 的本地对局也不上云端榜', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
     const backend = createBackend();
@@ -100,18 +108,11 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(controller.startSession(meta)).toBe(true);
     controller.endSession({ reason: 'game_over', rounds: 60, final_score: 1200.4, margin_call_count: 0 });
 
-    await vi.waitFor(() => expect(backend.submitLeaderboard).toHaveBeenCalledTimes(1));
-    expect(backend.submitLeaderboard).toHaveBeenCalledWith(
-      'player-1',
-      expect.objectContaining({
-        public_player_id: 'public-1',
-        score: 1200.4,
-        rules_version: '3',
-      }),
-    );
+    await Promise.resolve();
+    expect(backend.submitVerifiedScore).not.toHaveBeenCalled();
   });
 
-  it('兼容旧本地身份：历史自定义名称仍可提交，缺失字段按规则回填', async () => {
+  it('兼容旧本地身份：没有服务端校验会话时不提交排行榜', async () => {
     const storage = new MemoryStorage();
     seedLegacyIdentity(storage);
     const backend = createBackend();
@@ -121,14 +122,94 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(controller.startSession(meta)).toBe(true);
     controller.endSession({ reason: 'game_over', rounds: 60, final_score: 900, margin_call_count: 0 });
 
-    await vi.waitFor(() => expect(backend.submitLeaderboard).toHaveBeenCalledTimes(1));
-    expect(backend.submitLeaderboard).toHaveBeenCalledWith(
-      'player-legacy',
-      expect.objectContaining({
-        public_player_id: 'public-legacy',
-        rules_version: '3',
-      }),
-    );
+    await Promise.resolve();
+    expect(backend.submitVerifiedScore).not.toHaveBeenCalled();
+  });
+
+  it('服务端 seed 会话只提交动作序列，不提交客户端最终分数', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    backend.startVerifiedSession.mockResolvedValue({
+      session_id: 'verified-session',
+      started_at: '2026-08-10T00:00:00.000Z',
+      seed: 42,
+      rules_snapshot: cloneReplayRulesSnapshot(),
+    });
+    const controller = new TelemetryController({ storage, backend });
+    const verifiedMeta = { rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true };
+
+    await controller.init();
+    const prepared = await controller.prepareVerifiedSession(verifiedMeta);
+    expect(prepared?.session_id).toBe('verified-session');
+    expect(controller.startSession(verifiedMeta, prepared)).toBe(true);
+    controller.recordReplayAction({ type: 'wait' });
+    controller.endSession({ reason: 'game_over', rounds: 60, final_score: 999999, margin_call_count: 0 });
+
+    await vi.waitFor(() => expect(backend.submitVerifiedScore).toHaveBeenCalledTimes(1));
+    expect(backend.submitVerifiedScore).toHaveBeenCalledWith('player-1', {
+      session_id: 'verified-session',
+      actions: [{ type: 'wait' }],
+    });
+    expect(JSON.stringify(backend.submitVerifiedScore.mock.calls[0])).not.toContain('999999');
+  });
+
+  it('身份切换后，已开始的校验会话仍以开局时的 player_id 提交', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    backend.startVerifiedSession.mockResolvedValue({
+      session_id: 'verified-session',
+      started_at: '2026-08-10T00:00:00.000Z',
+      seed: 42,
+      rules_snapshot: cloneReplayRulesSnapshot(),
+    });
+    backend.recoverIdentity.mockResolvedValue({
+      player_id: 'player-2',
+      public_player_id: 'public-2',
+      public_code: 'PUBLIC002',
+      display_name: '新玩家',
+      leaderboard_eligible: true,
+    });
+    const controller = new TelemetryController({ storage, backend });
+    const verifiedMeta = { rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true };
+
+    await controller.init();
+    const prepared = await controller.prepareVerifiedSession(verifiedMeta);
+    expect(prepared).not.toBeNull();
+    controller.startSession(verifiedMeta, prepared);
+    // 对局中途身份切换：回收恢复码换绑到 player-2
+    await controller.recoverIdentity('SOME-RECOVERY-CODE');
+    controller.endSession({ reason: 'game_over', rounds: 60, final_score: 1000, margin_call_count: 0 });
+
+    await vi.waitFor(() => expect(backend.submitVerifiedScore).toHaveBeenCalledTimes(1));
+    // 提交仍归属开局时的 player-1，不会被身份切换误归属到 player-2
+    expect(backend.submitVerifiedScore).toHaveBeenCalledWith('player-1', expect.objectContaining({
+      session_id: 'verified-session',
+    }));
+  });
+
+  it('校验提交失败不抛到调用方，会话结束可继续', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    backend.startVerifiedSession.mockResolvedValue({
+      session_id: 'verified-session',
+      started_at: '2026-08-10T00:00:00.000Z',
+      seed: 42,
+      rules_snapshot: cloneReplayRulesSnapshot(),
+    });
+    backend.submitVerifiedScore.mockRejectedValueOnce(new Error('network down'));
+    const controller = new TelemetryController({ storage, backend });
+    const verifiedMeta = { rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true };
+
+    await controller.init();
+    const prepared = await controller.prepareVerifiedSession(verifiedMeta);
+    controller.startSession(verifiedMeta, prepared);
+    expect(() => controller.endSession({
+      reason: 'game_over', rounds: 60, final_score: 100, margin_call_count: 0,
+    })).not.toThrow();
+    await vi.waitFor(() => expect(controller.getVerification('verified-session')?.status).toBe('failed'));
   });
 
   it('game_sessions upsert 携带客户端原始 started_at，保证 ended_at >= started_at', async () => {
@@ -155,7 +236,7 @@ describe('TelemetryController leaderboard eligibility', () => {
     );
   });
 
-  it('game_sessions upsert 失败时，eligible 对局仍提交排行榜（不提前中断）', async () => {
+  it('game_sessions upsert 失败时，本地对局仍不绕过服务端重放', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
     const backend = createBackend();
@@ -167,16 +248,8 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(controller.startSession(meta)).toBe(true);
     controller.endSession({ reason: 'game_over', rounds: 60, final_score: 1200, margin_call_count: 0 });
 
-    await vi.waitFor(() => expect(backend.submitLeaderboard).toHaveBeenCalledTimes(1));
-    expect(backend.submitLeaderboard).toHaveBeenCalledWith(
-      'player-1',
-      expect.objectContaining({
-        public_player_id: 'public-1',
-        score: 1200,
-        rules_version: '3',
-      }),
-    );
-    expect(warn).toHaveBeenCalled();
+    await Promise.resolve();
+    expect(backend.submitVerifiedScore).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 });

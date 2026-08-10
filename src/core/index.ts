@@ -11,6 +11,12 @@ export type {
   DecisionEntry,
 } from './TurnManager';
 
+export { replayGame, ReplayValidationError, MAX_REPLAY_ACTIONS } from './ReplayRunner';
+export type { ReplayAction, ReplayRequest, ReplayResult } from './ReplayRunner';
+
+export { TRADE_REPLAY_RULES, cloneReplayRulesSnapshot } from './ReplayRules';
+export type { ReplayRulesSnapshot } from './ReplayRules';
+
 export { SeasonCycle } from './SeasonCycle';
 export type { Season } from './SeasonCycle';
 

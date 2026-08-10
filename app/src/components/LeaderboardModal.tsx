@@ -5,11 +5,14 @@ import { useGameStore } from '../store';
  * 排行榜弹窗：
  * - 本地榜：展示历史最高分记录（按分数降序，最多 10 条）。
  * - 云端娱乐榜：展示已设置用户名玩家的公开成绩（用户名 + 唯一公开编码 + 分数）。
- *   该榜单分数由客户端上报、未做作弊校验，仅供娱乐参考。
+ *   该榜单分数由服务端重放校验后写入；历史未校验数据由服务端查询规则过滤。
  */
 export function LeaderboardModal() {
   const entries = useGameStore((s) => s.leaderboardEntries);
   const cloudEntries = useGameStore((s) => s.cloudLeaderboard);
+  const cloudStatus = useGameStore((s) => s.cloudLeaderboardStatus);
+  const cloudError = useGameStore((s) => s.cloudLeaderboardError);
+  const verificationState = useGameStore((s) => s.verificationState);
   const refreshCloudLeaderboard = useGameStore((s) => s.refreshCloudLeaderboard);
   const closeLeaderboard = useGameStore((s) => s.closeLeaderboard);
 
@@ -53,10 +56,19 @@ export function LeaderboardModal() {
 
         <section className="mt-4">
           <div className="flex items-baseline justify-between mb-2">
-            <h3 className="text-sm font-serif font-bold text-ink">云端娱乐榜</h3>
-            <span className="text-[10px] text-ink-light">未校验</span>
+            <h3 className="text-sm font-serif font-bold text-ink">云端榜</h3>
+            <span className="text-[10px] text-ink-light">服务端校验</span>
           </div>
-          {cloudEntries.length === 0 ? (
+          {verificationState?.status === 'pending' && (
+            <p className="mb-2 text-[10px] leading-relaxed text-gold">
+              本局正在校验，校验完成后会自动刷新云端榜。
+            </p>
+          )}
+          {cloudStatus === 'loading' || cloudStatus === 'idle' ? (
+            <p className="text-sm text-ink-light text-center py-4">正在读取云端榜…</p>
+          ) : cloudStatus === 'error' ? (
+            <p className="text-sm text-qi-critical text-center py-4">{cloudError ?? '云端榜暂时无法刷新'}</p>
+          ) : cloudEntries.length === 0 ? (
             <p className="text-sm text-ink-light text-center py-4">暂无云端记录/未配置数据记录</p>
           ) : (
             <div className="space-y-1.5 max-h-40 overflow-y-auto">
@@ -89,7 +101,7 @@ export function LeaderboardModal() {
             </div>
           )}
           <p className="mt-1.5 text-[10px] leading-relaxed text-ink-light">
-            云端榜分数由客户端上报，未做作弊校验，仅供参考。
+            云端榜分数经服务端重放校验，仅校验通过的完整 60 回合对局上榜。
           </p>
         </section>
 

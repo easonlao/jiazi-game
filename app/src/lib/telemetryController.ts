@@ -14,7 +14,7 @@
  * - 未获同意前队列关闭，事件直接丢弃。
  */
 
-import type { StorageProvider } from '@core/index';
+import type { ReplayAction, StorageProvider } from '@core/index';
 import {
   TELEMETRY_CONSENT_VERSION,
   TelemetryQueue,
@@ -26,7 +26,12 @@ import type {
   AnalyticsBackend,
   CloudLeaderboardEntry,
   PlayerIdentity,
+  VerifiedSessionStart,
 } from './analyticsBackend';
+import {
+  VerificationStateController,
+  type VerificationRecord,
+} from './verificationState';
 
 const CONSENT_KEY = 'jiazi_consent';
 const IDENTITY_KEY = 'jiazi_player_identity';
@@ -73,6 +78,8 @@ export interface TelemetryControllerDeps {
   appVersion?: string;
   now?: () => number;
   onStateChange?: (state: TelemetryControllerState) => void;
+  /** 云端成绩校验状态变化回调（记录已按 session_id 隔离，含固定 player_id）。 */
+  onVerificationChange?: (record: VerificationRecord) => void;
 }
 
 function readJson<T>(storage: StorageProvider, key: string): T | null {
@@ -170,9 +177,23 @@ export class TelemetryController {
   private readonly appVersion: string;
   private readonly queue: TelemetryQueue;
   private readonly onStateChange?: (state: TelemetryControllerState) => void;
+  private readonly onVerificationChange?: (record: VerificationRecord) => void;
+
+  /** 云端成绩校验状态层（pending/verified/rejected/failed，按 session_id 隔离）。 */
+  readonly verification: VerificationStateController;
 
   private state: TelemetryControllerState;
-  private session: { session_id: string; started_at: string; ended: boolean; meta: ActiveSessionMeta } | null = null;
+  private session: {
+    session_id: string;
+    started_at: string;
+    ended: boolean;
+    meta: ActiveSessionMeta;
+    verified: VerifiedSessionStart | null;
+    replayActions: ReplayAction[];
+    /** 该局开始时的 player_id（固定，身份切换不影响提交归属）。 */
+    playerId: string;
+  } | null = null;
+  private preparedSession: VerifiedSessionStart | null = null;
   private sessionProgress: SessionProgress = { rounds: 0, final_score: 0, margin_call_count: 0 };
   private pagehideBound = false;
 
@@ -181,6 +202,7 @@ export class TelemetryController {
     this.backend = deps.backend;
     this.appVersion = deps.appVersion ?? APP_VERSION;
     this.onStateChange = deps.onStateChange;
+    this.onVerificationChange = deps.onVerificationChange;
     this.state = {
       consent: readConsent(deps.storage),
       identity: readIdentity(deps.storage),
@@ -194,6 +216,8 @@ export class TelemetryController {
       transport: createTransport(this.backend, () => this.state.identity?.player_id ?? null),
       now: deps.now,
     });
+    this.verification = new VerificationStateController({ backend: deps.backend, storage: deps.storage });
+    this.verification.subscribe((record) => this.onVerificationChange?.(record));
   }
 
   getState(): TelemetryControllerState {
@@ -203,6 +227,44 @@ export class TelemetryController {
   /** 当前活跃会话 id；无会话时返回 null。 */
   getActiveSessionId(): string | null {
     return this.session?.session_id ?? null;
+  }
+
+  /** 在游戏真正开始前向服务端申请 seed；失败时返回 null，调用方保留本地模式。 */
+  async prepareVerifiedSession(meta: ActiveSessionMeta): Promise<VerifiedSessionStart | null> {
+    if (
+      meta.rules_version !== '3' ||
+      meta.game_mode !== 'volatility_trade' ||
+      !this.state.consent?.granted ||
+      !this.state.identity ||
+      !this.state.telemetryEnabled
+    ) return null;
+    if (this.preparedSession) return this.preparedSession;
+    const identity = this.state.identity;
+    try {
+      const prepared = await this.backend.startVerifiedSession(identity.player_id, {
+        session_id: newUuid(),
+        started_at: new Date().toISOString(),
+        status: 'started',
+        rounds_completed: 0,
+        final_score: 0,
+        rules_version: meta.rules_version,
+        game_mode: meta.game_mode,
+        app_version: this.appVersion,
+        consent_version: String(this.state.consent.version),
+      });
+      this.preparedSession = prepared;
+      return prepared;
+    } catch (e) {
+      console.warn('[telemetry] verified session 准备失败，回退本地模式', e);
+      return null;
+    }
+  }
+
+  /** 取出一次已准备的服务端会话；未准备好时返回 null。 */
+  takePreparedSession(): VerifiedSessionStart | null {
+    const prepared = this.preparedSession;
+    this.preparedSession = null;
+    return prepared;
   }
 
   private setState(patch: Partial<TelemetryControllerState>): void {
@@ -225,6 +287,9 @@ export class TelemetryController {
       if (ok && !this.state.identity) {
         await this.provision(this.defaultDisplayName());
       }
+      if (ok && this.state.identity) {
+        await this.verification.resumePending();
+      }
       this.setState({ busy: false, error: ok ? null : '云端身份暂不可用，可继续本地游玩' });
     }
   }
@@ -243,6 +308,7 @@ export class TelemetryController {
     if (ok) {
       if (recoveryCode?.trim()) await this.recoverIdentity(recoveryCode);
       else await this.provision(this.defaultDisplayName());
+      await this.verification.resumePending();
     } else {
       this.setState({ error: '云端服务暂不可用，可稍后重试' });
     }
@@ -253,6 +319,8 @@ export class TelemetryController {
   declineConsent(): void {
     writeConsent(this.storage, false);
     this.session = null;
+    this.preparedSession = null;
+    this.verification.clear();
     this.setTelemetryEnabled(false);
     this.setState({
       consent: { version: TELEMETRY_CONSENT_VERSION, granted: false, granted_at: new Date().toISOString() },
@@ -327,10 +395,20 @@ export class TelemetryController {
   // ── 会话生命周期 ──────────────────────────────────────────
 
   /** 开始一次游戏会话（仅同意后生效；返回是否启用）。 */
-  startSession(meta: ActiveSessionMeta): boolean {
+  startSession(meta: ActiveSessionMeta, verified: VerifiedSessionStart | null = null): boolean {
     if (!this.state.consent?.granted || !this.state.identity || !this.state.telemetryEnabled) return false;
-    const session_id = newUuid();
-    this.session = { session_id, started_at: new Date().toISOString(), ended: false, meta };
+    const session_id = verified?.session_id ?? newUuid();
+    const started_at = verified?.started_at ?? new Date().toISOString();
+    this.session = {
+      session_id,
+      started_at,
+      ended: false,
+      meta,
+      verified,
+      replayActions: [],
+      // 固定该局开始时的 player_id：身份切换后旧局提交仍归属原始身份。
+      playerId: this.state.identity.player_id,
+    };
     this.sessionProgress = { rounds: 0, final_score: 0, margin_call_count: 0 };
     this.track('session_start', {
       session_id,
@@ -341,10 +419,24 @@ export class TelemetryController {
       consent_version: this.state.consent.version,
       platform: 'web',
     });
-    void this.upsertSessionNow(this.session).catch((e) => {
-      console.warn('[telemetry] game_sessions 会话创建 upsert 失败（结束时仍会再次尝试）', e);
-    });
+    if (!verified) {
+      void this.upsertSessionNow(this.session).catch((e) => {
+        console.warn('[telemetry] game_sessions 会话创建 upsert 失败（结束时仍会再次尝试）', e);
+      });
+    }
     return true;
+  }
+
+  /** 记录已被核心引擎接受的动作；服务端只重放这些动作，不读取客户端最终分数。 */
+  recordReplayAction(action: ReplayAction): void {
+    if (!this.session || this.session.ended || !this.session.verified) return;
+    this.session.replayActions.push(action);
+  }
+
+  /** 执行动作失败时撤销预先登记的动作。 */
+  removeLastReplayAction(): void {
+    if (!this.session || this.session.ended || !this.session.verified) return;
+    this.session.replayActions.pop();
   }
 
   /** 游戏过程中持续刷新当前进度（页面关闭/放弃时带走真实数值）。 */
@@ -414,15 +506,25 @@ export class TelemetryController {
     return this.queue.pendingCount();
   }
 
+  /** 读取某会话的云端校验状态；无记录时返回 null。 */
+  getVerification(sessionId: string): VerificationRecord | null {
+    return this.verification.get(sessionId);
+  }
+
+  /** 对 failed / rejected 的会话重新提交校验；状态不合法时返回 null。 */
+  retryVerification(sessionId: string): VerificationRecord | null {
+    return this.verification.retry(sessionId);
+  }
+
   private defaultDisplayName(): string {
     return '';
   }
 
   private async upsertSessionNow(
-    session: { session_id: string; started_at: string; meta: ActiveSessionMeta },
+    session: { session_id: string; started_at: string; meta: ActiveSessionMeta; playerId: string },
     end?: { ended: boolean; abandoned: boolean; rounds: number; final_score: number },
   ): Promise<void> {
-    const playerId = this.state.identity?.player_id;
+    const playerId = session.playerId;
     if (!playerId) return;
     const status = !end?.ended ? 'started' : end.abandoned ? 'abandoned' : 'completed';
     await this.backend.upsertSession(playerId, {
@@ -444,10 +546,27 @@ export class TelemetryController {
   }
 
   private async finalizeSession(
-    session: { session_id: string; started_at: string; meta: ActiveSessionMeta },
+    session: {
+      session_id: string;
+      started_at: string;
+      meta: ActiveSessionMeta;
+      verified: VerifiedSessionStart | null;
+      replayActions: ReplayAction[];
+      playerId: string;
+    },
     result: SessionEndResult,
     abandoned: boolean,
   ): Promise<void> {
+    if (session.verified && !abandoned) {
+      // 云端服务端重放校验后台执行：登记为 pending 并异步提交。
+      // 记录按 session_id 隔离、playerId 为该局开始时的固定值，不阻塞开始下一局。
+      this.verification.submit({
+        sessionId: session.session_id,
+        playerId: session.playerId,
+        actions: session.replayActions,
+      });
+      return;
+    }
     try {
       await this.upsertSessionNow(session, {
         ended: true,
@@ -458,28 +577,8 @@ export class TelemetryController {
     } catch (e) {
       console.warn('[telemetry] game_sessions upsert 失败，仍尝试提交排行榜', e);
     }
-    if (!abandoned && this.state.identity) {
-      try {
-        await this.submitLeaderboard(session, result.final_score);
-      } catch (e) {
-        console.warn('[telemetry] submitLeaderboard 失败', e);
-      }
-    }
   }
 
-  private async submitLeaderboard(
-    session: { session_id: string; meta: ActiveSessionMeta },
-    score: number,
-  ): Promise<void> {
-    const identity = this.state.identity;
-    if (!identity || !identity.leaderboard_eligible || !identity.display_name.trim() || !session?.session_id) return;
-    await this.backend.submitLeaderboard(identity.player_id, {
-      public_player_id: identity.public_player_id,
-      score: Math.round(score * 10) / 10,
-      rules_version: session.meta.rules_version,
-      session_id: session.session_id,
-    });
-  }
 
   private bindPagehide(): void {
     if (this.pagehideBound) return;
@@ -489,6 +588,9 @@ export class TelemetryController {
         if (this.session && !this.session.ended) {
           this.abandonSession('pagehide');
         }
+      });
+      window.addEventListener('online', () => {
+        void this.verification.resumePending();
       });
     }
   }
