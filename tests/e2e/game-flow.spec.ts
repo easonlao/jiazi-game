@@ -69,8 +69,50 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByRole('button', { name: /调息/ })).toBeVisible();
     await expect(page.getByRole('button', { name: '打开帮助' })).toBeVisible();
     await page.getByRole('button', { name: '打开帮助' }).click();
-    await expect(page.getByRole('heading', { name: '玩法帮助' })).toBeVisible();
+    const helpModal = page.locator('.modal-backdrop').filter({ has: page.getByRole('heading', { name: '玩法帮助' }) });
+    await expect(helpModal).toBeVisible();
+    await expect(helpModal.getByText('一局怎么玩', { exact: true })).toBeVisible();
+    await expect(helpModal.getByText(/一局共 60 回合/)).toBeVisible();
+    const helpText = await helpModal.innerText();
+    expect(helpText).not.toContain('rulesVersion');
+    expect(helpText).not.toContain('volatility=');
+
+    for (const section of ['每回合怎么选', '怎么看卡牌', '持有还是释灵', '燃灵与失控风险', '名词解释']) {
+      await helpModal.getByText(section, { exact: true }).click();
+    }
+    await expect(helpModal.getByText('纳灵评分：', { exact: false })).toBeVisible();
+    await expect(helpModal.getByText('当前评分：', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: '关闭帮助' }).click();
+    await expect(helpModal).toBeHidden();
+  });
+
+  test('帮助入口在桌面和手机尺寸可滚动且关闭后可继续操作', async ({ page }) => {
+    await startGameAndDismiss(page);
+
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await page.getByRole('button', { name: '打开帮助' }).click();
+
+      const helpModal = page.locator('.modal-backdrop').filter({ hasText: '玩法帮助' });
+      const helpContent = helpModal.locator('div.overflow-y-auto').first();
+      await expect(helpModal).toBeVisible();
+      for (const section of ['每回合怎么选', '怎么看卡牌', '持有还是释灵', '燃灵与失控风险', '名词解释']) {
+        await helpModal.getByText(section, { exact: true }).click();
+      }
+      await expect.poll(() => helpContent.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+
+      await page.getByRole('button', { name: '关闭帮助' }).click();
+      await expect(helpModal).toBeHidden();
+
+      const publicCard = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..').locator('.card-in').first();
+      await publicCard.click();
+      const buyButton = page.getByRole('button', { name: /纳灵/ });
+      await expect(buyButton).toBeEnabled();
+      await buyButton.click();
+      await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
+      await page.getByRole('button', { name: '返回修改' }).click();
+      await publicCard.click();
+    }
   });
 
   test('普通入口默认显示季内波动提示与实际变化值', async ({ page }) => {

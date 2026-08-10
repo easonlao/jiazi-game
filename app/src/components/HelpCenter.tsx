@@ -29,13 +29,61 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
           </button>
         </div>
 
-        <div className="space-y-3 overflow-y-auto px-4 py-3 text-xs leading-relaxed text-ink-light">
-          <HelpSection title="甲子与天时">一局便是一甲子（60 回合），春夏秋冬四季天时流转。每回合结束，丹田中的灵气结算炼化，再回复神识；修为越高越好。</HelpSection>
-          <HelpSection title="一回合怎么做">先看周遭浮现的灵气（公共牌），再选择纳灵、释灵或调息。纳灵将灵气收入丹田炼化；释灵会按当前评分和纳灵评分结算修为；调息不纳灵不释灵，但下回合额外回神。</HelpSection>
-          <HelpSection title="怎么看灵气">灵气名中天干、地支的颜色代表各自五行。默认交易规则下，公共牌显示当前评分，括号内是相对基础评分的实际变化（如 +2），换季后会重新计算；使用 ?volatility=0 时显示基础规则的“当季 → 下一季”评分。丹田手牌对应显示纳灵评分与当前评分；选择释灵后，结算预览会显示本次释灵收益。</HelpSection>
-          <HelpSection title="燃灵与神识">纳灵时开启燃灵（杠杆），倍率按当季天时逐档提高，换季重置为 1.0×；倍率同时放大炼化收益和耗神。神识归零时，燃灵的灵气可能失控反噬（强平）。</HelpSection>
-          <HelpSection title="颜色怎么看">
-            神识消耗（纳灵、炼化耗神）统一用<span className="mx-0.5 font-bold text-sky-600">水蓝</span>；修为收益用红绿表示——<span className="mx-0.5 font-bold text-qi-full">绿色</span>为正、<span className="mx-0.5 font-bold text-qi-critical">红色</span>为负。土牌四季稳定，不随天时起伏。
+        <div className="space-y-2 overflow-y-auto px-4 py-3 text-xs leading-relaxed text-ink-light">
+          <HelpSection title="一局怎么玩" defaultOpen>
+            <p>一局共 60 回合，经历春、夏、秋、冬四季。你的目标是在神识有限的情况下，让最终修为尽可能高。</p>
+            <ol className="mt-2 list-decimal space-y-1 pl-4">
+              <li>观察周遭灵气，比较卡牌当前的评分和变化。</li>
+              <li>选择纳灵、释灵或调息，确认后结束本回合。</li>
+              <li>回合结束时，丹田中的卡牌结算炼化收益，并回复神识。</li>
+            </ol>
+          </HelpSection>
+
+          <HelpSection title="每回合怎么选">
+            <div className="space-y-2">
+              <HelpTerm title="纳灵">将公共牌收入丹田。纳灵会消耗神识，之后可以继续持有它获取炼化收益。</HelpTerm>
+              <HelpTerm title="释灵">将丹田中的卡牌释放。系统会比较纳灵时的评分和当前评分，当前更高则获得修为，当前更低则可能损失修为。</HelpTerm>
+              <HelpTerm title="调息">本回合不纳灵也不释灵，换取下回合额外回神，适合恢复神识或等待变化。</HelpTerm>
+              <HelpTerm title="燃灵">纳灵时可以开启燃灵。它会放大炼化收益，也会放大神识消耗和失控风险。</HelpTerm>
+            </div>
+          </HelpSection>
+
+          <HelpSection title="怎么看卡牌">
+            <div className="space-y-2">
+              <p>卡牌名字中的天干、地支各有五行属性。四季会改变不同卡牌的评分，同一张牌在不同季节可能有高低变化。</p>
+              <p><span className="font-bold text-ink">公共牌</span>显示现在纳灵时能得到的评分；旁边的变化数值表示近期评分变化的方向和幅度，不是下一季的确定结果。</p>
+              <p><span className="font-bold text-ink">丹田手牌</span>显示“纳灵评分 → 当前评分”。左边是纳灵时记下的评分，右边是现在的评分，两者的差距会影响释灵结果。</p>
+              <p>换季时卡牌会重新适应新的天时，评分可能出现明显变化；季节之内也会有短期变化，需要根据当下信息判断。</p>
+            </div>
+          </HelpSection>
+
+          <HelpSection title="持有还是释灵">
+            <div className="space-y-2">
+              <p><span className="font-bold text-ink">持有</span>适合看好当前评分，或希望让卡牌继续产生炼化收益。持有时间越长，越要留意神识是否够用。</p>
+              <p><span className="font-bold text-ink">主动释灵（释灵）</span>适合在当前评分比纳灵时更好时落袋为安，也可以在评分转弱前及时止损。它结算的是“纳灵时到现在的变化”，不是卡牌的固定卖出价格；燃灵会进一步放大这次变化带来的收益或损失。</p>
+              <p>例如：纳灵时评分为 +10，现在变成 +18，主动释灵通常会带来正收益；如果现在变成 +5，则可能产生负收益。最终数字以行动前的结算预览为准。</p>
+              <p>卡牌名字的颜色表示五行属性；卡面下方炼化和结算数字的绿色表示收益、红色表示损失。</p>
+            </div>
+          </HelpSection>
+
+          <HelpSection title="燃灵与失控风险">
+            <div className="space-y-2">
+              <p>燃灵倍率会随着季内回合逐步提高，最高可到 3.5×；换季后回到 1.0×。倍率越高，炼化收益和神识压力越大。</p>
+              <p>神识不足时，燃灵可能引发失控反噬并强制结束一部分持仓。高收益也意味着更高风险，不要只看倍率。</p>
+              <p>土牌受四季影响较小，更适合作为稳定的持有选择；但燃灵仍会增加它的神识消耗。</p>
+            </div>
+          </HelpSection>
+
+          <HelpSection title="名词解释">
+            <div className="space-y-2">
+              <HelpTerm title="神识">进行纳灵、持有和燃灵所需的资源。归零时可能触发失控。</HelpTerm>
+              <HelpTerm title="修为">本局最终得分，越高越好。</HelpTerm>
+              <HelpTerm title="当前评分">卡牌在当前季节、当前状态下的评分，决定现在持有和主动释灵时的收益。</HelpTerm>
+              <HelpTerm title="纳灵评分">卡牌进入丹田那一刻记录的评分，是之后释灵比较变化的起点。</HelpTerm>
+              <HelpTerm title="炼化">持有丹田卡牌到回合结束时获得的收益。</HelpTerm>
+              <HelpTerm title="主动释灵">释放丹田中的卡牌，按当前评分相对纳灵评分的变化结算修为。</HelpTerm>
+              <HelpTerm title="强平">燃灵失控后的保护机制，会强制结束持仓并扣除修为。</HelpTerm>
+            </div>
           </HelpSection>
         </div>
       </div>
@@ -43,11 +91,20 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
   );
 }
 
-function HelpSection({ title, children }: { title: string; children: React.ReactNode }) {
+function HelpSection({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   return (
-    <section>
-      <h3 className="mb-0.5 font-bold text-ink">{title}</h3>
-      <p>{children}</p>
-    </section>
+    <details open={defaultOpen} className="rounded-lg border border-wood-mid/60 bg-white/20 px-3 py-2">
+      <summary className="cursor-pointer list-none pr-4 font-bold text-ink marker:hidden">{title}</summary>
+      <div className="mt-2">{children}</div>
+    </details>
+  );
+}
+
+function HelpTerm({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <p>
+      <span className="font-bold text-ink">{title}：</span>
+      {children}
+    </p>
   );
 }
