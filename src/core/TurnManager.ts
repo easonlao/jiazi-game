@@ -2,7 +2,7 @@ import { JiaziCard, Element, YinYang } from './JiaziCard';
 import { CardDataBank } from './CardDataBank';
 import { SeasonCycle, Season } from './SeasonCycle';
 import { QiManager } from './QiManager';
-import { ScoreManager } from './ScoreManager';
+import { DEFAULT_SCORE_RULES, ScoreManager, TRADE_SCORE_RULES, type ScoreRules } from './ScoreManager';
 import { LeverageCalculator } from './LeverageCalculator';
 import { HandManager } from './HandManager';
 import { HandSlot } from './HandSlot';
@@ -10,10 +10,19 @@ import { CardPoolManager } from './CardPoolManager';
 import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig';
 import { MathRandomSource, RandomSource } from './RandomSource';
 import { calculateHoldingSettlement } from './SettlementPreviewCalculator';
-import { GameSaveService, type GameSnapshot } from './GameSaveService';
+import { GameSaveService, CURRENT_SCHEMA_VERSION, isSupportedRulesVersion, RULES_BASE, RULES_VERSION_VOLATILE, RULES_VERSION_TRADE, type GameSnapshot, type GameSaveLoadError, type SupportedRulesVersion } from './GameSaveService';
 import type { StorageProvider } from './StorageProvider';
 import { LockManager, type LockResult } from './LockManager';
 import { MarginCallEngine } from './MarginCallEngine';
+import {
+  cardAmplitude,
+  createScoreVolatilityState,
+  DEFAULT_SCORE_VOLATILITY_CONFIG,
+  isSupportedVolatilityModel,
+  type ScoreVolatilityConfig,
+  type ScoreVolatilitySnapshot,
+  type VolatilityTrend,
+} from './ScoreVolatility';
 
 /** 游戏主状态 */
 export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'game_over';
@@ -199,6 +208,11 @@ interface LastActionCardInfo {
   qiReturn: number;
 }
 
+/** 判断是否为非 null 且非数组的对象（Record 形状）。 */
+function isNonNilRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 /**
  * 回合管理器
  * 
@@ -213,6 +227,28 @@ export class TurnManager {
   // 注入的配置与随机源（固定 seed 可复现依赖）
   private readonly balanceConfig: BalanceConfig;
   private readonly random: RandomSource;
+  private readonly volatilityRandom: RandomSource;
+  private readonly scoreVolatilityConfig: ScoreVolatilityConfig;
+  private scoreVolatilityState: ScoreVolatilitySnapshot | null;
+  private readonly initialRulesVersion: SupportedRulesVersion;
+  private readonly initialScoreRules: ScoreRules;
+  /**
+   * 当前生效的波动配置（= 存档声明优先）。
+   *
+     * 新局/重置 = 构造函数配置；读档后 = 存档 scoreVolatility 携带的 model/scale/bandFactors
+   * （base 构造读 conflict_banded 档也按存档模型刷新，不依赖构造函数默认）。
+   * getCardScore 模型分支、refreshScoreVolatility 重建一律以本字段为准。
+   */
+  private activeVolatilityConfig: ScoreVolatilityConfig;
+  /**
+   * 当前生效的规则版本（active rules state）。
+   * - 新局默认：由构造函数 volatility 决定（enabled → 波动规则，否则 base）。
+   * - 读档后：以存档声明的 rulesVersion 为准（缺省 = base），覆盖构造默认。
+   * 波动是否生效（getCardScore / refreshScoreVolatility / reset）一律以本字段为门，
+   * 不能只靠 scoreVolatilityConfig.enabled——否则旧档会被构造时的全局开关解释成
+   * 其他规则，且换季时会被静默重新启用（旧档安全原则，见 PRD §8/§9）。
+   */
+  private rulesVersion: SupportedRulesVersion;
 
   // 子系统
   private cardDataBank: CardDataBank;
@@ -268,16 +304,45 @@ export class TurnManager {
   constructor(
     config?: BalanceConfig,
     random?: RandomSource,
-    options?: { skipSeasonGenerate?: boolean; storage?: StorageProvider },
+    options?: {
+      skipSeasonGenerate?: boolean;
+      storage?: StorageProvider;
+      volatility?: Partial<ScoreVolatilityConfig>;
+      volatilityRandom?: RandomSource;
+       /** 新局规则语义；未指定且启用波动时保持现有 v2。 */
+      rulesVersion?: SupportedRulesVersion;
+      /** v3 交易规则的计分参数；v1/v2 使用旧默认值。 */
+      scoreRules?: Partial<ScoreRules>;
+    },
   ) {
     const balanceConfig = config ?? DEFAULT_BALANCE_CONFIG;
     const randomSource = random ?? new MathRandomSource();
     this.balanceConfig = balanceConfig;
     this.random = randomSource;
+    this.volatilityRandom = options?.volatilityRandom ?? randomSource;
+    this.scoreVolatilityConfig = {
+      ...DEFAULT_SCORE_VOLATILITY_CONFIG,
+      ...options?.volatility,
+    };
+    this.activeVolatilityConfig = this.scoreVolatilityConfig;
+    this.scoreVolatilityState = this.scoreVolatilityConfig.enabled
+      ? createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig)
+      : null;
+    // 构造默认只决定"新局/模拟"的规则；读档后由 importSnapshot 按存档声明覆盖。
+    this.rulesVersion = options?.rulesVersion
+      ?? (this.scoreVolatilityConfig.enabled ? RULES_VERSION_VOLATILE : RULES_BASE);
+    const defaultScoreRules = this.rulesVersion === RULES_VERSION_TRADE
+      ? TRADE_SCORE_RULES
+      : DEFAULT_SCORE_RULES;
+    this.initialRulesVersion = this.rulesVersion;
+    this.initialScoreRules = {
+      ...defaultScoreRules,
+      ...options?.scoreRules,
+    };
     this.cardDataBank = new CardDataBank();
     this.seasonCycle = new SeasonCycle(randomSource, options?.skipSeasonGenerate ?? false);
     this.qiManager = new QiManager(undefined, balanceConfig);
-    this.scoreManager = new ScoreManager();
+    this.scoreManager = new ScoreManager(this.initialScoreRules);
     this.leverageCalculator = new LeverageCalculator(balanceConfig);
     this.handManager = new HandManager();
     this.cardPoolManager = new CardPoolManager(randomSource);
@@ -323,8 +388,87 @@ export class TurnManager {
   }
 
   /** 所有核心结算和预览共用的最终评分入口。 */
+  private isVolatilityRulesVersion(): boolean {
+    return this.rulesVersion === RULES_VERSION_VOLATILE || this.rulesVersion === RULES_VERSION_TRADE;
+  }
+
   getCardScore(card: JiaziCard, season: string): number {
-    return card.getSeasonScore(season, this.balanceConfig);
+    const baseScore = card.getSeasonScore(season, this.balanceConfig);
+    // 门控以"当前生效规则版本"为准（读档后=存档声明），而非构造函数开关；
+     // 只有当前已知的波动规则版本才叠加偏移。未知未来规则版本不按波动解释，
+     // 由读档门控拒绝；这里的精确版本判断避免未来规则被错误套用当前公式。
+    if (!this.isVolatilityRulesVersion() || !this.scoreVolatilityState) return baseScore;
+
+    // 实验阶段只把波动叠加到当前季评分；未来季节仍返回基础评分，避免把
+    // 当前短期状态伪装成未来已知信息。
+    if (season !== this.seasonCycle.getCurrentSeason()) return baseScore;
+
+    // 按当前生效模型分支：conflict_banded 按牌级幅度 + 地支共享方向；
+    // uniform（兼容默认）按地支整数偏移。
+    if ((this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform') === 'conflict_banded') {
+      const direction = this.scoreVolatilityState.directionByDiZhi?.[card.diZhi] ?? 0;
+      const scale = this.scoreVolatilityState.scale ?? this.activeVolatilityConfig.scale ?? DEFAULT_SCORE_VOLATILITY_CONFIG.scale ?? 2;
+      const bandFactors = this.scoreVolatilityState.bandFactors
+        ?? this.activeVolatilityConfig.bandFactors
+        ?? {};
+      const amplitude = cardAmplitude(card, scale, baseScore, bandFactors);
+      return Math.round(baseScore + direction * amplitude);
+    }
+    return baseScore + (this.scoreVolatilityState.deltaByDiZhi[card.diZhi] ?? 0);
+  }
+
+  /** 当前实验性波动状态，供模拟器和诊断输出使用。 */
+  getScoreVolatilityState(): ScoreVolatilitySnapshot | null {
+    if (!this.scoreVolatilityState) return null;
+    const base = {
+      remainingRounds: this.scoreVolatilityState.remainingRounds,
+      deltaByDiZhi: { ...this.scoreVolatilityState.deltaByDiZhi },
+    };
+    if ((this.scoreVolatilityState.model ?? 'uniform') !== 'conflict_banded') return base;
+    const bandFactors = this.scoreVolatilityState.bandFactors ?? this.activeVolatilityConfig.bandFactors;
+    return {
+      ...base,
+      model: 'conflict_banded',
+      scale: this.scoreVolatilityState.scale ?? this.activeVolatilityConfig.scale ?? DEFAULT_SCORE_VOLATILITY_CONFIG.scale ?? 2,
+      directionByDiZhi: { ...this.scoreVolatilityState.directionByDiZhi },
+      ...(bandFactors ? { bandFactors: { ...bandFactors } } : {}),
+    };
+  }
+
+  /**
+   * 卡牌在当前活跃波动状态下的短期趋势（实验 UI 紧凑箭头数据源）。
+   *
+    * 返回 null 的条件与 getCardScore 叠加波动的门控一致：活跃规则版本必须是当前已知
+    * 波动规则且波动状态存在（base 规则 / 旧档 / 未知未来版本返回 null，
+   * UI 不渲染箭头）。方向来源按当前生效模型分支：
+   * - conflict_banded：读 directionByDiZhi[card.diZhi]（地支共享方向）；
+   * - uniform：读 deltaByDiZhi[card.diZhi]（地支整数偏移）。
+   * 值 >0 → rising，<0 → falling，=0 → steady。
+   */
+  getCardVolatilityTrend(card: JiaziCard): VolatilityTrend | null {
+    if (!this.isVolatilityRulesVersion() || !this.scoreVolatilityState) return null;
+
+    const model = this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform';
+    const direction = model === 'conflict_banded'
+      ? this.scoreVolatilityState.directionByDiZhi?.[card.diZhi] ?? 0
+      : this.scoreVolatilityState.deltaByDiZhi[card.diZhi] ?? 0;
+
+    if (direction > 0) return 'rising';
+    if (direction < 0) return 'falling';
+    return 'steady';
+  }
+
+  /**
+   * 当前卡牌相对本季基础评分的实际波动值。
+   *
+   * 只在波动规则当前生效且卡牌处于当前季时返回数值；旧规则、旧存档和未来季节
+   * 返回 null，避免把未应用的波动误显示成已知信息。
+   */
+  getCardVolatilityDelta(card: JiaziCard): number | null {
+    if (!this.isVolatilityRulesVersion() || !this.scoreVolatilityState) return null;
+
+    const season = this.seasonCycle.getCurrentSeason();
+    return this.getCardScore(card, season) - card.getSeasonScore(season, this.balanceConfig);
   }
 
   /**
@@ -801,7 +945,13 @@ export class TurnManager {
     // 季节检查
     const seasonChanged = this.seasonCycle.advance();
     if (seasonChanged) {
+      this.refreshScoreVolatility();
       console.log(`[TurnManager] 季节切换: ${this.seasonCycle.getCurrentSeason()}`);
+    } else if (this.scoreVolatilityState) {
+      this.scoreVolatilityState.remainingRounds--;
+      if (this.scoreVolatilityState.remainingRounds <= 0) {
+        this.refreshScoreVolatility();
+      }
     }
 
     // 处理下一回合
@@ -890,6 +1040,10 @@ export class TurnManager {
    */
   exportSnapshot(): GameSnapshot {
     return {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      // 写时归属：该档自声明当前生效规则（读档后 = 存档声明；新局 = 构造默认）。
+      // 阶段 1 产品默认路径只能产出 RULES_BASE；波动规则档仅显式实验模式可达。
+      rulesVersion: this.rulesVersion,
       currentRound: this.currentRound,
       state: this.state,
       lastAction: this.lastAction,
@@ -923,6 +1077,10 @@ export class TurnManager {
       },
       lockedCardIds: this.lockManager.getLockedCardIds(),
       roundLog: this.roundLog,
+      scoreVolatility: this.getScoreVolatilityState() ?? undefined,
+      scoreRules: this.rulesVersion === RULES_VERSION_TRADE
+        ? this.scoreManager.getRules()
+        : undefined,
     };
   }
 
@@ -931,6 +1089,54 @@ export class TurnManager {
    * GameSaveService 已完成格式与坏档校验，本方法只负责状态还原。
    */
   importSnapshot(data: GameSnapshot): void {
+    // 0. 规则版本门控（在改动任何引擎状态之前）：不支持的规则版本（既不是
+    //    RULES_BASE、RULES_VERSION_VOLATILE 也不是 RULES_VERSION_TRADE）必须在此明确失败，绝不静默
+    //    按 base 继续——否则未来规则存档会被当前代码按错误规则运行且写回归档，
+    //    读档失败时引擎保持原状（GameSaveService.load 已先挡一道并保留存档）。
+    //    缺 rulesVersion 的旧档显式归属 base 规则（兼容路径，见下）。
+    const declaredRules = data.rulesVersion ?? RULES_BASE;
+    if (!isSupportedRulesVersion(declaredRules)) {
+      throw new Error(
+        `不支持的规则版本 rulesVersion=${data.rulesVersion}（只支持 RULES_BASE=${RULES_BASE} / RULES_VERSION_VOLATILE=${RULES_VERSION_VOLATILE} / RULES_VERSION_TRADE=${RULES_VERSION_TRADE}），拒绝读档`,
+      );
+    }
+    const isVolatileRules = declaredRules === RULES_VERSION_VOLATILE || declaredRules === RULES_VERSION_TRADE;
+    // 波动模型门控（在任何状态改动之前）：volatile 档携带未知波动模型必须明确
+    // 拒绝，绝不静默按 uniform 继续——否则未来模型存档会被当前代码按错误模型
+    // 运行且写回归档。模型缺省（旧格式）不算未知，按 uniform 解释。
+    const declaredModel = data.scoreVolatility?.model;
+    if (
+      isVolatileRules &&
+      data.scoreVolatility &&
+      declaredModel !== undefined &&
+      !isSupportedVolatilityModel(declaredModel)
+    ) {
+      throw new Error(
+        `不支持的波动模型 model=${declaredModel}（只支持 uniform / conflict_banded），拒绝读档`,
+      );
+    }
+    if (
+      isVolatileRules &&
+      !data.scoreVolatility
+    ) {
+      throw new Error(`rulesVersion=${declaredRules} 存档缺少 scoreVolatility，拒绝读档`);
+    }
+     // 波动快照完整校验（在任何状态改动之前）：波动规则档的 scoreVolatility
+    // 必须字段齐全且数值合法，任何一项不合格都明确拒绝，绝不带病还原。
+    // 仅对 volatile 规则档生效；base 规则（rulesVersion=1 / 缺省旧档）不还原
+    // scoreVolatility，故不校验（保持既有行为）。
+    if (isVolatileRules) {
+      // 缺省分支已在上方门控拒绝：此处 scoreVolatility 保证非空。
+      this.validateVolatileScoreVolatility(data.scoreVolatility!, declaredRules === RULES_VERSION_TRADE);
+    }
+    if (declaredRules === RULES_VERSION_TRADE) {
+      this.validateScoreRules(data.scoreRules);
+    }
+    this.rulesVersion = declaredRules;
+    this.scoreManager.setRules(
+      declaredRules === RULES_VERSION_TRADE ? data.scoreRules! : DEFAULT_SCORE_RULES,
+    );
+
     // 1. 还原基础状态
     this.currentRound = data.currentRound;
     this.state = data.state as GameState;
@@ -953,6 +1159,47 @@ export class TurnManager {
 
     // 3. 还原季节周期
     this.seasonCycle.loadState(data.season.index, data.season.roundInSeason, data.season.lengths);
+
+     // 3.5 波动还原门控以存档声明的规则版本为准（read 时归属）：
+     //     - 当前已知波动规则且存档含 scoreVolatility → 还原；
+    //     - 其余一律不还原、不启用波动——base 规则（含缺省旧档）不还原，未知的未来
+    //       规则版本（如 3/99）也不被误当成波动（规则版本只精确识别已知语义，不做
+    //       >= 推断），并把构造期可能已创建的波动状态显式置 null，避免换季时
+     //       refreshScoreVolatility 按构造开关静默重启
+     //       （"不能只把波动 state 设 null 后又在换季时自动重新启用"）。
+     //     产品默认路径仍是 base；显式实验路径与测试夹具可声明 v2/v3，
+     //     并由 tests/unit/score_volatility_save.test.ts 验证 round-trip。
+    if (this.isVolatilityRulesVersion() && data.scoreVolatility) {
+      const savedModel = data.scoreVolatility.model ?? 'uniform';
+      this.activeVolatilityConfig = {
+        ...this.scoreVolatilityConfig,
+        enabled: true,
+        model: savedModel,
+        scale: savedModel === 'conflict_banded'
+          ? data.scoreVolatility.scale
+          : this.scoreVolatilityConfig.scale,
+        bandFactors: savedModel === 'conflict_banded'
+          ? data.scoreVolatility.bandFactors
+          : this.scoreVolatilityConfig.bandFactors,
+      };
+      this.scoreVolatilityState = {
+        remainingRounds: data.scoreVolatility.remainingRounds,
+        deltaByDiZhi: { ...data.scoreVolatility.deltaByDiZhi },
+        ...(savedModel === 'conflict_banded'
+          ? {
+            model: 'conflict_banded' as const,
+            scale: data.scoreVolatility.scale,
+            directionByDiZhi: { ...data.scoreVolatility.directionByDiZhi },
+            ...(data.scoreVolatility.bandFactors
+              ? { bandFactors: { ...data.scoreVolatility.bandFactors } }
+              : {}),
+          }
+          : {}),
+      };
+    } else {
+      this.activeVolatilityConfig = { ...this.scoreVolatilityConfig, enabled: false, model: 'uniform' };
+      this.scoreVolatilityState = null;
+    }
 
     // 4. 还原手牌
     const restoredHand = data.hand.map((slotData) => {
@@ -1032,6 +1279,84 @@ export class TurnManager {
   }
 
   /**
+   * 完整校验 volatile 规则档的 scoreVolatility 快照。
+   *
+   * 必须在改动任何引擎状态之前调用：任何一项不合格都直接抛明确错误，拒绝读档。
+   * - scoreVolatility 必须是非 null 对象；
+   * - remainingRounds 必须是有限非负整数；
+   * - deltaByDiZhi 必须是非 null 对象，且所有值都是有限数字；
+   * - conflict_banded 模型还需 scale 有限非负、directionByDiZhi 非 null 对象
+   *   且所有值都是 [-1, 1] 内的有限数字（模型缺省按 uniform 处理）。
+   * v3 交易规则还要求 conflict_banded 与冻结的 bandFactors；v2 保持旧格式兼容。
+   * base 规则（rulesVersion=1 / 缺省旧档）不调用本方法：其 scoreVolatility 不还原。
+   */
+  private validateVolatileScoreVolatility(vol: ScoreVolatilitySnapshot, requireTradeFields: boolean = false): void {
+    if (!isNonNilRecord(vol)) {
+      throw new Error('波动规则存档的 scoreVolatility 必须是对象，拒绝读档');
+    }
+
+    const { remainingRounds, deltaByDiZhi, model, scale, directionByDiZhi } = vol;
+
+    if (
+      typeof remainingRounds !== 'number' ||
+      !Number.isInteger(remainingRounds) ||
+      remainingRounds < 0
+    ) {
+      throw new Error(
+        `波动规则存档的 scoreVolatility.remainingRounds=${remainingRounds} 必须是有限非负整数，拒绝读档`,
+      );
+    }
+
+    if (
+      !isNonNilRecord(deltaByDiZhi) ||
+      !Object.values(deltaByDiZhi).every((v) => typeof v === 'number' && Number.isFinite(v))
+    ) {
+      throw new Error('波动规则存档的 scoreVolatility.deltaByDiZhi 必须是值为有限数字的对象，拒绝读档');
+    }
+
+    if ((model ?? 'uniform') === 'conflict_banded') {
+      if (typeof scale !== 'number' || !Number.isFinite(scale) || scale < 0) {
+        throw new Error(
+          `conflict_banded 存档的 scoreVolatility.scale=${scale} 必须是有限非负数字，拒绝读档`,
+        );
+      }
+      if (
+        !isNonNilRecord(directionByDiZhi) ||
+        !Object.values(directionByDiZhi).every(
+          (v) => typeof v === 'number' && Number.isFinite(v) && v >= -1 && v <= 1,
+        )
+      ) {
+        throw new Error('conflict_banded 存档的 scoreVolatility.directionByDiZhi 必须是值在 [-1, 1] 的有限数字对象，拒绝读档');
+      }
+      if (requireTradeFields) {
+        if (
+          !isNonNilRecord(vol.bandFactors) ||
+          !['earth', 'stable', 'mixed', 'conflict'].every((band) => {
+            const value = vol.bandFactors?.[band as keyof NonNullable<ScoreVolatilitySnapshot['bandFactors']>];
+            return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+          })
+        ) {
+          throw new Error('rulesVersion=3 存档的 scoreVolatility.bandFactors 必须完整且为有限非负数字，拒绝读档');
+        }
+      }
+    } else if (requireTradeFields) {
+      throw new Error('rulesVersion=3 存档必须使用 conflict_banded 波动模型，拒绝读档');
+    }
+  }
+
+  private validateScoreRules(rules: GameSnapshot['scoreRules']): asserts rules is ScoreRules {
+    if (!isNonNilRecord(rules)) {
+      throw new Error('rulesVersion=3 存档缺少 scoreRules，拒绝读档');
+    }
+    if (
+      typeof rules.holdBonus !== 'number' || !Number.isFinite(rules.holdBonus) || rules.holdBonus <= 0 ||
+      typeof rules.sellMultiplier !== 'number' || !Number.isFinite(rules.sellMultiplier) || rules.sellMultiplier < 0
+    ) {
+      throw new Error('rulesVersion=3 存档的 scoreRules 参数非法，拒绝读档');
+    }
+  }
+
+  /**
    * 一键保存游戏状态至 LocalStorage（委托给 GameSaveService）
    * @returns 是否保存成功
    */
@@ -1052,6 +1377,14 @@ export class TurnManager {
         this.onTurnStart?.(this.currentRound);
       },
     );
+  }
+
+  /**
+   * 最近一次 loadGame 失败的分类原因（成功 / 尚无失败时为 null）。
+   * 供 UI 区分「存档版本过新（提示更新游戏）」与一般读档失败，避免无条件弹「继续游戏」。
+   */
+  getLastLoadError(): GameSaveLoadError | null {
+    return this.saveService.getLastLoadError();
   }
 
   /**
@@ -1530,6 +1863,14 @@ export class TurnManager {
   /** 重置游戏 */
   reset(): void {
     this.seasonCycle.reset();
+    // 新局默认规则回到构造默认（volatility enabled → 波动规则，否则 base）。
+    // 重置只用于"开新局"，规则归属不继承上一局读档的声明。
+    this.activeVolatilityConfig = this.scoreVolatilityConfig;
+    this.rulesVersion = this.initialRulesVersion;
+    this.scoreManager.setRules(this.initialScoreRules);
+    this.scoreVolatilityState = this.isVolatilityRulesVersion()
+      ? createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig)
+      : null;
     this.qiManager.reset();
     this.scoreManager.reset();
     this.handManager.reset();
@@ -1551,5 +1892,17 @@ export class TurnManager {
     this.totalSells = 0;
     this.totalWaits = 0;
     this.totalLeverageBuys = 0;
+  }
+
+  private refreshScoreVolatility(): void {
+    // 门控以当前生效规则版本为准：只有已知的波动规则版本才在
+    // 换季/倒计时归零时重建波动状态。base 规则（含旧档）与未知未来规则版本
+    // 绝不在换季/倒计时归零时静默重建波动状态——否则旧档会被当前构建的开关
+    // "半开不开"地套上波动，未知版本也会被错当波动规则。
+    if (!this.isVolatilityRulesVersion()) return;
+    this.scoreVolatilityState = createScoreVolatilityState(
+      this.volatilityRandom,
+      { ...this.activeVolatilityConfig, enabled: true },
+    );
   }
 }

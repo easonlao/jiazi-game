@@ -18,10 +18,16 @@ const elementScoreColor: Record<Element, string> = {
 
 export { elementBorder, elementScoreColor };
 
+type ScoreDisplayMode = 'market' | 'position';
+
 interface CardVisualProps {
   card: JiaziCard;
   score: number;
   nextScore?: number;
+  /** market=公共牌的季节/实际波动视图；position=手牌的纳灵/当前评分视图。 */
+  scoreMode?: ScoreDisplayMode;
+  /** 手牌纳灵时记录的评分；仅 position 模式使用。 */
+  buyScore?: number;
   selected?: boolean;
   highlight?: boolean;
   onClick?: () => void;
@@ -29,17 +35,31 @@ interface CardVisualProps {
   badges?: React.ReactNode;
   /** 评分标签行右侧徽章（如杠杆倍率），由 HandCard 注入 */
   scoreBadge?: React.ReactNode;
+  /** 实验模式下当前相对基础评分的实际波动值；只用于公共牌。 */
+  volatilityDelta?: number;
   /** 底部信息区域，由 PublicCard/HandCard 各自填充 */
   children?: React.ReactNode;
 }
 
 /**
- * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、当季→下季评分趋势。
- * 公共牌和手牌的差异（买入成本 vs 累计收益等）通过 badges 和 children 注入。
+ * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、评分与实际波动提示。
+ * 公共牌和手牌的评分口径通过 scoreMode 区分，底部持有信息仍由 children 注入。
  */
-export function CardVisual({ card, score, nextScore, selected, highlight, onClick, badges, scoreBadge, children }: CardVisualProps) {
+export function CardVisual({ card, score, nextScore, scoreMode = 'market', buyScore, selected, highlight, onClick, badges, scoreBadge, volatilityDelta, children }: CardVisualProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
   const baseBorder = elementBorder[card.mainElement];
+  const positionView = scoreMode === 'position' && buyScore !== undefined;
+  const volatilityActive = !positionView && volatilityDelta !== undefined;
+  const volatilityDeltaMeta = volatilityDelta === undefined
+    ? null
+    : {
+        text: `${volatilityDelta >= 0 ? '+' : ''}${volatilityDelta.toFixed(0)}`,
+        className: volatilityDelta > 0
+          ? 'text-qi-full'
+          : volatilityDelta < 0
+            ? 'text-qi-critical'
+            : 'text-ink-light',
+      };
 
   return (
     <div
@@ -73,18 +93,51 @@ export function CardVisual({ card, score, nextScore, selected, highlight, onClic
         </div>
       </div>
 
-      {/* 当前→下季价值：与结算预览使用同一评分口径。
-          grid-cols-3 窄卡适配：评分值固定 14px（去掉 sm/md 放大），评分区 py-1.5 增加呼吸间距。 */}
+      {/* 公共牌显示市场当前分与实际波动值；手牌改显示纳灵评分与当前评分，
+          让两类卡片分别服务于“要不要纳灵”和“要不要释灵”。 */}
       <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5 max-md:py-1">
         <div className="min-w-0 flex-1">
-          <span className="card-score-label block text-[10px] max-md:text-[9px] leading-tight text-ink-light">当季 → 下季评分</span>
-          <div className="flex items-baseline gap-1">
-            <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
-              {score >= 0 ? '+' : ''}{score.toFixed(1)}
-              {nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
-            </span>
-            {scoreBadge}
-          </div>
+          <span
+            className="card-score-label block text-[10px] max-md:text-[9px] leading-tight text-ink-light"
+            data-volatility-score={volatilityActive ? 'current' : undefined}
+            title={positionView ? '手牌对应显示纳灵时评分与当前评分' : volatilityActive ? '当前评分已包含短期波动；换季后会重新计算' : undefined}
+          >
+            {positionView ? '纳灵评分 → 当前评分' : volatilityActive ? '当前评分' : '当季 → 下季评分'}
+          </span>
+          {positionView ? (
+            <div
+              className="flex items-baseline gap-1"
+              data-position-score
+              aria-label={`纳灵评分 ${buyScore! >= 0 ? '+' : ''}${buyScore!.toFixed(1)}，当前评分 ${score >= 0 ? '+' : ''}${score.toFixed(1)}`}
+              title={`纳灵评分 ${buyScore! >= 0 ? '+' : ''}${buyScore!.toFixed(1)} → 当前评分 ${score >= 0 ? '+' : ''}${score.toFixed(1)}；释灵收益请查看结算预览`}
+            >
+              <span className="card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap text-ink">
+                {buyScore! >= 0 ? '+' : ''}{buyScore!.toFixed(1)}
+              </span>
+              <span className="mx-0.5 text-ink-light/50">→</span>
+              <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
+                {score >= 0 ? '+' : ''}{score.toFixed(1)}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-baseline gap-1">
+              <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
+                {score >= 0 ? '+' : ''}{score.toFixed(1)}
+                {!volatilityActive && nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
+              </span>
+              {volatilityActive && volatilityDeltaMeta && (
+                <span
+                  data-volatility-delta
+                  aria-label={`相对基础评分 ${volatilityDeltaMeta.text}`}
+                  title="相对基础评分的实际变化"
+                  className={`text-[10px] max-md:text-[9px] font-bold leading-none whitespace-nowrap ${volatilityDeltaMeta.className}`}
+                >
+                  ({volatilityDeltaMeta.text})
+                </span>
+              )}
+              {scoreBadge}
+            </div>
+          )}
         </div>
       </div>
 

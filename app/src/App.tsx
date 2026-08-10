@@ -61,8 +61,11 @@ export default function App() {
               showToast('游戏开始');
             }}
             onContinue={() => {
-              loadGameFromSave();
-              showToast('继续游戏');
+              // 成功才提示"继续游戏"；失败时 store 已按失败原因弹对应 toast
+              // （版本过新 → 存档版本过新，请更新游戏；其他 → 读档失败）
+              if (loadGameFromSave()) {
+                showToast('继续游戏');
+              }
             }}
             onLeaderboard={openLeaderboard}
           />

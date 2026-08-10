@@ -8,9 +8,13 @@ import {
   type SettlementPreview,
   type SettlementPreviewAction,
   type JiaziCard,
+  HandSlot,
   type LeaderboardEntry,
   type RoundLogEntry,
   type DecisionEntry,
+  BAND_FACTOR,
+  RULES_VERSION_TRADE,
+  TRADE_SCORE_RULES,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -20,12 +24,26 @@ import {
   type FxRoundEvent,
 } from './store/fx-events';
 import { localStorageProvider } from './platform/localStorageProvider';
+import { getSupabaseClient } from './platform/supabaseClient';
+import {
+  NoopAnalyticsBackend,
+  SupabaseAnalyticsBackend,
+  type AnalyticsBackend,
+  type CloudLeaderboardEntry,
+} from './lib/analyticsBackend';
+import {
+  TelemetryController,
+  type TelemetryControllerState,
+} from './lib/telemetryController';
 
 // 重新导出 FX 事件类型，供 hooks/useScreenShake 等消费者使用
 export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent };
 
 /** 防止 React StrictMode 下 initialize 被重复调用 */
 let _initializing = false;
+
+/** TelemetryController 单例：store.initialize 内惰性创建（不阻塞初始化） */
+let _telemetryController: TelemetryController | null = null;
 
 /**
  * 回合末「锁定牌被自动解锁」事件的 Toast 文案（如「神识难继，灵气甲子自行散去」）。
@@ -34,6 +52,25 @@ let _initializing = false;
  * 消费即清空，防止残留到下个回合。
  */
 let _pendingAutoUnlockToast: string | null = null;
+
+/**
+ * 显式实验入口：普通 URL 永远使用 base 规则；只有手动附加 ?volatility=1 才启用
+ * v3 conflict_banded 交易规则。普通 URL 永远使用 base 规则；该开关用于体验
+ * 交易主导的趋势 UI，不代表普通生产路径自动升级旧存档。
+ */
+function isVolatilityExperimentEnabled(): boolean {
+  return typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('volatility') === '1';
+}
+
+function getTelemetryGameMeta() {
+  const volatility = isVolatilityExperimentEnabled();
+  return {
+    rules_version: volatility ? String(RULES_VERSION_TRADE) : String(1),
+    game_mode: volatility ? 'volatility_trade' : 'base',
+    volatility_enabled: volatility,
+  };
+}
 
 /** 展示行动反馈 Toast：有自动解锁提示时优先展示并清空，否则用常规文案。 */
 function _showActionToast(get: () => GameStore, fallback: string): void {
@@ -127,6 +164,17 @@ interface GameStore {
   openLeaderboard: () => void;
   closeLeaderboard: () => void;
 
+  // 遥测（consent/identity；云端未配置时走 no-op，不影响本地游玩）
+  telemetryState: TelemetryControllerState | null;
+  /** 云端排行榜（娱乐榜公开字段；云端未配置时为空数组） */
+  cloudLeaderboard: CloudLeaderboardEntry[];
+  grantTelemetryConsent: (recoveryCode?: string) => Promise<void>;
+  declineTelemetryConsent: () => void;
+  provisionPlayer: () => Promise<void>;
+  recoverPlayer: (recoveryCode: string) => Promise<boolean>;
+  updatePlayerDisplayName: (name: string) => Promise<void>;
+  refreshCloudLeaderboard: () => Promise<void>;
+
   // 交易看板（行迹）
   dashboardOpen: boolean;
   openDashboard: () => void;
@@ -173,6 +221,137 @@ interface GameStore {
   tick: number;
 }
 
+/**
+ * 内部遥测助手：把一次已提交的玩家行动上报为白名单遥测事件
+ * （action_buy / action_sell / action_wait / action_lock / action_unlock）。
+ * - 无遥测控制器或无活跃会话时静默 no-op，绝不阻塞游戏主流程；
+ * - 载荷只含白名单字段，不写恢复码 / token / 整包 roundLog；
+ * - 数值优先复用对应回合 roundLog 的"已发生事实"，缺失时回退到行动前快照可直接读取的值，
+ *   不复制引擎规则；
+ * - round_settled 只在能找到"对应回合"（round === before.currentRound）的 roundLog 时上报。
+ */
+function recordActionTelemetry(
+  before: GameStore,
+  after: GameStore,
+  tm: TurnManager,
+  action: SettlementPreviewAction,
+  lockAction?: { type: 'lock' | 'unlock'; card: JiaziCard },
+  sessionIdOverride?: string | null,
+): void {
+  const controller = _telemetryController;
+  const sessionId = sessionIdOverride === undefined
+    ? controller?.getActiveSessionId()
+    : sessionIdOverride;
+  if (!sessionId || !controller) return;
+
+  const base = {
+    session_id: sessionId,
+    round: before.currentRound,
+    season: before.season,
+    qi_before: before.qi,
+    qi_after: after.qi,
+    score_before: before.score,
+    score_after: after.score,
+    leverage_multiplier: before.leverageMultiplier,
+    public_context: before.publicCards
+      .filter(Boolean)
+      .slice(0, 3)
+      .map((card) => ({
+        id: card.id,
+        name: card.name,
+        score: tm.getCardScore(card, before.season),
+      })),
+    hand_context: before.hand
+      .filter((slot): slot is HandSlot => slot !== null)
+      .slice(0, 3)
+      .map((slot) => ({
+        id: slot.card.id,
+        name: slot.card.name,
+        score: tm.getCardScore(slot.card, before.season),
+        use_leverage: slot.useLeverage,
+      })),
+  };
+
+  // 锁定/解锁：只上报锁定事件本身，不产生 round_settled。
+  if (lockAction) {
+    controller.track(
+      lockAction.type === 'lock' ? 'action_lock' : 'action_unlock',
+      { ...base, card_id: lockAction.card.id, card_name: lockAction.card.name },
+    );
+    return;
+  }
+
+  // 买卖等待：读取最近一条回合记录。roundLog 只读，且必须匹配"本次行动所在回合"，
+  // 才能作为已发生事实回填数值；不匹配时回退到行动前快照可直接读取的值。
+  const logs = tm.getRoundLog();
+  const log = [...logs].reverse().find((entry) => entry.round === before.currentRound) ?? null;
+
+  if (action.type === 'buy') {
+    const card = before.publicCards[action.cardIndex];
+    if (!card) return;
+    const cardScore = log?.actionCardScore ?? tm.getCardScore(card, before.season);
+    const volatilityDelta = tm.getCardVolatilityDelta(card);
+    controller.track('action_buy', {
+      ...base,
+      card_id: card.id,
+      card_name: card.name,
+      card_main_element: card.mainElement,
+      card_yin_yang: card.yinYang,
+      card_score: cardScore,
+      base_score: card.getSeasonScore(before.season),
+      volatility_delta: volatilityDelta,
+      buy_cost: log?.action === 'buy'
+        ? Math.abs(log.actionQiChange)
+        : tm.previewBuyCost(card, action.leverage),
+      use_leverage: action.leverage,
+    });
+  } else if (action.type === 'sell') {
+    const slot = before.hand[action.slotIndex];
+    if (!slot) return;
+    controller.track('action_sell', {
+      ...base,
+      slot_index: action.slotIndex,
+      card_id: slot.card.id,
+      card_name: slot.card.name,
+      card_score: log?.action === 'sell' && log.actionCardScore !== null
+        ? log.actionCardScore
+        : tm.getCardScore(slot.card, before.season),
+      buy_score: log?.action === 'sell' && log.buyScore !== null ? log.buyScore : slot.buyScore,
+      sell_score: log?.action === 'sell' && log.sellScore !== null ? log.sellScore : tm.previewSellScore(slot),
+      use_leverage: slot.useLeverage,
+      qi_return: log?.action === 'sell' ? log.actionQiChange : tm.previewSellQiChange(slot),
+    });
+  } else {
+    controller.track('action_wait', {
+      ...base,
+      ends_game: after.gameState === 'game_over',
+    });
+  }
+
+  // 回合结算事实：仅在存在"对应回合"roundLog 且含结算明细时上报。
+  if (log && log.settlement) {
+    controller.track('round_settled', {
+      session_id: sessionId,
+      round: log.round,
+      season: log.season,
+      hold_earnings: log.settlement.holdEarnings,
+      hold_qi_cost: log.settlement.holdQiCost,
+      base_qi_recover: log.settlement.baseQiRecover,
+      wait_qi_recover: log.settlement.waitQiRecover,
+      margin_call_triggered: log.settlement.marginCallTriggered,
+      margin_call_count: after.marginCallCount,
+      qi_after: log.settlement.finalQi,
+      score_after: log.settlement.finalScore,
+    });
+  }
+
+  controller.updateSessionProgress({
+    rounds: Math.max(0, Math.min(before.currentRound, after.totalRounds)),
+    final_score: after.score,
+    margin_call_count: after.marginCallCount,
+  });
+}
+
 export const useGameStore = create<GameStore>((set, get) => ({
   turnManager: null,
 
@@ -216,6 +395,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hasSave: false,
   leaderboardEntries: [],
   leaderboardOpen: false,
+  telemetryState: null,
+  cloudLeaderboard: [],
   dashboardOpen: false,
 
   // FX 事件（初始为 null，_sync diff 后才会产生）
@@ -303,7 +484,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (_initializing) return;
     _initializing = true;
     try {
-      const tm = new TurnManager(undefined, undefined, { storage: localStorageProvider });
+      const tm = new TurnManager(undefined, undefined, {
+        storage: localStorageProvider,
+        ...(isVolatilityExperimentEnabled()
+          ? {
+            rulesVersion: RULES_VERSION_TRADE,
+            scoreRules: TRADE_SCORE_RULES,
+            volatility: {
+              enabled: true,
+              model: 'conflict_banded' as const,
+              scale: 4,
+              bandFactors: { ...BAND_FACTOR, conflict: 6 },
+            },
+          }
+          : {}),
+      });
       await tm.initialize();
 
       tm.setOnStateChange(() => {
@@ -333,6 +528,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const lb = new LeaderboardService(localStorageProvider);
         lb.addEntry(finalScore);
         set({ leaderboardEntries: lb.getEntries() });
+        // 遥测：正常结束会话（无 controller/未同意/无活跃会话时静默 no-op）
+        _telemetryController?.endSession({
+          reason: 'game_over',
+          rounds: Math.max(0, Math.min(tm.getCurrentRound() - 1, tm.getTotalRounds())),
+          final_score: finalScore,
+          margin_call_count: tm.getMarginCallCount(),
+        });
         // 游戏结束清除存档
         tm.clearSave();
         set({ hasSave: false });
@@ -355,6 +557,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // 检测是否有未完成的存档
       const hasSave = tm.hasSave();
       set({ hasSave });
+
+      // 遥测控制器：云端未配置时走 NoopAnalyticsBackend，绝不阻塞游戏初始化。
+      if (!_telemetryController) {
+        const supabase = getSupabaseClient();
+        const backend: AnalyticsBackend = supabase
+          ? new SupabaseAnalyticsBackend(supabase)
+          : new NoopAnalyticsBackend();
+        _telemetryController = new TelemetryController({
+          storage: localStorageProvider,
+          backend,
+          onStateChange: (state) => set({ telemetryState: state }),
+        });
+        set({ telemetryState: _telemetryController.getState() });
+        void _telemetryController.init().catch((e) => {
+          console.error('[store] 遥测初始化失败:', e);
+        });
+      }
     } catch (e) {
       console.error('[store] 初始化失败:', e);
     } finally {
@@ -365,6 +584,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   startGame() {
     const tm = get().turnManager;
     if (!tm) return;
+    _telemetryController?.abandonSession('reset');
     // 开始新游戏前清除旧存档
     tm.clearSave();
     set({ hasSave: false });
@@ -379,6 +599,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
       pendingAction: null, settlementPreview: null,
     });
+    // 遥测：开启新局会话（未同意/云端不可用时静默 no-op，不阻塞开局；读档不经过此路径）
+    _telemetryController?.startSession(getTelemetryGameMeta());
   },
 
   loadGameFromSave() {
@@ -396,7 +618,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
       get()._sync();
       set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, hasSave: false });
+      // 刷新/换设备读档后建立新的分析会话；上一页若仍有会话则先标记为放弃。
+      _telemetryController?.abandonSession('reset');
+      _telemetryController?.startSession(getTelemetryGameMeta());
+      return ok;
     }
+    // 读档失败：区分「存档版本过新」与一般失败（App 不再无条件弹"继续游戏"）
+    const loadError = tm.getLastLoadError();
+    get().showToast(
+      loadError === 'schema_too_new' || loadError === 'rules_version_unsupported'
+        ? '存档版本过新，请更新游戏'
+        : '读档失败',
+    );
     return ok;
   },
 
@@ -413,6 +646,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ leaderboardOpen: false });
   },
 
+  async grantTelemetryConsent(recoveryCode?: string) {
+    await _telemetryController?.grantConsent(recoveryCode);
+  },
+
+  declineTelemetryConsent() {
+    _telemetryController?.declineConsent();
+  },
+
+  async provisionPlayer() {
+    await _telemetryController?.provision();
+  },
+
+  async recoverPlayer(recoveryCode) {
+    const identity = await _telemetryController?.recoverIdentity(recoveryCode);
+    return identity !== null && identity !== undefined;
+  },
+
+  async updatePlayerDisplayName(name) {
+    await _telemetryController?.updateDisplayName(name);
+  },
+
+  async refreshCloudLeaderboard() {
+    const controller = _telemetryController;
+    if (!controller) return;
+    set({ cloudLeaderboard: await controller.fetchLeaderboard(50, getTelemetryGameMeta().rules_version) });
+  },
+
   openDashboard() {
     set({ dashboardOpen: true });
   },
@@ -424,6 +684,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   reset() {
     const tm = get().turnManager;
     if (!tm) return;
+    // 遥测：放弃当前会话（无 controller/未同意/无活跃会话时静默 no-op，不阻塞重置）
+    _telemetryController?.abandonSession('reset');
     tm.reset();
     // 清掉可能残留的自动解锁提示，避免跨局误弹
     _pendingAutoUnlockToast = null;
@@ -517,6 +779,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   toggleLockCard(index) {
+    const before = get();
     const tm = get().turnManager;
     if (!tm) return;
     const card = tm.getPublicCards()[index];
@@ -526,6 +789,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const ok = tm.executeUnlockCard(index);
       if (ok) {
         get()._sync();
+        recordActionTelemetry(before, get(), tm, { type: 'wait' }, { type: 'unlock', card });
         get().showToast('已解锁');
       } else {
         get().showToast('解锁失败');
@@ -536,6 +800,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const result = tm.executeLockCard(index);
     if (result.ok) {
       get()._sync();
+      recordActionTelemetry(before, get(), tm, { type: 'wait' }, { type: 'lock', card });
       get().showToast(`已锁定（每回合 -${TurnManager.LOCK_COST_PER_CARD} 神识）`);
       return;
     }
@@ -590,9 +855,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   confirmSettlementPreview() {
+    const before = get();
     const tm = get().turnManager;
     const action = get().pendingAction;
     if (!tm || !action) return false;
+    // 终局行动会在 execute* 内触发 onGameEnd 并清空 controller 的活跃会话；
+    // 先保存 session id，确保最终买/卖/等候与回合结算仍能入队。
+    const telemetrySessionId = _telemetryController?.getActiveSessionId();
 
     const ok = action.type === 'buy'
       ? tm.executeBuy(action.cardIndex, action.leverage)
@@ -617,6 +886,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     set(patch);
     get()._sync();
+
+    recordActionTelemetry(before, get(), tm, action, undefined, telemetrySessionId);
 
     // 每次行动后自动存档
     tm.saveGame();

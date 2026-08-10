@@ -1,4 +1,5 @@
 import { useGameStore } from '../store';
+import { PlayerIdentityPanel } from './PlayerIdentityPanel';
 
 interface StartScreenProps {
   turnManager: ReturnType<typeof useGameStore.getState>['turnManager'];
@@ -26,6 +27,8 @@ export function StartScreen({ turnManager, hasSave, onStart, onContinue, onLeade
         <p>丹田中的灵气每回合结算炼化修为与耗神，评分越高炼化越多，耗神也越多。</p>
         <p>燃灵会放大炼化与耗神，换季重置；神识不足时可能反噬。</p>
       </div>
+
+      <PlayerIdentityPanel />
 
       {turnManager ? (
         <div className="flex flex-col gap-2 w-full max-w-xs">

@@ -18,6 +18,8 @@ interface PublicCardProps {
   locked?: boolean;
   /** 锁定回调（点击锁按钮触发） */
   onToggleLock?: () => void;
+  /** 实验模式下相对基础评分的实际变化。 */
+  volatilityDelta?: number;
 }
 
 /**
@@ -27,12 +29,14 @@ interface PublicCardProps {
 export function PublicCard({
   card, score, nextScore, selected, onClick, buyCost, canAfford,
   holdEarning, holdQiCost, locked, onToggleLock,
+  volatilityDelta,
 }: PublicCardProps) {
   return (
     <CardVisual
       card={card}
       score={score}
       nextScore={nextScore}
+      volatilityDelta={volatilityDelta}
       selected={selected}
       onClick={onClick}
       badges={

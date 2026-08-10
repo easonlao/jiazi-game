@@ -73,6 +73,26 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await page.getByRole('button', { name: '关闭帮助' }).click();
   });
 
+  test('普通入口不显示季内波动实验提示', async ({ page }) => {
+    await startGameAndDismiss(page);
+    await expect(page.locator('[data-volatility-experiment]')).toHaveCount(0);
+    await expect(page.locator('[data-volatility-delta]')).toHaveCount(0);
+  });
+
+  test('volatility=1 实验入口显示波动提示与实际变化值', async ({ page }) => {
+    await page.goto('/?volatility=1');
+    await startGameAndDismiss(page);
+    await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
+    await expect(page.locator('[data-volatility-delta]')).toHaveCount(3);
+
+    const cards = page.locator('.card-in');
+    const texts = await cards.allInnerTexts();
+    expect(texts.every((text) => !/[+-]?\d+\.\d\s*→\s*[+-]?\d+\.\d/.test(text))).toBe(true);
+    expect(texts.every((text) => text.includes('当前评分'))).toBe(true);
+    const deltaLabels = await page.locator('[data-volatility-delta]').allTextContents();
+    expect(deltaLabels.every((text) => /^\([+-]\d+\)$/.test(text.trim()))).toBe(true);
+  });
+
   test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {
     await startGameAndDismiss(page);
 
@@ -121,6 +141,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     const handSection = page.locator('h3:has-text("丹田")').locator('..');
     // 未开燃灵：手牌卡面可见且无"燃"字徽章（杠杆信息暴露方式：仅开启时显示"燃"字徽章 + title）
     await expect(handSection.locator('.card-in')).toBeVisible({ timeout: 5_000 });
+    await expect(handSection.locator('[data-position-score]')).toHaveCount(1);
+    await expect(handSection.getByText('纳灵评分 → 当前评分', { exact: true })).toBeVisible();
     await expect(handSection.getByText('燃', { exact: true })).toHaveCount(0);
   });
 
@@ -202,7 +224,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 点击释灵
     await page.getByRole('button', { name: /释灵/ }).click();
     await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
-    await expect(page.getByText('实现价差', { exact: true })).toBeVisible();
+    await expect(page.getByText('释灵前后评分', { exact: true })).toBeVisible();
     await expect(page.getByText('神识流转', { exact: true })).toBeVisible();
     await expect(page.getByText(/归还牵神 \+/)).toBeVisible();
     await confirmSettlementPreview(page);

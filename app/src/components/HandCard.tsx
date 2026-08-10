@@ -7,7 +7,8 @@ const QI_COST_COLOR = 'text-sky-600';
 interface HandCardProps {
   card: JiaziCard;
   score: number;
-  nextScore?: number;
+  /** 纳灵时记录的评分，用于和当前评分对应展示。 */
+  buyScore: number;
   selected?: boolean;
   onClick?: () => void;
   /** 杠杆信息：当前倍数、下回合结算倍数、是否启用 */
@@ -33,7 +34,7 @@ interface HandCardProps {
 export function HandCard({
   card,
   score,
-  nextScore,
+  buyScore,
   selected,
   onClick,
   leverage,
@@ -52,7 +53,8 @@ export function HandCard({
       <CardVisual
         card={card}
         score={score}
-        nextScore={nextScore}
+        scoreMode="position"
+        buyScore={buyScore}
         selected={selected}
         onClick={onClick}
         badges={isLeverage ? (

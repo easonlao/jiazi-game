@@ -16,6 +16,8 @@ export type { Season } from './SeasonCycle';
 
 export { QiManager } from './QiManager';
 export { ScoreManager } from './ScoreManager';
+export { DEFAULT_SCORE_RULES, TRADE_SCORE_RULES } from './ScoreManager';
+export type { ScoreRules } from './ScoreManager';
 export { HandManager } from './HandManager';
 export { CardPoolManager } from './CardPoolManager';
 export { LeverageCalculator } from './LeverageCalculator';
@@ -31,14 +33,30 @@ export type { BalanceConfig, LeverageTable } from './BalanceConfig';
 
 export { MathRandomSource, SeededRandomSource } from './RandomSource';
 export type { RandomSource } from './RandomSource';
+export {
+  DEFAULT_SCORE_VOLATILITY_CONFIG,
+  createScoreVolatilityState,
+  BAND_FACTOR,
+  relationBand,
+  cardAmplitude,
+} from './ScoreVolatility';
+export type {
+  ScoreVolatilityConfig,
+  ScoreVolatilitySnapshot,
+  VolatilityModel,
+  VolatilityTrend,
+  RelationBand,
+} from './ScoreVolatility';
 
-export { GameSaveService } from './GameSaveService';
-export type { GameSnapshot, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
+export { GameSaveService, CURRENT_SCHEMA_VERSION, isSupportedRulesVersion, RULES_BASE, RULES_VERSION_VOLATILE, RULES_VERSION_TRADE } from './GameSaveService';
+export type { GameSnapshot, GameSaveLoadError, SupportedRulesVersion, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
 
 export { LeaderboardService } from './LeaderboardService';
 export type { LeaderboardEntry } from './LeaderboardService';
 
 export type { StorageProvider } from './StorageProvider';
+
+export * from './telemetry';
 
 export { LockManager } from './LockManager';
 export type { LockManagerDeps } from './LockManager';

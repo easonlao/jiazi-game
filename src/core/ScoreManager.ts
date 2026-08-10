@@ -2,14 +2,34 @@
  * 计分管理器
  * 
  * 记录玩家的总得分，并提供持仓收益和卖出收益的详细构成统计。
- * 遵循当前规则：持仓系数为 1.2x，卖出没有基础分，只结算评分差价的 4 倍。
+ * 默认规则：持仓系数为 1.2x，卖出没有基础分，只结算评分差价的 4 倍。
+ * 交易实验规则通过 ScoreRules 注入，避免把不同规则集混在同一个计算器里。
  * 
  * @see {@link design/gdd/system-scoring.md} 计分系统设计文档
  */
+export interface ScoreRules {
+  /** 持仓收益系数。旧规则 = 1.2。 */
+  holdBonus: number;
+  /** 主动卖出 / 终局出清的评分差放大倍数。旧规则 = 4。 */
+  sellMultiplier: number;
+}
+
+export const DEFAULT_SCORE_RULES: ScoreRules = {
+  holdBonus: 1.2,
+  sellMultiplier: 4,
+};
+
+/** v3 实验规则默认值；正式入口仍需显式声明 rulesVersion=3。 */
+export const TRADE_SCORE_RULES: ScoreRules = {
+  holdBonus: 1.2,
+  sellMultiplier: 14,
+};
+
 export class ScoreManager {
-  private static readonly HOLD_BONUS = 1.2;
   private static readonly SELL_BASE = 0;
-  private static readonly SPREAD_MULTIPLIER = 4;
+
+  private holdBonus: number;
+  private sellMultiplier: number;
 
   private score: number;
   private totalHoldEarnings: number;
@@ -19,12 +39,26 @@ export class ScoreManager {
   /** 反噬罚分累计（局终展示"反噬扣分"用；独立于买卖收益口径） */
   private totalMarginCallPenalty: number;
 
-  constructor() {
+  constructor(rules: Partial<ScoreRules> = {}) {
+    this.holdBonus = rules.holdBonus ?? DEFAULT_SCORE_RULES.holdBonus;
+    this.sellMultiplier = rules.sellMultiplier ?? DEFAULT_SCORE_RULES.sellMultiplier;
     this.score = 0;
     this.totalHoldEarnings = 0;
     this.totalSellEarnings = 0;
     this.totalSettleEarnings = 0;
     this.totalMarginCallPenalty = 0;
+  }
+
+  getRules(): ScoreRules {
+    return {
+      holdBonus: this.holdBonus,
+      sellMultiplier: this.sellMultiplier,
+    };
+  }
+
+  setRules(rules: ScoreRules): void {
+    this.holdBonus = rules.holdBonus;
+    this.sellMultiplier = rules.sellMultiplier;
   }
 
   /**
@@ -70,14 +104,14 @@ export class ScoreManager {
   /**
    * 计算卡牌的持仓收益值
    * 
-   * 计算公式: HOLD_BONUS(1.2) * 当季评分 * 杠杆倍数
+   * 计算公式: holdBonus * 当季评分 * 杠杆倍数
    * 
    * @param cardScore 该卡牌在当前季节的评分
    * @param leverage 卡牌购买时记录的杠杆倍数
    * @returns 单回合产生的持仓收益
    */
   calculateHoldEarnings(cardScore: number, leverage: number): number {
-    return ScoreManager.HOLD_BONUS * cardScore * leverage;
+    return this.holdBonus * cardScore * leverage;
   }
 
   /** 计算卡牌持仓收益（别名） */
@@ -88,7 +122,7 @@ export class ScoreManager {
   /**
    * 计算卡牌卖出时的得分收益
    * 
-   * 计算公式: (卖出时评分 - 买入时评分) * SPREAD_MULTIPLIER(4) * 杠杆倍数
+   * 计算公式: (卖出时评分 - 买入时评分) * sellMultiplier * 杠杆倍数
    * 
    * @param currentScore 卖出当季卡牌的评分
    * @param buyScore 购买时记录的卡牌评分
@@ -96,7 +130,7 @@ export class ScoreManager {
    * @returns 卖出时获得的得分
    */
   calculateSellScore(currentScore: number, buyScore: number, leverage: number): number {
-    return (ScoreManager.SELL_BASE + (currentScore - buyScore) * ScoreManager.SPREAD_MULTIPLIER) * leverage;
+    return (ScoreManager.SELL_BASE + (currentScore - buyScore) * this.sellMultiplier) * leverage;
   }
 
   /**
@@ -119,7 +153,7 @@ export class ScoreManager {
 
   /**
    * 添加终局出清收益至总分（独立统计口径：终局强制平仓，非玩家主动释灵）。
-   * 计分规则与卖出相同（评分差 × 4 × 杠杆），但累计到 totalSettleEarnings，
+    * 计分规则与当前卖出规则相同（评分差 × sellMultiplier × 杠杆），但累计到 totalSettleEarnings，
    * 与 totalSellEarnings 分开，避免污染"主动释灵收益"统计。
    * @param amount 出清收益数额
    */
