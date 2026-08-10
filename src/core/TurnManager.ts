@@ -417,6 +417,11 @@ export class TurnManager {
     return baseScore + (this.scoreVolatilityState.deltaByDiZhi[card.diZhi] ?? 0);
   }
 
+  /** 当前实际生效的规则版本；读档后以存档声明为准。 */
+  getRulesVersion(): SupportedRulesVersion {
+    return this.rulesVersion;
+  }
+
   /** 当前实验性波动状态，供模拟器和诊断输出使用。 */
   getScoreVolatilityState(): ScoreVolatilitySnapshot | null {
     if (!this.scoreVolatilityState) return null;

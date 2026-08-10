@@ -73,13 +73,24 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await page.getByRole('button', { name: '关闭帮助' }).click();
   });
 
-  test('普通入口不显示季内波动实验提示', async ({ page }) => {
+  test('普通入口默认显示季内波动提示与实际变化值', async ({ page }) => {
+    await startGameAndDismiss(page);
+    await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
+    await expect(page.locator('[data-volatility-delta]')).toHaveCount(3);
+    const cards = page.locator('.card-in');
+    const texts = await cards.allInnerTexts();
+    expect(texts.every((text) => !/[+-]?\d+\.\d\s*→\s*[+-]?\d+\.\d/.test(text))).toBe(true);
+    expect(texts.every((text) => text.includes('当前评分'))).toBe(true);
+  });
+
+  test('volatility=0 保留基础规则兼容入口', async ({ page }) => {
+    await page.goto('/?volatility=0');
     await startGameAndDismiss(page);
     await expect(page.locator('[data-volatility-experiment]')).toHaveCount(0);
     await expect(page.locator('[data-volatility-delta]')).toHaveCount(0);
   });
 
-  test('volatility=1 实验入口显示波动提示与实际变化值', async ({ page }) => {
+  test('volatility=1 显式入口显示波动提示与实际变化值', async ({ page }) => {
     await page.goto('/?volatility=1');
     await startGameAndDismiss(page);
     await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
@@ -94,6 +105,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
   });
 
   test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {
+    await page.goto('/?volatility=0');
     await startGameAndDismiss(page);
 
     const cards = page.locator('.card-in');

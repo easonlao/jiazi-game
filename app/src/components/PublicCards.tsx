@@ -141,7 +141,7 @@ function SeasonHint({ season, volatilityActive }: { season: string; volatilityAc
           data-volatility-experiment
           className="rounded border border-wood-light/70 bg-white/60 px-1.5 py-1 text-[10px] text-ink-light"
         >
-          短期波动实验 · 括号内为相对基础评分变化，换季重算
+          短期波动 · 括号内为相对基础评分变化，换季重算
         </span>
       )}
     </div>
