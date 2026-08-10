@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
 
   const { data: profile, error: profileError } = await supabase
     .from('player_profiles')
-    .select('id, public_player_id, display_name')
+    .select('id, public_player_id, public_code, display_name, leaderboard_eligible')
     .eq('id', secret.player_id)
     .single();
   if (profileError || !profile) return json({ error: 'internal_error' }, 500);
@@ -98,7 +98,9 @@ Deno.serve(async (req) => {
     {
       player_id: profile.id,
       public_player_id: profile.public_player_id,
+      public_code: profile.public_code,
       display_name: profile.display_name,
+      leaderboard_eligible: profile.leaderboard_eligible === true,
     },
     200,
   );

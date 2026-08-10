@@ -6,7 +6,7 @@ import { useGameStore } from '../store';
  * 仅消费 store 的 telemetryState 与遥测 actions，不引入 Supabase SDK。
  *
  * 安全约束：
- * - 不渲染内部 player_id / token，公开 ID 只展示 public_player_id 前 8 位；
+ * - 不渲染内部 player_id / token，只展示受唯一约束的 public_code；
  * - 恢复码只从当前 session 的 store 状态读取并复制到剪贴板，
  *   绝不写入组件外的新 localStorage。
  */
@@ -142,8 +142,6 @@ export function PlayerIdentityPanel() {
   }
 
   // consent 已同意且有身份
-  const jiaziId = identity.public_player_id.slice(0, 8);
-
   const handleUpdateName = async () => {
     const name = nameDraft.trim();
     if (!name) return;
@@ -155,11 +153,14 @@ export function PlayerIdentityPanel() {
     <div className="w-full max-w-xs rounded-lg border border-wood-light bg-[#faf6ee] px-3 py-2.5 text-xs leading-relaxed text-ink-light">
       <h3 className="mb-1 font-serif text-sm font-bold text-ink">匿名数据记录（可选）</h3>
 
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate font-bold text-ink">{identity.display_name || '未命名玩家'}</span>
-        <span className="shrink-0 rounded bg-wood-light/40 px-1.5 py-0.5 font-mono tracking-wider text-ink">
-          {jiaziId}
-        </span>
+      <div className="min-w-0">
+        <div className="truncate font-bold text-ink">{identity.display_name || '未命名玩家'}</div>
+        <div className="font-mono text-[10px] tracking-wider text-ink-light">ID {identity.public_code}</div>
+        <p className={`mt-0.5 ${identity.leaderboard_eligible ? 'text-qi-full' : 'text-ink-light'}`}>
+          {identity.leaderboard_eligible
+            ? '已设置用户名，可进入云端榜'
+            : '尚未设置排行榜用户名，成绩仅保留在本地'}
+        </p>
       </div>
 
       {error && <p className="mt-1 text-qi-critical">{error}</p>}
