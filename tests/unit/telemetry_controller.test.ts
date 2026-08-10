@@ -154,7 +154,7 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(JSON.stringify(backend.submitVerifiedScore.mock.calls[0])).not.toContain('999999');
   });
 
-  it('V4 后端未开放时不创建校验会话，避免开发预览污染生产数据', async () => {
+  it('V4 后端未开放时不创建或上报会话，避免开发预览污染生产数据', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
     const backend = createBackend();
@@ -165,6 +165,10 @@ describe('TelemetryController leaderboard eligibility', () => {
     await expect(controller.prepareVerifiedSession(v4Meta)).resolves.toBeNull();
     expect(backend.startVerifiedSession).not.toHaveBeenCalled();
     expect(controller.takePreparedSession()).toBeNull();
+    expect(controller.startSession(v4Meta)).toBe(false);
+    expect(controller.getActiveSessionId()).toBeNull();
+    expect(backend.upsertSession).not.toHaveBeenCalled();
+    expect(backend.uploadEvents).not.toHaveBeenCalled();
   });
 
   it('规则版本切换时丢弃已缓存的旧校验会话', async () => {

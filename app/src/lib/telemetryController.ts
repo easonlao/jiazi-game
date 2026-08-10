@@ -417,6 +417,13 @@ export class TelemetryController {
 
   /** 开始一次游戏会话（仅同意后生效；返回是否启用）。 */
   startSession(meta: ActiveSessionMeta, verified: VerifiedSessionStart | null = null): boolean {
+    // 未被当前后端明确开放的交易规则仅在本地运行。这样开发预览既不会
+    // 创建不可校验的 game_sessions，也不会上传对应的 game_events。
+    if (
+      meta.game_mode === 'volatility_trade' &&
+      isTradeRulesVersion(Number(meta.rules_version)) &&
+      !isServerVerifiedRulesVersion(meta.rules_version)
+    ) return false;
     if (!this.state.consent?.granted || !this.state.identity || !this.state.telemetryEnabled) return false;
     const session_id = verified?.session_id ?? newUuid();
     const started_at = verified?.started_at ?? new Date().toISOString();
