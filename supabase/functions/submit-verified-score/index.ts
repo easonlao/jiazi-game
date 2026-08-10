@@ -54,6 +54,9 @@ Deno.serve(async (req) => {
   if (session.verified_at || session.status === 'completed') {
     return json({ error: 'session_already_submitted' }, 409);
   }
+  if (session.status !== 'started' && session.status !== 'running') {
+    return json({ error: 'session_not_active' }, 409);
+  }
   if (!Number.isSafeInteger(session.replay_seed) || !isReplayRulesSnapshot(session.rules_snapshot)) {
     return json({ error: 'session_not_verifiable' }, 409);
   }
@@ -77,7 +80,7 @@ Deno.serve(async (req) => {
 
   const verifiedAt = new Date().toISOString();
   const finalScore = Math.round(replay.score * 10) / 10;
-  const { error: updateError } = await supabase
+  const { data: updatedSession, error: updateError } = await supabase
     .from('game_sessions')
     .update({
       status: 'completed',
@@ -88,8 +91,12 @@ Deno.serve(async (req) => {
     })
     .eq('id', session.id)
     .eq('player_id', link.player_id)
-    .is('verified_at', null);
+    .in('status', ['started', 'running'])
+    .is('verified_at', null)
+    .select('id')
+    .maybeSingle();
   if (updateError) return json({ error: 'internal_error' }, 500);
+  if (!updatedSession) return json({ error: 'session_not_active' }, 409);
 
   const { data: profile, error: profileError } = await supabase
     .from('player_profiles')

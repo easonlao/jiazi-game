@@ -255,25 +255,20 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
   }
 
   async upsertSession(playerId: string, session: SessionUpsert): Promise<void> {
-    const { error } = await this.client
-      .from('game_sessions')
-      .upsert(
-        {
-          player_id: playerId,
-          id: session.session_id,
-          client_session_id: session.session_id,
-          started_at: session.started_at,
-          status: session.status,
-          rounds_completed: session.rounds_completed,
-          final_score: session.final_score,
-          rules_version: session.rules_version,
-          game_mode: session.game_mode,
-          app_version: session.app_version,
-          consent_version: session.consent_version,
-          ...(session.ended_at ? { ended_at: session.ended_at } : {}),
-        },
-        { onConflict: 'player_id,client_session_id' },
-      );
+    const { error } = await this.client.rpc('upsert_game_session', {
+      p_player_id: playerId,
+      p_session_id: session.session_id,
+      p_client_session_id: session.session_id,
+      p_started_at: session.started_at,
+      p_status: session.status,
+      p_rounds_completed: session.rounds_completed,
+      p_final_score: session.final_score,
+      p_rules_version: session.rules_version,
+      p_game_mode: session.game_mode,
+      p_app_version: session.app_version,
+      p_consent_version: session.consent_version,
+      p_ended_at: session.ended_at ?? null,
+    });
     if (error) throw normalizeError(error);
   }
 

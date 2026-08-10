@@ -236,6 +236,26 @@ describe('TelemetryController leaderboard eligibility', () => {
     );
   });
 
+  it('重新开始对局时，旧客户端会话先被标记为 abandoned', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    expect(controller.startSession(meta)).toBe(true);
+    await vi.waitFor(() => expect(backend.upsertSession).toHaveBeenCalledTimes(1));
+
+    controller.endSession({ reason: 'reset', rounds: 0, final_score: 0, margin_call_count: 0 });
+    await vi.waitFor(() => expect(backend.upsertSession).toHaveBeenCalledTimes(2));
+
+    expect(controller.startSession(meta)).toBe(true);
+    await vi.waitFor(() => expect(backend.upsertSession).toHaveBeenCalledTimes(3));
+
+    expect(backend.upsertSession.mock.calls.map(([, session]) => (session as SessionUpsert).status))
+      .toEqual(['started', 'abandoned', 'started']);
+  });
+
   it('game_sessions upsert 失败时，本地对局仍不绕过服务端重放', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);

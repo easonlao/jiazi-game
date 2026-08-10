@@ -23,7 +23,6 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${serviceRoleKey}` } },
   });
-
   const { data: authData, error: authError } = await supabase.auth.getUser(token);
   if (authError || !authData.user) return json({ error: 'unauthorized' }, 401);
 
@@ -54,6 +53,9 @@ Deno.serve(async (req) => {
     if (existing.status === 'completed' || existing.verified_at) {
       return json({ error: 'session_already_completed' }, 409);
     }
+    if (existing.status === 'abandoned' || existing.status === 'failed') {
+      return json({ error: 'session_not_reusable' }, 409);
+    }
     if (isValidStoredSession(existing)) return json(toResponse(existing), 200);
   }
 
@@ -62,38 +64,28 @@ Deno.serve(async (req) => {
   const sessionId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
   const { data: inserted, error: insertError } = await supabase
-    .from('game_sessions')
-    .insert({
-      id: sessionId,
-      player_id: link.player_id,
-      client_session_id: clientSessionId,
-      rules_version: String(rules.rulesVersion),
-      game_mode: rules.gameMode,
-      app_version: stringField(body?.app_version, 32) ?? 'unknown',
-      consent_version: stringField(body?.consent_version, 32) ?? '0',
-      status: 'started',
-      started_at: startedAt,
-      rounds_completed: 0,
-      final_score: 0,
-      replay_seed: seed,
-      rules_snapshot: rules,
+    .schema('private')
+    .rpc('start_verified_game_session', {
+      p_player_id: link.player_id,
+      p_session_id: sessionId,
+      p_client_session_id: clientSessionId,
+      p_started_at: startedAt,
+      p_rules_version: String(rules.rulesVersion),
+      p_game_mode: rules.gameMode,
+      p_app_version: stringField(body?.app_version, 32) ?? 'unknown',
+      p_consent_version: stringField(body?.consent_version, 32) ?? '0',
+      p_replay_seed: seed,
+      p_rules_snapshot: rules,
     })
-    .select('id, started_at, replay_seed, rules_snapshot, status, verified_at')
-    .single();
+    .maybeSingle();
 
   if (insertError) {
-    // A concurrent retry may have won the unique (player_id, client_session_id)
-    // race; return that server-owned session instead of creating a second seed.
-    if (insertError.code === '23505') {
-      const { data: raced } = await supabase
-        .from('game_sessions')
-        .select('id, started_at, replay_seed, rules_snapshot, status, verified_at')
-        .eq('player_id', link.player_id)
-        .eq('client_session_id', clientSessionId)
-        .maybeSingle();
-      if (raced && isValidStoredSession(raced)) return json(toResponse(raced), 200);
-    }
     console.error('start-verified-session insert failed', insertError);
+    return json({ error: 'internal_error' }, 500);
+  }
+
+  if (!inserted || !isValidStoredSession(inserted)) {
+    console.error('start-verified-session returned an invalid session row');
     return json({ error: 'internal_error' }, 500);
   }
 
