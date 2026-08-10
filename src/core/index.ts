@@ -14,7 +14,12 @@ export type {
 export { replayGame, ReplayValidationError, MAX_REPLAY_ACTIONS } from './ReplayRunner';
 export type { ReplayAction, ReplayRequest, ReplayResult } from './ReplayRunner';
 
-export { TRADE_REPLAY_RULES, cloneReplayRulesSnapshot } from './ReplayRules';
+export {
+  TRADE_REPLAY_RULES,
+  BALANCED_TRADE_REPLAY_RULES,
+  CURRENT_REPLAY_RULES,
+  cloneReplayRulesSnapshot,
+} from './ReplayRules';
 export type { ReplayRulesSnapshot } from './ReplayRules';
 
 export { SeasonCycle } from './SeasonCycle';
@@ -22,7 +27,7 @@ export type { Season } from './SeasonCycle';
 
 export { QiManager } from './QiManager';
 export { ScoreManager } from './ScoreManager';
-export { DEFAULT_SCORE_RULES, TRADE_SCORE_RULES } from './ScoreManager';
+export { DEFAULT_SCORE_RULES, TRADE_SCORE_RULES, BALANCED_TRADE_SCORE_RULES } from './ScoreManager';
 export type { ScoreRules } from './ScoreManager';
 export { HandManager } from './HandManager';
 export { CardPoolManager } from './CardPoolManager';
@@ -54,7 +59,17 @@ export type {
   RelationBand,
 } from './ScoreVolatility';
 
-export { GameSaveService, CURRENT_SCHEMA_VERSION, isSupportedRulesVersion, RULES_BASE, RULES_VERSION_VOLATILE, RULES_VERSION_TRADE } from './GameSaveService';
+export {
+  GameSaveService,
+  CURRENT_SCHEMA_VERSION,
+  CURRENT_RULES_VERSION,
+  isSupportedRulesVersion,
+  isTradeRulesVersion,
+  RULES_BASE,
+  RULES_VERSION_VOLATILE,
+  RULES_VERSION_TRADE,
+  RULES_VERSION_BALANCED_TRADE,
+} from './GameSaveService';
 export type { GameSnapshot, GameSaveLoadError, SupportedRulesVersion, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
 
 export { LeaderboardService } from './LeaderboardService';

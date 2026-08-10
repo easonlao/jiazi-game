@@ -278,6 +278,7 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
         client_session_id: meta.session_id,
         app_version: meta.app_version,
         consent_version: meta.consent_version,
+        requested_rules_version: meta.rules_version,
       },
     });
     if (error) throw normalizeError(error);

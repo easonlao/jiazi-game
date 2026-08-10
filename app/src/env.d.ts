@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   /** Supabase 发布密钥（anon/publishable key；绝不在此放入 service_role/secret） */
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
+  /** 逗号分隔的服务端可校验规则版本；默认仅为生产 V3。 */
+  readonly VITE_VERIFIED_RULES_VERSIONS?: string;
 }
 
 interface ImportMeta {

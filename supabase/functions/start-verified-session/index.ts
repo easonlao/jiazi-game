@@ -1,5 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import { cloneReplayRulesSnapshot } from '../../../src/core/ReplayRules.ts';
+import {
+  cloneReplayRulesSnapshot,
+  TRADE_REPLAY_RULES,
+  BALANCED_TRADE_REPLAY_RULES,
+} from '../../../src/core/ReplayRules.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -33,6 +37,18 @@ Deno.serve(async (req) => {
   if (!clientSessionId || clientSessionId.length > CLIENT_SESSION_ID_MAX) {
     return json({ error: 'invalid_client_session_id' }, 400);
   }
+  // 旧客户端未发送版本时继续使用 V3，保证服务端可先于前端安全部署。
+  const requestedRulesVersion = body?.requested_rules_version === undefined
+    ? TRADE_REPLAY_RULES.rulesVersion
+    : Number(body.requested_rules_version);
+  const rulesSource = requestedRulesVersion === TRADE_REPLAY_RULES.rulesVersion
+    ? TRADE_REPLAY_RULES
+    : requestedRulesVersion === BALANCED_TRADE_REPLAY_RULES.rulesVersion
+      ? BALANCED_TRADE_REPLAY_RULES
+      : null;
+  if (!rulesSource || !isVerifiedRulesVersionEnabled(String(requestedRulesVersion))) {
+    return json({ error: 'rules_version_not_supported' }, 409);
+  }
 
   const { data: link, error: linkError } = await supabase
     .from('player_identity_links')
@@ -56,10 +72,16 @@ Deno.serve(async (req) => {
     if (existing.status === 'abandoned' || existing.status === 'failed') {
       return json({ error: 'session_not_reusable' }, 409);
     }
-    if (isValidStoredSession(existing)) return json(toResponse(existing), 200);
+    if (isValidStoredSession(existing)) {
+      const storedRules = existing.rules_snapshot as Record<string, unknown>;
+      if (storedRules.rulesVersion !== rulesSource.rulesVersion) {
+        return json({ error: 'session_rules_mismatch' }, 409);
+      }
+      return json(toResponse(existing), 200);
+    }
   }
 
-  const rules = cloneReplayRulesSnapshot();
+  const rules = cloneReplayRulesSnapshot(rulesSource);
   const seed = generateSeed();
   const sessionId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
@@ -114,6 +136,12 @@ function generateSeed(): number {
   const bytes = new Uint32Array(1);
   crypto.getRandomValues(bytes);
   return bytes[0] & 0x7fffffff;
+}
+
+/** 默认只开放生产 V3；开发后端需显式设置 VERIFIED_RULES_VERSIONS=3,4。 */
+function isVerifiedRulesVersionEnabled(rulesVersion: string): boolean {
+  const configured = Deno.env.get('VERIFIED_RULES_VERSIONS')?.trim() || '3';
+  return configured.split(',').map((value) => value.trim()).includes(rulesVersion);
 }
 
 function extractBearerToken(req: Request): string | null {

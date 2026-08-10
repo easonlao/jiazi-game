@@ -70,6 +70,26 @@ describe('StorageProvider 注入', () => {
     expect(lb.getEntries()).toEqual([]);
   });
 
+  it('LeaderboardService 按规则版本隔离成绩，并保留旧格式记录', () => {
+    storage.setItem('jiazi_leaderboard', JSON.stringify([
+      { score: 9999, date: '2026-08-09' },
+      { score: 3000, date: '2026-08-10', rulesVersion: 3 },
+    ]));
+    const v3 = new LeaderboardService(storage, 3);
+    const v4 = new LeaderboardService(storage, 4);
+
+    expect(v3.getEntries().map((entry) => entry.score)).toEqual([3000]);
+    expect(v4.getEntries()).toEqual([]);
+
+    v4.addEntry(1200);
+    expect(v4.getEntries().map((entry) => entry.score)).toEqual([1200]);
+    expect(v3.getEntries().map((entry) => entry.score)).toEqual([3000]);
+    expect(JSON.parse(storage.snapshot().jiazi_leaderboard)).toContainEqual({
+      score: 9999,
+      date: '2026-08-09',
+    });
+  });
+
   it('TurnManager 注入存储后存档写入注入的存储（而非全局 localStorage）', async () => {
     const tm = new TurnManager(undefined, undefined, { storage });
     await tm.initialize();

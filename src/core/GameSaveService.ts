@@ -49,11 +49,28 @@ export const RULES_VERSION_VOLATILE = 2;
 /** 交易主导波动规则：局部冲突波动 + 独立卖出收益倍率。 */
 export const RULES_VERSION_TRADE = 3;
 
+/** 平衡版交易规则：降低冲突牌波动与释灵倍率，并与 V3 排行榜隔离。 */
+export const RULES_VERSION_BALANCED_TRADE = 4;
+
+/** 新局默认规则版本；旧存档仍按自身 rulesVersion 继续运行。 */
+export const CURRENT_RULES_VERSION = RULES_VERSION_BALANCED_TRADE;
+
 /** 当前代码可解释的规则版本集合；存档层与引擎层共用，避免两处规则门控漂移。 */
-export type SupportedRulesVersion = typeof RULES_BASE | typeof RULES_VERSION_VOLATILE | typeof RULES_VERSION_TRADE;
+export type SupportedRulesVersion =
+  | typeof RULES_BASE
+  | typeof RULES_VERSION_VOLATILE
+  | typeof RULES_VERSION_TRADE
+  | typeof RULES_VERSION_BALANCED_TRADE;
 
 export function isSupportedRulesVersion(version: unknown): version is SupportedRulesVersion {
-  return version === RULES_BASE || version === RULES_VERSION_VOLATILE || version === RULES_VERSION_TRADE;
+  return version === RULES_BASE ||
+    version === RULES_VERSION_VOLATILE ||
+    version === RULES_VERSION_TRADE ||
+    version === RULES_VERSION_BALANCED_TRADE;
+}
+
+export function isTradeRulesVersion(version: unknown): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE {
+  return version === RULES_VERSION_TRADE || version === RULES_VERSION_BALANCED_TRADE;
 }
 
 /** 可序列化的手牌槽位快照。 */
@@ -110,7 +127,7 @@ export interface GameSnapshot {
   roundLog?: RoundLogEntry[];
   /** 实验性季内评分波动状态；老存档无此字段时视为未启用。 */
   scoreVolatility?: ScoreVolatilitySnapshot;
-  /** v3 交易规则的计分参数；v1/v2 不写入，保持旧档形状与语义。 */
+  /** 交易规则的计分参数；v1/v2 不写入，保持旧档形状与语义。 */
   scoreRules?: ScoreRules;
 }
 
@@ -194,7 +211,7 @@ export class GameSaveService {
       if (!isSupportedRulesVersion(declaredRules)) {
         this.lastLoadError = 'rules_version_unsupported';
         console.warn(
-          `[GameSaveService] 存档 rulesVersion=${data.rulesVersion} 不是支持的规则版本（只支持 RULES_BASE=${RULES_BASE} / RULES_VERSION_VOLATILE=${RULES_VERSION_VOLATILE}），拒绝读档（保留存档，不清理）`,
+          `[GameSaveService] 存档 rulesVersion=${data.rulesVersion} 不是支持的规则版本，拒绝读档（保留存档，不清理）`,
         );
         return false;
       }

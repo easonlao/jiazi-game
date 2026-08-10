@@ -9,7 +9,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TurnManager } from '../../src/core/TurnManager';
 import { SeededRandomSource } from '../../src/core/RandomSource';
-import { GameSaveService, CURRENT_SCHEMA_VERSION, RULES_BASE, RULES_VERSION_TRADE, RULES_VERSION_VOLATILE } from '../../src/core/GameSaveService';
+import {
+  GameSaveService,
+  CURRENT_SCHEMA_VERSION,
+  RULES_BASE,
+  RULES_VERSION_BALANCED_TRADE,
+  RULES_VERSION_TRADE,
+  RULES_VERSION_VOLATILE,
+} from '../../src/core/GameSaveService';
 import { BAND_FACTOR } from '../../src/core/ScoreVolatility';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -353,6 +360,34 @@ describe('规则版本化存档（schemaVersion / rulesVersion）', () => {
     const currentScore = tm.getCardScore(slot.card, tm.getCurrentSeason());
     expect(tm.previewSellScore(slot)).toBe((currentScore - slot.buyScore) * 4);
     expect(tm.exportSnapshot().scoreRules).toBeUndefined();
+  });
+
+  it('base 构造可读取 V4 存档，并保持 V4 波动与计分参数', async () => {
+    const tm = await makeTm();
+    const fixture = makeValidSnapshot({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      rulesVersion: RULES_VERSION_BALANCED_TRADE,
+      scoreRules: { holdBonus: 1.2, sellMultiplier: 6 },
+      scoreVolatility: {
+        remainingRounds: 2,
+        deltaByDiZhi: { 子: 6 },
+        model: 'conflict_banded',
+        scale: 4,
+        directionByDiZhi: { 子: 0.5 },
+        bandFactors: { ...BAND_FACTOR, conflict: 3 },
+      },
+    });
+
+    expect(() => tm.importSnapshot(fixture)).not.toThrow();
+    expect(tm.exportSnapshot()).toMatchObject({
+      rulesVersion: RULES_VERSION_BALANCED_TRADE,
+      scoreRules: { holdBonus: 1.2, sellMultiplier: 6 },
+      scoreVolatility: {
+        model: 'conflict_banded',
+        scale: 4,
+        bandFactors: { ...BAND_FACTOR, conflict: 3 },
+      },
+    });
   });
 });
 

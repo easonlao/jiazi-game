@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
 import type { AnalyticsBackend, SessionUpsert, VerifiedSessionStart } from '../../app/src/lib/analyticsBackend';
 import type { StorageProvider } from '../../src/core/StorageProvider';
-import { cloneReplayRulesSnapshot } from '../../src/core';
+import { cloneReplayRulesSnapshot, TRADE_REPLAY_RULES } from '../../src/core';
 
 class MemoryStorage implements StorageProvider {
   private readonly values = new Map<string, string>();
@@ -73,7 +73,7 @@ function seedLegacyIdentity(storage: MemoryStorage): void {
 }
 
 const meta = {
-  rules_version: '3',
+  rules_version: '4',
   game_mode: 'standard',
   volatility_enabled: true,
 };
@@ -134,7 +134,7 @@ describe('TelemetryController leaderboard eligibility', () => {
       session_id: 'verified-session',
       started_at: '2026-08-10T00:00:00.000Z',
       seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(),
+      rules_snapshot: cloneReplayRulesSnapshot(TRADE_REPLAY_RULES),
     });
     const controller = new TelemetryController({ storage, backend });
     const verifiedMeta = { rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true };
@@ -154,6 +154,41 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(JSON.stringify(backend.submitVerifiedScore.mock.calls[0])).not.toContain('999999');
   });
 
+  it('V4 后端未开放时不创建校验会话，避免开发预览污染生产数据', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    const controller = new TelemetryController({ storage, backend });
+    const v4Meta = { rules_version: '4', game_mode: 'volatility_trade', volatility_enabled: true };
+
+    await controller.init();
+    await expect(controller.prepareVerifiedSession(v4Meta)).resolves.toBeNull();
+    expect(backend.startVerifiedSession).not.toHaveBeenCalled();
+    expect(controller.takePreparedSession()).toBeNull();
+  });
+
+  it('规则版本切换时丢弃已缓存的旧校验会话', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    backend.startVerifiedSession.mockResolvedValue({
+      session_id: 'v3-session',
+      started_at: '2026-08-10T00:00:00.000Z',
+      seed: 42,
+      rules_snapshot: cloneReplayRulesSnapshot(TRADE_REPLAY_RULES),
+    });
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    await expect(controller.prepareVerifiedSession({
+      rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true,
+    })).resolves.toMatchObject({ session_id: 'v3-session' });
+    await expect(controller.prepareVerifiedSession({
+      rules_version: '4', game_mode: 'volatility_trade', volatility_enabled: true,
+    })).resolves.toBeNull();
+    expect(controller.takePreparedSession()).toBeNull();
+  });
+
   it('身份切换后，已开始的校验会话仍以开局时的 player_id 提交', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
@@ -162,7 +197,7 @@ describe('TelemetryController leaderboard eligibility', () => {
       session_id: 'verified-session',
       started_at: '2026-08-10T00:00:00.000Z',
       seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(),
+      rules_snapshot: cloneReplayRulesSnapshot(TRADE_REPLAY_RULES),
     });
     backend.recoverIdentity.mockResolvedValue({
       player_id: 'player-2',
@@ -197,7 +232,7 @@ describe('TelemetryController leaderboard eligibility', () => {
       session_id: 'verified-session',
       started_at: '2026-08-10T00:00:00.000Z',
       seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(),
+      rules_snapshot: cloneReplayRulesSnapshot(TRADE_REPLAY_RULES),
     });
     backend.submitVerifiedScore.mockRejectedValueOnce(new Error('network down'));
     const controller = new TelemetryController({ storage, backend });

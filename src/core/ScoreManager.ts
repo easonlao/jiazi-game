@@ -19,10 +19,16 @@ export const DEFAULT_SCORE_RULES: ScoreRules = {
   sellMultiplier: 4,
 };
 
-/** v3 实验规则默认值；正式入口仍需显式声明 rulesVersion=3。 */
+/** V3 交易规则冻结值；用于继续读取和重放旧对局。 */
 export const TRADE_SCORE_RULES: ScoreRules = {
   holdBonus: 1.2,
   sellMultiplier: 14,
+};
+
+/** V4 平衡版交易规则：保留炼化系数，降低释灵差值放大。 */
+export const BALANCED_TRADE_SCORE_RULES: ScoreRules = {
+  holdBonus: 1.2,
+  sellMultiplier: 6,
 };
 
 export class ScoreManager {

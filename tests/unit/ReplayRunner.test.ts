@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BAND_FACTOR,
+  BALANCED_TRADE_REPLAY_RULES,
   MAX_REPLAY_ACTIONS,
   replayGame,
   ReplayValidationError,
@@ -37,6 +38,20 @@ describe('ReplayRunner', () => {
 
     expect(second).toEqual(first);
     expect(first).toMatchObject({ state: 'game_over', completed: true, rounds: 60 });
+  });
+
+  it('replays V4 with conflict factor 3 and sell multiplier 6', async () => {
+    const result = await replayGame({
+      seed: 42,
+      actions: waits(60),
+      rulesVersion: BALANCED_TRADE_REPLAY_RULES.rulesVersion,
+      volatility: BALANCED_TRADE_REPLAY_RULES.volatility,
+      scoreRules: BALANCED_TRADE_REPLAY_RULES.scoreRules,
+    });
+
+    expect(result.rulesVersion).toBe(4);
+    expect(BALANCED_TRADE_REPLAY_RULES.volatility.bandFactors?.conflict).toBe(3);
+    expect(BALANCED_TRADE_REPLAY_RULES.scoreRules.sellMultiplier).toBe(6);
   });
 
   it('replays an accepted buy action through the real engine', async () => {

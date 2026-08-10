@@ -14,7 +14,7 @@
  * - 未获同意前队列关闭，事件直接丢弃。
  */
 
-import type { ReplayAction, StorageProvider } from '@core/index';
+import { isTradeRulesVersion, type ReplayAction, type StorageProvider } from '@core/index';
 import {
   TELEMETRY_CONSENT_VERSION,
   TelemetryQueue,
@@ -36,6 +36,15 @@ import {
 const CONSENT_KEY = 'jiazi_consent';
 const IDENTITY_KEY = 'jiazi_player_identity';
 const RECOVERY_SESSION_KEY = 'jiazi_recovery_code_session';
+
+/**
+ * 已部署服务端能够校验的规则版本。默认只开放生产 V3；V4 在独立后端部署完成前
+ * 保持本地模式，避免开发预览向生产 Supabase 创建无法完成的测试会话。
+ */
+function isServerVerifiedRulesVersion(rulesVersion: string): boolean {
+  const configured = import.meta.env.VITE_VERIFIED_RULES_VERSIONS?.trim() || '3';
+  return configured.split(',').map((value) => value.trim()).includes(rulesVersion);
+}
 
 /** 与 package.json 版本保持一致（发版时同步修改） */
 export const APP_VERSION = '0.2.0';
@@ -231,8 +240,16 @@ export class TelemetryController {
 
   /** 在游戏真正开始前向服务端申请 seed；失败时返回 null，调用方保留本地模式。 */
   async prepareVerifiedSession(meta: ActiveSessionMeta): Promise<VerifiedSessionStart | null> {
+    const requestedRulesVersion = Number(meta.rules_version);
     if (
-      meta.rules_version !== '3' ||
+      this.preparedSession &&
+      this.preparedSession.rules_snapshot.rulesVersion !== requestedRulesVersion
+    ) {
+      this.preparedSession = null;
+    }
+    if (
+      !isTradeRulesVersion(requestedRulesVersion) ||
+      !isServerVerifiedRulesVersion(meta.rules_version) ||
       meta.game_mode !== 'volatility_trade' ||
       !this.state.consent?.granted ||
       !this.state.identity ||
@@ -252,6 +269,10 @@ export class TelemetryController {
         app_version: this.appVersion,
         consent_version: String(this.state.consent.version),
       });
+      if (prepared?.rules_snapshot.rulesVersion !== requestedRulesVersion) {
+        console.warn('[telemetry] 服务端规则版本与客户端不一致，回退本地模式');
+        return null;
+      }
       this.preparedSession = prepared;
       return prepared;
     } catch (e) {

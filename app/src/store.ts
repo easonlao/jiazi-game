@@ -13,9 +13,8 @@ import {
   type LeaderboardEntry,
   type RoundLogEntry,
   type DecisionEntry,
-  BAND_FACTOR,
-  RULES_VERSION_TRADE,
-  TRADE_SCORE_RULES,
+  CURRENT_REPLAY_RULES,
+  CURRENT_RULES_VERSION,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -62,7 +61,7 @@ const _leaderboardRefreshGate = new LeaderboardRefreshGate();
 let _pendingAutoUnlockToast: string | null = null;
 
 /**
- * 生产默认使用 v3 conflict_banded 交易规则；?volatility=0 保留基础规则兼容入口。
+ * 开发默认使用 V4 平衡版交易规则；?volatility=0 保留基础规则兼容入口。
  * 旧存档仍由 TurnManager 按存档声明的 rulesVersion 读取，不会被入口默认值强行升级。
  */
 function isVolatilityEnabled(): boolean {
@@ -72,7 +71,7 @@ function isVolatilityEnabled(): boolean {
 
 function getTelemetryGameMeta(tm?: TurnManager) {
   const rulesVersion = tm?.getRulesVersion();
-  const resolvedRulesVersion = rulesVersion ?? (isVolatilityEnabled() ? RULES_VERSION_TRADE : 1);
+  const resolvedRulesVersion = rulesVersion ?? (isVolatilityEnabled() ? CURRENT_RULES_VERSION : 1);
   const volatility = resolvedRulesVersion !== 1;
   return {
     rules_version: String(resolvedRulesVersion),
@@ -390,7 +389,7 @@ function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get: () => 
   });
   tm.setOnGameEnd((finalScore) => {
     set((s) => ({ tick: s.tick + 1 }));
-    const lb = new LeaderboardService(localStorageProvider);
+    const lb = new LeaderboardService(localStorageProvider, tm.getRulesVersion());
     lb.addEntry(finalScore);
     set({ leaderboardEntries: lb.getEntries() });
     // 记录本局结算展示锚点：云端校验回调只更新这个会话的记录，
@@ -554,14 +553,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         storage: localStorageProvider,
         ...(isVolatilityEnabled()
           ? {
-            rulesVersion: RULES_VERSION_TRADE,
-            scoreRules: TRADE_SCORE_RULES,
-            volatility: {
-              enabled: true,
-              model: 'conflict_banded' as const,
-              scale: 4,
-              bandFactors: { ...BAND_FACTOR, conflict: 6 },
-            },
+            rulesVersion: CURRENT_REPLAY_RULES.rulesVersion,
+            scoreRules: CURRENT_REPLAY_RULES.scoreRules,
+            volatility: CURRENT_REPLAY_RULES.volatility,
           }
           : {}),
       });
@@ -713,7 +707,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   openLeaderboard() {
-    const lb = new LeaderboardService(localStorageProvider);
+    const lb = new LeaderboardService(
+      localStorageProvider,
+      get().turnManager?.getRulesVersion() ?? CURRENT_RULES_VERSION,
+    );
     set({ leaderboardEntries: lb.getEntries(), leaderboardOpen: true });
   },
 

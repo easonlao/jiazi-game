@@ -14,7 +14,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { TurnManager } from '../../src/core/TurnManager';
 import { SeededRandomSource } from '../../src/core/RandomSource';
 import { DEFAULT_BALANCE_CONFIG } from '../../src/core/BalanceConfig';
-import { CURRENT_SCHEMA_VERSION, RULES_BASE, RULES_VERSION_TRADE, RULES_VERSION_VOLATILE } from '../../src/core/GameSaveService';
+import {
+  CURRENT_SCHEMA_VERSION,
+  RULES_BASE,
+  RULES_VERSION_BALANCED_TRADE,
+  RULES_VERSION_TRADE,
+  RULES_VERSION_VOLATILE,
+} from '../../src/core/GameSaveService';
 import { BAND_FACTOR, cardAmplitude, relationBand } from '../../src/core/ScoreVolatility';
 import type { ScoreVolatilityConfig } from '../../src/core/ScoreVolatility';
 import type { GameSnapshot } from '../../src/core/GameSaveService';
@@ -46,7 +52,7 @@ async function makeTm(mainSeed: number, opts?: {
   volSeed?: number;
   storage?: StorageProvider;
   volatility?: Partial<ScoreVolatilityConfig>;
-  rulesVersion?: 1 | 2 | 3;
+  rulesVersion?: 1 | 2 | 3 | 4;
   scoreRules?: { holdBonus: number; sellMultiplier: number };
 }) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => CARD_DATA }));
@@ -55,7 +61,7 @@ async function makeTm(mainSeed: number, opts?: {
     volatility?: Partial<ScoreVolatilityConfig>;
     volatilityRandom?: SeededRandomSource;
     storage?: StorageProvider;
-    rulesVersion?: 1 | 2 | 3;
+    rulesVersion?: 1 | 2 | 3 | 4;
     scoreRules?: { holdBonus: number; sellMultiplier: number };
   } = {};
   if (opts?.volSeed !== undefined || opts?.volatility) {
@@ -116,6 +122,34 @@ describe('波动状态持久化（scoreVolatility save → load → continue）'
     const snapshot = tm.exportSnapshot();
     delete snapshot.scoreRules;
     expect(() => tm.importSnapshot(snapshot)).toThrowError(/scoreRules/);
+  });
+
+  it('v4 平衡规则冻结冲突因子 3 与释灵系数 6，并可 round-trip', async () => {
+    const scoreRules = { holdBonus: 1.2, sellMultiplier: 6 };
+    const bandFactors = { ...BAND_FACTOR, conflict: 3 };
+    const tm1 = await makeTm(42, {
+      volSeed: 7,
+      rulesVersion: RULES_VERSION_BALANCED_TRADE,
+      scoreRules,
+      volatility: { model: 'conflict_banded', scale: 4, bandFactors },
+    });
+    tm1.startGame();
+    expect(tm1.executeBuy(0, false)).toBe(true);
+    const snapshot = tm1.exportSnapshot();
+
+    expect(snapshot.rulesVersion).toBe(RULES_VERSION_BALANCED_TRADE);
+    expect(snapshot.scoreRules).toEqual(scoreRules);
+    expect(snapshot.scoreVolatility?.bandFactors).toEqual(bandFactors);
+
+    const tm2 = await makeTm(99, { volSeed: 11 });
+    tm2.importSnapshot(snapshot);
+    expect(tm2.exportSnapshot()).toMatchObject({
+      rulesVersion: RULES_VERSION_BALANCED_TRADE,
+      scoreRules,
+      scoreVolatility: { bandFactors },
+    });
+    expect(tm2.previewSettlement({ type: 'sell', slotIndex: 0 }))
+      .toEqual(tm1.previewSettlement({ type: 'sell', slotIndex: 0 }));
   });
 
   it('波动局：snapshot 携带 rulesVersion=2 与 scoreVolatility，round-trip 后状态一致', async () => {

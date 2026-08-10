@@ -2,7 +2,13 @@ import { JiaziCard, Element, YinYang } from './JiaziCard';
 import { CardDataBank } from './CardDataBank';
 import { SeasonCycle, Season } from './SeasonCycle';
 import { QiManager } from './QiManager';
-import { DEFAULT_SCORE_RULES, ScoreManager, TRADE_SCORE_RULES, type ScoreRules } from './ScoreManager';
+import {
+  BALANCED_TRADE_SCORE_RULES,
+  DEFAULT_SCORE_RULES,
+  ScoreManager,
+  TRADE_SCORE_RULES,
+  type ScoreRules,
+} from './ScoreManager';
 import { LeverageCalculator } from './LeverageCalculator';
 import { HandManager } from './HandManager';
 import { HandSlot } from './HandSlot';
@@ -10,7 +16,19 @@ import { CardPoolManager } from './CardPoolManager';
 import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig';
 import { MathRandomSource, RandomSource } from './RandomSource';
 import { calculateHoldingSettlement } from './SettlementPreviewCalculator';
-import { GameSaveService, CURRENT_SCHEMA_VERSION, isSupportedRulesVersion, RULES_BASE, RULES_VERSION_VOLATILE, RULES_VERSION_TRADE, type GameSnapshot, type GameSaveLoadError, type SupportedRulesVersion } from './GameSaveService';
+import {
+  GameSaveService,
+  CURRENT_SCHEMA_VERSION,
+  isSupportedRulesVersion,
+  isTradeRulesVersion,
+  RULES_BASE,
+  RULES_VERSION_BALANCED_TRADE,
+  RULES_VERSION_VOLATILE,
+  RULES_VERSION_TRADE,
+  type GameSnapshot,
+  type GameSaveLoadError,
+  type SupportedRulesVersion,
+} from './GameSaveService';
 import type { StorageProvider } from './StorageProvider';
 import { LockManager, type LockResult } from './LockManager';
 import { MarginCallEngine } from './MarginCallEngine';
@@ -311,7 +329,7 @@ export class TurnManager {
       volatilityRandom?: RandomSource;
        /** 新局规则语义；未指定且启用波动时保持现有 v2。 */
       rulesVersion?: SupportedRulesVersion;
-      /** v3 交易规则的计分参数；v1/v2 使用旧默认值。 */
+      /** 交易规则的计分参数；v1/v2 使用旧默认值。 */
       scoreRules?: Partial<ScoreRules>;
     },
   ) {
@@ -331,9 +349,11 @@ export class TurnManager {
     // 构造默认只决定"新局/模拟"的规则；读档后由 importSnapshot 按存档声明覆盖。
     this.rulesVersion = options?.rulesVersion
       ?? (this.scoreVolatilityConfig.enabled ? RULES_VERSION_VOLATILE : RULES_BASE);
-    const defaultScoreRules = this.rulesVersion === RULES_VERSION_TRADE
-      ? TRADE_SCORE_RULES
-      : DEFAULT_SCORE_RULES;
+    const defaultScoreRules = this.rulesVersion === RULES_VERSION_BALANCED_TRADE
+      ? BALANCED_TRADE_SCORE_RULES
+      : this.rulesVersion === RULES_VERSION_TRADE
+        ? TRADE_SCORE_RULES
+        : DEFAULT_SCORE_RULES;
     this.initialRulesVersion = this.rulesVersion;
     this.initialScoreRules = {
       ...defaultScoreRules,
@@ -389,7 +409,7 @@ export class TurnManager {
 
   /** 所有核心结算和预览共用的最终评分入口。 */
   private isVolatilityRulesVersion(): boolean {
-    return this.rulesVersion === RULES_VERSION_VOLATILE || this.rulesVersion === RULES_VERSION_TRADE;
+    return this.rulesVersion === RULES_VERSION_VOLATILE || isTradeRulesVersion(this.rulesVersion);
   }
 
   getCardScore(card: JiaziCard, season: string): number {
@@ -1083,7 +1103,7 @@ export class TurnManager {
       lockedCardIds: this.lockManager.getLockedCardIds(),
       roundLog: this.roundLog,
       scoreVolatility: this.getScoreVolatilityState() ?? undefined,
-      scoreRules: this.rulesVersion === RULES_VERSION_TRADE
+      scoreRules: isTradeRulesVersion(this.rulesVersion)
         ? this.scoreManager.getRules()
         : undefined,
     };
@@ -1102,10 +1122,10 @@ export class TurnManager {
     const declaredRules = data.rulesVersion ?? RULES_BASE;
     if (!isSupportedRulesVersion(declaredRules)) {
       throw new Error(
-        `不支持的规则版本 rulesVersion=${data.rulesVersion}（只支持 RULES_BASE=${RULES_BASE} / RULES_VERSION_VOLATILE=${RULES_VERSION_VOLATILE} / RULES_VERSION_TRADE=${RULES_VERSION_TRADE}），拒绝读档`,
+        `不支持的规则版本 rulesVersion=${data.rulesVersion}，拒绝读档`,
       );
     }
-    const isVolatileRules = declaredRules === RULES_VERSION_VOLATILE || declaredRules === RULES_VERSION_TRADE;
+    const isVolatileRules = declaredRules === RULES_VERSION_VOLATILE || isTradeRulesVersion(declaredRules);
     // 波动模型门控（在任何状态改动之前）：volatile 档携带未知波动模型必须明确
     // 拒绝，绝不静默按 uniform 继续——否则未来模型存档会被当前代码按错误模型
     // 运行且写回归档。模型缺省（旧格式）不算未知，按 uniform 解释。
@@ -1132,14 +1152,14 @@ export class TurnManager {
     // scoreVolatility，故不校验（保持既有行为）。
     if (isVolatileRules) {
       // 缺省分支已在上方门控拒绝：此处 scoreVolatility 保证非空。
-      this.validateVolatileScoreVolatility(data.scoreVolatility!, declaredRules === RULES_VERSION_TRADE);
+      this.validateVolatileScoreVolatility(data.scoreVolatility!, isTradeRulesVersion(declaredRules));
     }
-    if (declaredRules === RULES_VERSION_TRADE) {
+    if (isTradeRulesVersion(declaredRules)) {
       this.validateScoreRules(data.scoreRules);
     }
     this.rulesVersion = declaredRules;
     this.scoreManager.setRules(
-      declaredRules === RULES_VERSION_TRADE ? data.scoreRules! : DEFAULT_SCORE_RULES,
+      isTradeRulesVersion(declaredRules) ? data.scoreRules! : DEFAULT_SCORE_RULES,
     );
 
     // 1. 还原基础状态
@@ -1341,23 +1361,23 @@ export class TurnManager {
             return typeof value === 'number' && Number.isFinite(value) && value >= 0;
           })
         ) {
-          throw new Error('rulesVersion=3 存档的 scoreVolatility.bandFactors 必须完整且为有限非负数字，拒绝读档');
+          throw new Error('交易规则存档的 scoreVolatility.bandFactors 必须完整且为有限非负数字，拒绝读档');
         }
       }
     } else if (requireTradeFields) {
-      throw new Error('rulesVersion=3 存档必须使用 conflict_banded 波动模型，拒绝读档');
+      throw new Error('交易规则存档必须使用 conflict_banded 波动模型，拒绝读档');
     }
   }
 
   private validateScoreRules(rules: GameSnapshot['scoreRules']): asserts rules is ScoreRules {
     if (!isNonNilRecord(rules)) {
-      throw new Error('rulesVersion=3 存档缺少 scoreRules，拒绝读档');
+      throw new Error('交易规则存档缺少 scoreRules，拒绝读档');
     }
     if (
       typeof rules.holdBonus !== 'number' || !Number.isFinite(rules.holdBonus) || rules.holdBonus <= 0 ||
       typeof rules.sellMultiplier !== 'number' || !Number.isFinite(rules.sellMultiplier) || rules.sellMultiplier < 0
     ) {
-      throw new Error('rulesVersion=3 存档的 scoreRules 参数非法，拒绝读档');
+      throw new Error('交易规则存档的 scoreRules 参数非法，拒绝读档');
     }
   }
 

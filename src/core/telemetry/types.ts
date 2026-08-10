@@ -42,7 +42,7 @@ export const TELEMETRY_EVENT_TYPES: readonly TelemetryEventType[] = [
 /** 会话开始：游戏开局时上报一次 */
 export interface SessionStartPayload {
   session_id: string;
-  /** 规则版本（RULES_BASE / RULES_VERSION_VOLATILE / RULES_VERSION_TRADE 的数值） */
+  /** 规则版本（当前支持 1/2/3/4；具体语义见 GameSaveService） */
   rules_version: string;
   /** 游戏模式标识：base / volatility_trade */
   game_mode: string;
