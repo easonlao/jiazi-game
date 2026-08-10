@@ -45,13 +45,22 @@ Deno.serve(async (req) => {
 
   const playerId = crypto.randomUUID();
   const publicPlayerId = crypto.randomUUID();
+  const publicCode = generatePublicCode();
   const displayName = sanitizeDisplayName(DEFAULT_DISPLAY_NAME);
   const recoveryCode = generateRecoveryCode();
   const secretHash = await sha256Hex(recoveryCode);
 
+  // leaderboard_eligible 默认 false：自动 provision 的占位"玩家"不具备云端上榜资格，
+  // 需经 updateDisplayName 设置用户名后才具备资格。
   const { error: profileError } = await supabase
     .from('player_profiles')
-    .insert({ id: playerId, public_player_id: publicPlayerId, display_name: displayName });
+    .insert({
+      id: playerId,
+      public_player_id: publicPlayerId,
+      public_code: publicCode,
+      display_name: displayName,
+      leaderboard_eligible: false,
+    });
   if (profileError) {
     console.error('provision-player profile insert failed', profileError);
     return isUniqueViolation(profileError)
@@ -85,7 +94,9 @@ Deno.serve(async (req) => {
     {
       player_id: playerId,
       public_player_id: publicPlayerId,
+      public_code: publicCode,
       display_name: displayName,
+      leaderboard_eligible: false,
       recovery_code: recoveryCode,
     },
     201,
@@ -105,6 +116,10 @@ function generateRecoveryCode(): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function generatePublicCode(): string {
+  return crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
 }
 
 async function sha256Hex(input: string): Promise<string> {

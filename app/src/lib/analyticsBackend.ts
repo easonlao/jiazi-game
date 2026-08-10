@@ -16,13 +16,23 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { TelemetryEvent } from '@core/telemetry';
 
+/** 服务端自动 provision 的默认占位名（未设置自定义用户名） */
+export const DEFAULT_PLACEHOLDER_DISPLAY_NAME = '玩家';
+
 /** 玩家公开身份（不包含恢复码） */
 export interface PlayerIdentity {
   /** 内部档案 id（player_profiles.id；RLS 经 player_identity_links 关联 auth user） */
   player_id: string;
   /** 不可变的公开 Jiazi ID（排行榜展示用） */
   public_player_id: string;
+  /** 受数据库唯一约束的短公开编码（排行榜展示用） */
+  public_code: string;
   display_name: string;
+  /**
+   * 云端上榜资格：设置过非空用户名后为 true。
+   * 自动 provision 的占位"玩家"为 false，终局分数只能写入本地榜。
+   */
+  leaderboard_eligible: boolean;
 }
 
 /** provision 一次性返回：公开身份 + 恢复码（仅此一次） */
@@ -54,6 +64,7 @@ export interface LeaderboardSubmission {
 /** 云端排行榜条目（公开安全字段） */
 export interface CloudLeaderboardEntry {
   public_player_id: string;
+  public_code: string;
   display_name: string;
   score: number;
   date: string;
@@ -94,9 +105,20 @@ function parsePlayerIdentity(data: unknown): PlayerIdentity | null {
   if (!isRecord(data)) return null;
   const player_id = requireString(data.player_id, 'player_id');
   const public_player_id = requireString(data.public_player_id, 'public_player_id');
+  const public_code = requireString(data.public_code, 'public_code');
   const display_name = requireString(data.display_name, 'display_name');
   if (!player_id || !public_player_id || display_name === null) return null;
-  return { player_id, public_player_id, display_name };
+  const leaderboard_eligible =
+    typeof data.leaderboard_eligible === 'boolean'
+      ? data.leaderboard_eligible
+      : display_name.trim().length > 0 && display_name !== DEFAULT_PLACEHOLDER_DISPLAY_NAME;
+  return {
+    player_id,
+    public_player_id,
+    public_code: public_code ?? public_player_id.replace(/-/g, '').slice(0, 12).toUpperCase(),
+    display_name,
+    leaderboard_eligible,
+  };
 }
 
 export class SupabaseAnalyticsBackend implements AnalyticsBackend {
@@ -216,26 +238,46 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     const publicIds = data
       .map((row) => (row as { public_player_id?: unknown }).public_player_id)
       .filter((v): v is string => typeof v === 'string' && v.length > 0);
-    const displayNames = new Map<string, string>();
+    const profilesByPublicId = new Map<
+      string,
+      { public_code: string; display_name: string; leaderboard_eligible: boolean }
+    >();
     if (publicIds.length > 0) {
       const { data: profiles, error: profilesError } = await this.client
         .from('player_profiles')
-        .select('public_player_id, display_name')
+        .select('public_player_id, public_code, display_name, leaderboard_eligible')
         .in('public_player_id', publicIds);
       if (profilesError) throw normalizeError(profilesError);
       for (const profile of profiles ?? []) {
-        const p = profile as { public_player_id?: unknown; display_name?: unknown };
+        const p = profile as {
+          public_player_id?: unknown;
+          public_code?: unknown;
+          display_name?: unknown;
+          leaderboard_eligible?: unknown;
+        };
         if (typeof p.public_player_id === 'string' && typeof p.display_name === 'string') {
-          displayNames.set(p.public_player_id, p.display_name);
+          profilesByPublicId.set(p.public_player_id, {
+            public_code:
+              typeof p.public_code === 'string'
+                ? p.public_code
+                : p.public_player_id.replace(/-/g, '').slice(0, 12).toUpperCase(),
+            display_name: p.display_name,
+            leaderboard_eligible: p.leaderboard_eligible === true,
+          });
         }
       }
     }
-    return data.map((row) => {
+    return data.flatMap((row) => {
       const r = row as { public_player_id?: unknown; score?: unknown; created_at?: unknown };
       const public_player_id = String(r.public_player_id ?? '');
+      const profile = profilesByPublicId.get(public_player_id);
+      // Hide legacy rows created before the username gate, even if they remain
+      // in the table. New inserts are blocked by RLS and the DB trigger.
+      if (!profile?.leaderboard_eligible || profile.display_name.trim().length === 0) return [];
       return {
         public_player_id,
-        display_name: displayNames.get(public_player_id) ?? '',
+        public_code: profile.public_code,
+        display_name: profile.display_name,
         score: Number(r.score ?? 0),
         date: String(r.created_at ?? ''),
       };

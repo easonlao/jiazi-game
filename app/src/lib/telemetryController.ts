@@ -5,7 +5,7 @@
  * - 统一管理同意书（consent）与匿名身份（identity）状态并持久化；
  * - 把游戏生命周期信号转成白名单遥测事件，入队批量上传；
  * - 会话（session）生命周期管理：start/end/abandon/pagehide；
- * - 游戏结束向云端排行榜提交分数（娱乐性·未认证榜单）；
+ * - 游戏结束向云端排行榜提交分数（仅已设置用户名的身份）；
  * - 所有遥测操作均为 best-effort：任何失败都不抛给游戏主流程。
  *
  * 安全：
@@ -117,7 +117,16 @@ function readIdentity(storage: StorageProvider): PlayerIdentity | null {
   return {
     player_id: p.player_id,
     public_player_id: p.public_player_id,
+    public_code:
+      typeof p.public_code === 'string'
+        ? p.public_code
+        : p.public_player_id.replace(/-/g, '').slice(0, 12).toUpperCase(),
     display_name: p.display_name,
+    // 兼容旧版本地身份：历史上只有非默认名称才代表玩家主动设置过名称。
+    leaderboard_eligible:
+      typeof p.leaderboard_eligible === 'boolean'
+        ? p.leaderboard_eligible
+        : p.display_name.trim().length > 0 && p.display_name !== '玩家',
   };
 }
 
@@ -260,7 +269,9 @@ export class TelemetryController {
       const identity: PlayerIdentity = {
         player_id: result.player_id,
         public_player_id: result.public_player_id,
+        public_code: result.public_code,
         display_name: result.display_name,
+        leaderboard_eligible: result.leaderboard_eligible,
       };
       writeIdentity(this.storage, identity);
       writeSessionRecoveryCode(result.recovery_code);
@@ -302,6 +313,7 @@ export class TelemetryController {
     try {
       await this.backend.updateDisplayName(this.state.identity.player_id, trimmed);
       const next = { ...this.state.identity, display_name: trimmed };
+      next.leaderboard_eligible = true;
       writeIdentity(this.storage, next);
       this.setState({ identity: next, error: null });
       return true;
@@ -447,7 +459,7 @@ export class TelemetryController {
     score: number,
   ): Promise<void> {
     const identity = this.state.identity;
-    if (!identity || !session?.session_id) return;
+    if (!identity || !identity.leaderboard_eligible || !identity.display_name.trim() || !session?.session_id) return;
     await this.backend.submitLeaderboard(identity.player_id, {
       public_player_id: identity.public_player_id,
       score: Math.round(score * 10) / 10,

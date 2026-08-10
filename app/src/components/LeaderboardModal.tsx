@@ -4,7 +4,7 @@ import { useGameStore } from '../store';
 /**
  * 排行榜弹窗：
  * - 本地榜：展示历史最高分记录（按分数降序，最多 10 条）。
- * - 云端娱乐榜：展示云端公开成绩（名称 + Jiazi ID 前 8 位 + 分数）。
+ * - 云端娱乐榜：展示已设置用户名玩家的公开成绩（用户名 + 唯一公开编码 + 分数）。
  *   该榜单分数由客户端上报、未做作弊校验，仅供娱乐参考。
  */
 export function LeaderboardModal() {
@@ -74,12 +74,14 @@ export function LeaderboardModal() {
                     }`}>
                       {i + 1}
                     </span>
-                    <span className="truncate font-medium text-ink">
-                      {entry.display_name || '未命名玩家'}
-                    </span>
-                    <span className="shrink-0 rounded bg-wood-light/40 px-1.5 py-0.5 font-mono tracking-wider text-[10px] text-ink">
-                      {entry.public_player_id.slice(0, 8)}
-                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-ink">
+                        {entry.display_name || '未命名玩家'}
+                      </div>
+                      <div className="font-mono text-[10px] tracking-wider text-ink-light">
+                        ID {entry.public_code}
+                      </div>
+                    </div>
                   </div>
                   <span className="font-bold text-gold shrink-0">{entry.score.toFixed(1)}</span>
                 </div>
