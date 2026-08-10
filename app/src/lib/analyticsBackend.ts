@@ -43,6 +43,9 @@ export interface ProvisionResult extends PlayerIdentity {
 /** game_sessions 行（按 (player_id, client_session_id) upsert 收敛） */
 export interface SessionUpsert {
   session_id: string;
+  /** 客户端原始会话开始时间；必须携带，避免 ended_at >= started_at 约束
+   *  因数据库默认 now() 晚于客户端 ended_at 而失败（异步时序竞态）。 */
+  started_at: string;
   status: 'started' | 'running' | 'completed' | 'abandoned';
   rounds_completed: number;
   final_score: number;
@@ -198,6 +201,7 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
           player_id: playerId,
           id: session.session_id,
           client_session_id: session.session_id,
+          started_at: session.started_at,
           status: session.status,
           rounds_completed: session.rounds_completed,
           final_score: session.final_score,

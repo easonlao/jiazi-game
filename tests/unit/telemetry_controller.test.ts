@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
-import type { AnalyticsBackend } from '../../app/src/lib/analyticsBackend';
+import type { AnalyticsBackend, SessionUpsert } from '../../app/src/lib/analyticsBackend';
 import type { StorageProvider } from '../../app/src/core/StorageProvider';
 
 class MemoryStorage implements StorageProvider {
@@ -129,5 +129,54 @@ describe('TelemetryController leaderboard eligibility', () => {
         rules_version: '3',
       }),
     );
+  });
+
+  it('game_sessions upsert 携带客户端原始 started_at，保证 ended_at >= started_at', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    expect(controller.startSession(meta)).toBe(true);
+
+    await vi.waitFor(() => expect(backend.upsertSession).toHaveBeenCalledTimes(1));
+    const startCall = backend.upsertSession.mock.calls[0][1] as SessionUpsert;
+    expect(startCall.started_at).toBeTypeOf('string');
+
+    controller.endSession({ reason: 'game_over', rounds: 60, final_score: 1200, margin_call_count: 0 });
+
+    await vi.waitFor(() => expect(backend.upsertSession).toHaveBeenCalledTimes(2));
+    const endCall = backend.upsertSession.mock.calls[1][1] as SessionUpsert;
+    expect(endCall.started_at).toBe(startCall.started_at);
+    expect(endCall.ended_at).toBeTypeOf('string');
+    expect(new Date(endCall.ended_at as string).getTime()).toBeGreaterThanOrEqual(
+      new Date(endCall.started_at).getTime(),
+    );
+  });
+
+  it('game_sessions upsert 失败时，eligible 对局仍提交排行榜（不提前中断）', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    backend.upsertSession.mockRejectedValueOnce(new Error('check constraint game_sessions_check'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    expect(controller.startSession(meta)).toBe(true);
+    controller.endSession({ reason: 'game_over', rounds: 60, final_score: 1200, margin_call_count: 0 });
+
+    await vi.waitFor(() => expect(backend.submitLeaderboard).toHaveBeenCalledTimes(1));
+    expect(backend.submitLeaderboard).toHaveBeenCalledWith(
+      'player-1',
+      expect.objectContaining({
+        public_player_id: 'public-1',
+        score: 1200,
+        rules_version: '3',
+      }),
+    );
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

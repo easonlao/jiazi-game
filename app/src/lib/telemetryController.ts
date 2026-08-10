@@ -341,7 +341,9 @@ export class TelemetryController {
       consent_version: this.state.consent.version,
       platform: 'web',
     });
-    void this.upsertSessionNow(this.session).catch(() => {});
+    void this.upsertSessionNow(this.session).catch((e) => {
+      console.warn('[telemetry] game_sessions 会话创建 upsert 失败（结束时仍会再次尝试）', e);
+    });
     return true;
   }
 
@@ -425,6 +427,9 @@ export class TelemetryController {
     const status = !end?.ended ? 'started' : end.abandoned ? 'abandoned' : 'completed';
     await this.backend.upsertSession(playerId, {
       session_id: session.session_id,
+      // 携带客户端原始 started_at：约束 ended_at >= started_at 依赖同一时钟
+      // 来源，避免数据库默认 now() 晚于客户端 ended_at 导致 check 失败。
+      started_at: session.started_at,
       status,
       rounds_completed: end?.rounds ?? this.sessionProgress.rounds,
       // 汇总字段保持数据库的非负约束；负分原值由 session_end 与
@@ -443,14 +448,22 @@ export class TelemetryController {
     result: SessionEndResult,
     abandoned: boolean,
   ): Promise<void> {
-    await this.upsertSessionNow(session, {
-      ended: true,
-      abandoned,
-      rounds: result.rounds,
-      final_score: result.final_score,
-    });
+    try {
+      await this.upsertSessionNow(session, {
+        ended: true,
+        abandoned,
+        rounds: result.rounds,
+        final_score: result.final_score,
+      });
+    } catch (e) {
+      console.warn('[telemetry] game_sessions upsert 失败，仍尝试提交排行榜', e);
+    }
     if (!abandoned && this.state.identity) {
-      await this.submitLeaderboard(session, result.final_score);
+      try {
+        await this.submitLeaderboard(session, result.final_score);
+      } catch (e) {
+        console.warn('[telemetry] submitLeaderboard 失败', e);
+      }
     }
   }
 
