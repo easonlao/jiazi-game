@@ -54,19 +54,20 @@ let _telemetryController: TelemetryController | null = null;
 let _pendingAutoUnlockToast: string | null = null;
 
 /**
- * 显式实验入口：普通 URL 永远使用 base 规则；只有手动附加 ?volatility=1 才启用
- * v3 conflict_banded 交易规则。普通 URL 永远使用 base 规则；该开关用于体验
- * 交易主导的趋势 UI，不代表普通生产路径自动升级旧存档。
+ * 生产默认使用 v3 conflict_banded 交易规则；?volatility=0 保留基础规则兼容入口。
+ * 旧存档仍由 TurnManager 按存档声明的 rulesVersion 读取，不会被入口默认值强行升级。
  */
-function isVolatilityExperimentEnabled(): boolean {
-  return typeof window !== 'undefined'
-    && new URLSearchParams(window.location.search).get('volatility') === '1';
+function isVolatilityEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('volatility') !== '0';
 }
 
-function getTelemetryGameMeta() {
-  const volatility = isVolatilityExperimentEnabled();
+function getTelemetryGameMeta(tm?: TurnManager) {
+  const rulesVersion = tm?.getRulesVersion();
+  const resolvedRulesVersion = rulesVersion ?? (isVolatilityEnabled() ? RULES_VERSION_TRADE : 1);
+  const volatility = resolvedRulesVersion !== 1;
   return {
-    rules_version: volatility ? String(RULES_VERSION_TRADE) : String(1),
+    rules_version: String(resolvedRulesVersion),
     game_mode: volatility ? 'volatility_trade' : 'base',
     volatility_enabled: volatility,
   };
@@ -486,7 +487,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     try {
       const tm = new TurnManager(undefined, undefined, {
         storage: localStorageProvider,
-        ...(isVolatilityExperimentEnabled()
+        ...(isVolatilityEnabled()
           ? {
             rulesVersion: RULES_VERSION_TRADE,
             scoreRules: TRADE_SCORE_RULES,
@@ -600,7 +601,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       pendingAction: null, settlementPreview: null,
     });
     // 遥测：开启新局会话（未同意/云端不可用时静默 no-op，不阻塞开局；读档不经过此路径）
-    _telemetryController?.startSession(getTelemetryGameMeta());
+    _telemetryController?.startSession(getTelemetryGameMeta(tm));
   },
 
   loadGameFromSave() {
@@ -620,7 +621,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, hasSave: false });
       // 刷新/换设备读档后建立新的分析会话；上一页若仍有会话则先标记为放弃。
       _telemetryController?.abandonSession('reset');
-      _telemetryController?.startSession(getTelemetryGameMeta());
+      _telemetryController?.startSession(getTelemetryGameMeta(tm));
       return ok;
     }
     // 读档失败：区分「存档版本过新」与一般失败（App 不再无条件弹"继续游戏"）
@@ -670,7 +671,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   async refreshCloudLeaderboard() {
     const controller = _telemetryController;
     if (!controller) return;
-    set({ cloudLeaderboard: await controller.fetchLeaderboard(50, getTelemetryGameMeta().rules_version) });
+    set({ cloudLeaderboard: await controller.fetchLeaderboard(50, getTelemetryGameMeta(get().turnManager ?? undefined).rules_version) });
   },
 
   openDashboard() {
