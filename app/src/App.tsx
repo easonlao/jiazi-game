@@ -4,6 +4,7 @@ import { TopPanel } from './components/TopPanel';
 import { QiBar } from './components/QiBar';
 import { PublicCards } from './components/PublicCards';
 import { HandCards } from './components/HandCards';
+import { SettlementAnimation } from './components/SettlementAnimation';
 import { ActionBar } from './components/ActionBar';
 import { SettlementPreviewModal } from './components/SettlementPreviewModal';
 import { SeasonTransition } from './components/SeasonTransition';
@@ -80,6 +81,7 @@ export default function App() {
             <div className="mx-4 border-t-2 border-dashed border-wood-light" />
 
             <HandCards />
+            <SettlementAnimation />
 
             {/* 弹性占位：内容不满屏时把操作栏推到底部；内容超出时收缩为 0（配合滚动） */}
             <div className="flex-1 min-h-0" />

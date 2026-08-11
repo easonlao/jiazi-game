@@ -69,7 +69,7 @@ export function TopPanel() {
           行迹
         </button>
       )}
-      <div className="score-panel relative shrink-0 rounded-lg border border-gold/35 bg-gold/5 px-2 py-1 text-right">
+      <div data-score-panel className="score-panel relative shrink-0 rounded-lg border border-gold/35 bg-gold/5 px-2 py-1 text-right">
         <div className="text-xl font-black leading-6 text-gold tabular-nums">
           {score.toFixed(1)} 修为
         </div>

@@ -63,6 +63,9 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByText('第 1 回合 / 60', { exact: true })).toBeVisible();
     await expect(page.getByText('季内第 1 回合', { exact: true })).toBeVisible();
     await expect(page.getByText(/季内 \d+\//)).toHaveCount(0);
+    const qiFlow = page.getByTestId('qi-settlement-flow');
+    await expect(qiFlow).toContainText('下回合气路');
+    await expect(qiFlow).toContainText('+20 调息');
     // 验证操作按钮可见（使用 role 定位，避免子文本干扰）
     await expect(page.getByRole('button', { name: /纳灵/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /释灵/ })).toBeVisible();
@@ -240,6 +243,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 验证 Toast 出现「调息」
     await expect(page.getByText('调息（下回合额外回神）')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('settlement-qi-animation')).toHaveCount(0);
     await expect(page.getByText('第 2 回合 / 60', { exact: true })).toBeVisible();
     await expect(page.getByText(/本回合 [+-]?[0-9]+\.[0-9] 修为/)).toBeVisible();
   });
@@ -256,6 +260,12 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
+
+    await expect(page.getByTestId('settlement-animation')).toBeVisible({ timeout: 2_000 });
+    await expect(page.getByTestId('settlement-card-flight').first()).toBeVisible({ timeout: 2_000 });
+    const qiAnimation = page.getByTestId('settlement-qi-animation');
+    await expect(qiAnimation).toHaveText(/−\d+ 神识/, { timeout: 2_500 });
+    await expect(qiAnimation).toHaveText(/\+\d+ 神识/, { timeout: 3_500 });
 
     // 验证丹田数增加
     const handHeader = page.getByText(/丹田/);

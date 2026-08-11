@@ -43,13 +43,23 @@ export function HandCards() {
       </h3>
 
       {!hasCards ? (
-        <div className="text-center text-ink-light text-xs py-4 border border-dashed border-wood-light rounded-lg">
+        <div
+          className="relative flex min-h-24 items-center justify-center text-center text-ink-light text-xs border border-dashed border-wood-light rounded-lg"
+        >
           三丹田空置 · 纳灵公共灵气开始炼化
+          {marginCallEvent?.detail?.marginCallDetails.length ? (
+            <div
+              className="pointer-events-none absolute inset-x-0 top-1/2 grid h-24 -translate-y-1/2 grid-cols-3 gap-1.5"
+              aria-hidden="true"
+            >
+              {hand.map((_, index) => <span key={index} data-hand-card-slot={index} />)}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
           {hand.map((slot: HandSlot | null, i: number) => {
-            if (!slot) return <EmptySlot key={i} shattered={shatteredSlots.has(i)} />;
+            if (!slot) return <EmptySlot key={i} slotIndex={i} shattered={shatteredSlots.has(i)} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
@@ -71,6 +81,7 @@ export function HandCards() {
               <HandCard
                 key={i}
                 card={slot.card}
+                slotIndex={i}
                 score={score}
                 buyScore={slot.buyScore}
                 selected={selectedHandCard === i}
@@ -96,9 +107,10 @@ export function HandCards() {
   );
 }
 
-function EmptySlot({ shattered = false }: { shattered?: boolean }) {
+function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shattered?: boolean }) {
   return (
     <div
+      data-hand-card-slot={slotIndex}
       className={`flex items-center justify-center rounded-lg border-2 border-dashed border-wood-light bg-white/50 h-24 ${
         shattered ? 'mc-shatter-slot' : 'slot-breathe'
       }`}

@@ -6,6 +6,7 @@ const QI_COST_COLOR = 'text-sky-600';
 
 interface HandCardProps {
   card: JiaziCard;
+  slotIndex: number;
   score: number;
   /** 纳灵时记录的评分，用于和当前评分对应展示。 */
   buyScore: number;
@@ -33,6 +34,7 @@ interface HandCardProps {
  */
 export function HandCard({
   card,
+  slotIndex,
   score,
   buyScore,
   selected,
@@ -48,6 +50,8 @@ export function HandCard({
 }: HandCardProps) {
   return (
     <div
+      data-hand-card-slot={slotIndex}
+      data-card-name={card.name}
       className={`rounded-lg ${shattered ? 'mc-shatter-slot' : ''}`}
     >
       <CardVisual

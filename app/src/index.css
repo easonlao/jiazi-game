@@ -146,12 +146,73 @@ html, body, #root {
 }
 .float-up { animation: floatUp 1.3s ease-out forwards; }
 
+/* 回合结算：炼化收益从丹田飞向顶部修为。神识扣除/回神由 QiBar 按顺序显示。 */
+@keyframes settlementCardFlight {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.72) rotate(-3deg); }
+  14% { opacity: 1; transform: translate(-50%, -50%) scale(1.05) rotate(0deg); }
+  76% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--settlement-flight-x)), calc(-50% + var(--settlement-flight-y))) scale(0.88) rotate(2deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--settlement-flight-x)), calc(-50% + var(--settlement-flight-y))) scale(0.45) rotate(0deg);
+  }
+}
+.settlement-card-flight {
+  position: fixed;
+  z-index: 70;
+  min-width: 3.25rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: rgba(250, 246, 238, 0.96);
+  box-shadow: 0 3px 12px rgba(71, 45, 39, 0.18);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  animation: settlementCardFlight 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes qiSettlementFx {
+  0% { opacity: 0; transform: translateY(5px) scale(0.92); }
+  18% { opacity: 1; transform: translateY(0) scale(1.04); }
+  75% { opacity: 1; transform: translateY(-2px) scale(1); }
+  100% { opacity: 0; transform: translateY(-10px) scale(0.98); }
+}
+.qi-settlement-fx {
+  position: absolute;
+  left: 4.6rem;
+  top: calc(100% + 1px);
+  z-index: 20;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(250, 246, 238, 0.96);
+  box-shadow: 0 2px 8px rgba(71, 45, 39, 0.14);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: qiSettlementFx 0.58s ease-out both;
+}
+.qi-settlement-cost { color: #0284c7; border: 1px solid rgba(2, 132, 199, 0.4); }
+.qi-settlement-backlash { color: #e53935; border: 1px solid rgba(229, 57, 53, 0.45); }
+.qi-settlement-recovery { color: #2e9f48; border: 1px solid rgba(46, 159, 72, 0.42); }
+
 /* 气条低气警告呼吸 */
 @keyframes qiBreath {
   0%, 100% { filter: brightness(1); }
   50% { filter: brightness(1.45); }
 }
 .qi-breath { animation: qiBreath 0.8s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .settlement-card-flight,
+  .qi-settlement-fx { animation: none; }
+}
 
 /* 结算弹窗淡入 + 轻微上浮 */
 @keyframes settleIn {
