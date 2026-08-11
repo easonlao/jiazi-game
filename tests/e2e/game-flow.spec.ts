@@ -63,9 +63,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByText('第 1 回合 / 60', { exact: true })).toBeVisible();
     await expect(page.getByText('季内第 1 回合', { exact: true })).toBeVisible();
     await expect(page.getByText(/季内 \d+\//)).toHaveCount(0);
-    const qiFlow = page.getByTestId('qi-settlement-flow');
-    await expect(qiFlow).toContainText('下回合神识流转');
-    await expect(qiFlow).toContainText('+20 调息');
+    // 行动尚未选择时不展示默认的下回合神识预测，避免把调息奖励当成必然结果。
+    await expect(page.getByTestId('qi-settlement-flow')).toHaveCount(0);
     // 验证操作按钮可见（使用 role 定位，避免子文本干扰）
     await expect(page.getByRole('button', { name: /纳灵/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /释灵/ })).toBeVisible();

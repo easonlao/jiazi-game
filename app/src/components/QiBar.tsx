@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store';
 
-/** 神识消耗统一色（2026-08-06 issue 01 P3：神识消耗=资源冷色，修为才用红绿） */
-const QI_COST_COLOR = 'text-sky-600';
-
 interface Floater {
   id: number;
   delta: number;
@@ -21,7 +18,7 @@ interface QiSettlementAnimation {
 interface QueuedQiSettlement {
   holdQiCost: number;
   recoveryQi: number;
-  hasHoldingSettlement: boolean;
+  holdItemCount: number;
   hasMarginCall: boolean;
 }
 
@@ -31,8 +28,6 @@ export function QiBar() {
   const currentRound = useGameStore((s) => s.currentRound);
   const totalRounds = useGameStore((s) => s.totalRounds);
   const baseRecovery = useGameStore((s) => s.baseRecovery);
-  const turnManager = useGameStore((s) => s.turnManager);
-  const previewWaitQi = useGameStore((s) => s.previewWaitQi);
   const qiDelta = useGameStore((s) => s.qiDelta);
   const roundEvent = useGameStore((s) => s.roundEvent);
   const lastSettlement = useGameStore((s) => s.lastSettlement);
@@ -69,11 +64,11 @@ export function QiBar() {
     const settlement = lastSettlement?.round === currentRound ? lastSettlement : null;
     const holdQiCost = settlement?.holdQiCost ?? 0;
     const recoveryQi = (settlement?.baseQiRecover ?? baseRecovery) + (settlement?.waitQiRecover ?? 0);
-    const hasHoldingSettlement = (settlement?.holdItems.length ?? 0) > 0;
+    const holdItemCount = settlement?.holdItems.length ?? 0;
     const hasMarginCall = settlement?.marginCallTriggered ?? false;
-    // 空丹田时保留原有净变化飘字；分段动画只为解释「卡牌炼化 → 耗神」这条气路。
-    if (!hasHoldingSettlement && holdQiCost <= 0 && !hasMarginCall) return;
-    settlementQueue.current.push({ holdQiCost, recoveryQi, hasHoldingSettlement, hasMarginCall });
+    // 空丹田时保留原有净变化飘字；有持仓时将炼化耗神与修为飞点置于同一阶段，随后才回神。
+    if (holdItemCount === 0 && holdQiCost <= 0 && !hasMarginCall) return;
+    settlementQueue.current.push({ holdQiCost, recoveryQi, holdItemCount, hasMarginCall });
 
     // 不让下一回合的状态更新取消上一回合尚未到达的回神阶段。
     if (!settlementRunning.current) {
@@ -87,26 +82,28 @@ export function QiBar() {
         }
 
         const hasQiCost = next.holdQiCost > 0;
-        const startDelay = next.hasHoldingSettlement ? 900 : 0;
-        settlementTimer.current = window.setTimeout(() => {
-          const phases: QiSettlementPhase[] = [];
-          if (hasQiCost) phases.push('cost');
-          if (next.hasMarginCall) phases.push('backlash');
-          phases.push('recovery');
-          let index = 0;
+        const phases: QiSettlementPhase[] = [];
+        if (hasQiCost) phases.push('cost');
+        if (next.hasMarginCall) phases.push('backlash');
+        phases.push('recovery');
+        let index = 0;
 
-          const showNextPhase = () => {
-            const phase = phases[index++];
-            if (!phase) {
-              setSettlementAnimation(null);
-              runNext();
-              return;
-            }
-            setSettlementAnimation({ id: roundEvent.id, phase, holdQiCost: next.holdQiCost, recoveryQi: next.recoveryQi });
-            settlementTimer.current = window.setTimeout(showNextPhase, phase === 'recovery' ? 650 : 520);
-          };
-          showNextPhase();
-        }, startDelay);
+        const showNextPhase = () => {
+          const phase = phases[index++];
+          if (!phase) {
+            setSettlementAnimation(null);
+            runNext();
+            return;
+          }
+          setSettlementAnimation({ id: roundEvent.id, phase, holdQiCost: next.holdQiCost, recoveryQi: next.recoveryQi });
+          // 与修为光点 0.9s 动画对齐：耗神阶段先与炼化同时出现，
+          // 多张牌错峰时等最后一个光点结束后再进入回神阶段。
+          const phaseDuration = phase === 'cost'
+            ? Math.max(900, 900 + Math.max(0, next.holdItemCount - 1) * 90)
+            : phase === 'recovery' ? 650 : 520;
+          settlementTimer.current = window.setTimeout(showNextPhase, phaseDuration);
+        };
+        showNextPhase();
       };
       runNext();
     }
@@ -119,13 +116,6 @@ export function QiBar() {
   }, []);
 
   const ratio = Math.max(0, Math.min(1, qi / maxQi));
-  const { afterQi, holdQiCost, lockedQiCost, willQiDeplete, willMarginCall } = previewWaitQi();
-  const currentHoldQiCost = turnManager?.getCurrentHoldQiCost() ?? 0;
-  const waitBonus = turnManager?.getWaitBonus() ?? 0;
-  const recoveryQi = baseRecovery + waitBonus;
-  // 调息预览使用下回合结算口径；没有持仓时回退到当前耗神值，避免气路信息消失。
-  const projectedHoldQiCost = holdQiCost > 0 ? holdQiCost : currentHoldQiCost;
-  const projectedLockedQiCost = lockedQiCost;
   const isFinalRound = currentRound >= totalRounds;
 
   // 当前神识归零即显示"神识耗尽"（不依赖反噬事件残留）
@@ -165,6 +155,7 @@ export function QiBar() {
           ))}
           {settlementAnimation && (
             <span
+              key={`${settlementAnimation.id}-${settlementAnimation.phase}`}
               className={`qi-settlement-fx qi-settlement-${settlementAnimation.phase}`}
               data-testid="settlement-qi-animation"
               aria-label={
@@ -172,7 +163,7 @@ export function QiBar() {
                   ? `炼化耗神 ${settlementAnimation.holdQiCost.toFixed(0)}`
                   : settlementAnimation.phase === 'backlash'
                     ? '反噬'
-                    : `调息恢复 ${settlementAnimation.recoveryQi.toFixed(0)}`
+                    : `回神 ${settlementAnimation.recoveryQi.toFixed(0)}`
               }
             >
               <span className="mr-1 text-[10px] font-normal text-ink-light">结算</span>
@@ -193,46 +184,10 @@ export function QiBar() {
         )}
       </div>
 
-      {/* 最后一回合：不再结算持仓，与"暂无持仓"区分 */}
-      {isFinalRound ? (
+      {/* 最后一回合：不再结算持仓 */}
+      {isFinalRound && (
         <div className="mb-1.5 text-xs text-ink-light">
           结束游戏，不再进行持仓结算
-        </div>
-      ) : projectedHoldQiCost > 0 || projectedLockedQiCost > 0 ? (
-        <div className="mb-1.5 space-y-0.5" data-testid="qi-settlement-flow">
-          <div className="text-[11px] text-ink-light">下回合神识流转</div>
-          <div
-            className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-tight tabular-nums"
-            aria-label="下回合神识结算路径"
-          >
-            <b className="text-ink">{qi.toFixed(0)}</b>
-            {projectedHoldQiCost > 0 && <span className={QI_COST_COLOR}>−{projectedHoldQiCost.toFixed(0)} 炼化</span>}
-            {projectedLockedQiCost > 0 && <span className="text-amber-700">−{projectedLockedQiCost.toFixed(0)} 锁定神识</span>}
-            <span className="text-wood-light">→</span>
-            <b className={willQiDeplete ? 'text-qi-critical' : 'text-ink'}>{(qi - projectedHoldQiCost - projectedLockedQiCost).toFixed(0)}</b>
-            {willMarginCall && <span className="font-bold text-qi-critical">⚠ 反噬</span>}
-            <span className="text-wood-light">→</span>
-            <span className="font-semibold text-qi-full">+{recoveryQi.toFixed(0)} 调息</span>
-            {!willMarginCall && (
-              <>
-                <span className="text-wood-light">→</span>
-                <b className="text-qi-full">{afterQi.toFixed(0)}</b>
-              </>
-            )}
-          </div>
-          {willMarginCall && (
-            <div className="text-[10px] font-medium text-qi-critical">
-              先判反噬，再回神
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="mb-1 text-[11px] text-ink-light" data-testid="qi-settlement-flow">
-          下回合神识流转 <b className="text-ink tabular-nums">{qi.toFixed(0)}</b>
-          <span className="mx-1 text-wood-light">→</span>
-          <span className="font-semibold text-qi-full">+{recoveryQi.toFixed(0)} 调息</span>
-          <span className="mx-1 text-wood-light">→</span>
-          <b className="text-qi-full tabular-nums">{afterQi.toFixed(0)}</b>
         </div>
       )}
 
