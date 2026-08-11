@@ -59,6 +59,31 @@ describe('StorageProvider 注入', () => {
     expect(storage.snapshot()).toEqual({});
   });
 
+  it('终局存档不会被当作可继续对局，并会被安全清除', () => {
+    const svc = new GameSaveService(storage);
+    const snap: GameSnapshot = {
+      currentRound: 60,
+      state: 'game_over',
+      lastAction: 'wait',
+      qi: 0,
+      score: 120,
+      totalHoldEarnings: 0,
+      totalSellEarnings: 0,
+      totalBuys: 0,
+      totalSells: 0,
+      totalWaits: 60,
+      totalLeverageBuys: 0,
+      season: { index: 3, roundInSeason: 12, lengths: [12, 12, 12, 12] },
+      hand: [null, null, null],
+      pool: { deckIds: [], publicIds: [] },
+    };
+    svc.save(() => snap);
+
+    expect(svc.load(() => { throw new Error('终局存档不应导入'); })).toBe(false);
+    expect(svc.getLastLoadError()).toBe('game_over');
+    expect(svc.hasSave()).toBe(false);
+  });
+
   it('LeaderboardService 注入内存实现可记录与读取', () => {
     const lb = new LeaderboardService(storage);
     lb.addEntry(100);

@@ -21,6 +21,8 @@ export type GameSaveLoadError =
   | 'schema_too_new'
   /** 存档声明未知 rulesVersion：拒绝读档、保留存档 */
   | 'rules_version_unsupported'
+  /** 已完成的终局存档：拒绝继续并清除历史终局快照 */
+  | 'game_over'
   /** 格式损坏 / 无效坏档 / importSnapshot 抛错：拒绝读档（qi 无效、Round 1 坏档会清理存档） */
   | 'invalid_or_import_failed';
 
@@ -213,6 +215,15 @@ export class GameSaveService {
         console.warn(
           `[GameSaveService] 存档 rulesVersion=${data.rulesVersion} 不是支持的规则版本，拒绝读档（保留存档，不清理）`,
         );
+        return false;
+      }
+
+      // 终局不是可继续的活动对局。历史版本曾在终局后重新写回 game_over 快照，
+      // 这里做一次安全收敛，避免刷新后再次出现「继续游戏」并回到旧结算界面。
+      if (data.state === 'game_over') {
+        this.lastLoadError = 'game_over';
+        this.clear();
+        console.warn('[GameSaveService] 检测到已结束对局存档，已清除且不再继续');
         return false;
       }
 

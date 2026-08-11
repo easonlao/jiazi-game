@@ -700,10 +700,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       _telemetryController?.startSession(getTelemetryGameMeta(tm));
       return ok;
     }
-    // 读档失败：区分「存档版本过新」与一般失败（App 不再无条件弹"继续游戏"）
+    // 读档失败：区分「存档版本过新」、已结束存档与一般失败。
     const loadError = tm.getLastLoadError();
+    if (!tm.hasSave()) set({ hasSave: false });
     get().showToast(
-      loadError === 'schema_too_new' || loadError === 'rules_version_unsupported'
+      loadError === 'game_over'
+        ? '该对局已结束，请开始新游戏'
+        : loadError === 'schema_too_new' || loadError === 'rules_version_unsupported'
         ? '存档版本过新，请更新游戏'
         : '读档失败',
     );
@@ -1061,8 +1064,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     recordActionTelemetry(before, get(), tm, action, undefined, telemetrySessionId);
 
-    // 每次行动后自动存档
-    tm.saveGame();
+    // 每次行动后自动存档；终局回调已清除存档，不能把 game_over 快照重新写回。
+    if (tm.getState() === 'game_over') {
+      tm.clearSave();
+      set({ hasSave: false });
+    } else {
+      tm.saveGame();
+    }
 
     return true;
   },

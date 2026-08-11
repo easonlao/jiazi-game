@@ -29,7 +29,11 @@ export function GameOverModal() {
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
   const openDashboard = useGameStore((s) => s.openDashboard);
   const verificationState = useGameStore((s) => s.verificationState);
+  const telemetryState = useGameStore((s) => s.telemetryState);
   const retryVerification = useGameStore((s) => s.retryVerification);
+  const cloudIdentityReady = Boolean(
+    telemetryState?.consent?.granted && telemetryState.identity?.leaderboard_eligible,
+  );
 
   // 境界（纯分数结果）
   const review = evaluateGame({
@@ -137,23 +141,28 @@ export function GameOverModal() {
 
         {/* 云端校验状态：本地修为与本地榜已即时落榜；云端重放校验后台执行。
             校验完成前绝不暗示已上榜。 */}
-        {verificationState && (
+        {(verificationState || cloudIdentityReady) && (
           <div className="bg-white rounded-xl p-3 mb-3 shadow-sm text-left">
             <div className="text-xs font-bold font-serif text-ink mb-1.5">云端校验</div>
-            {verificationState.status === 'pending' && (
+            {!verificationState && cloudIdentityReady && (
+              <p className="text-xs text-qi-critical">
+                本局未进入云端校验，暂未提交云端榜；请确认使用最新生产入口后再开始新局。
+              </p>
+            )}
+            {verificationState?.status === 'pending' && (
               <p className="text-xs text-ink-light flex items-center gap-1.5">
                 <span className="inline-block w-2.5 h-2.5 rounded-full border-2 border-gold border-t-transparent animate-spin" />
                 校验中…（服务端重放验证中，通过后将计入云端榜）
               </p>
             )}
-            {verificationState.status === 'verified' && (
+            {verificationState?.status === 'verified' && (
               <p className="text-xs text-qi-full">
                 {verificationState.leaderboardSubmitted
                   ? `已校验${verificationState.score !== null ? `，修为 ${verificationState.score.toFixed(1)}` : ''}，已计入云端榜`
                   : '已校验，暂未上榜（设置昵称后方可上榜）'}
               </p>
             )}
-            {(verificationState.status === 'rejected' || verificationState.status === 'failed') && (
+            {(verificationState?.status === 'rejected' || verificationState?.status === 'failed') && (
               <div>
                 <p className="text-xs text-qi-critical">
                   {verificationState.status === 'rejected' ? '云端校验未通过' : '云端校验失败（网络/服务异常）'}

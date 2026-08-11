@@ -392,16 +392,11 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 验证分数显示（在游戏结束弹窗内）
     await expect(gameOverModal.getByText('最终修为', { exact: true })).toBeVisible();
 
-    // 验证重新开始按钮
-    const restartBtn = gameOverModal.getByText('再入轮回', { exact: true });
-    await expect(restartBtn).toBeVisible();
-
-    // 点击重新开始
-    await restartBtn.click();
-
-    // 验证回到开始界面
+    // 终局后刷新也不能把 game_over 快照当作可继续存档
+    await page.reload();
     const newStartBtn = page.getByText('开始游戏', { exact: true });
     await expect(newStartBtn).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('继续游戏', { exact: true })).toHaveCount(0);
 
     // 重新开始新一局：周遭灵气必须正常浮现
     // （回归：牌池 reset 只清空不重建会导致新一局无牌可买，界面卡死在"春季"）
