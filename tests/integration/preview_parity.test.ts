@@ -53,6 +53,19 @@ describe('等待预览与真实结算一致性（Codex 第二轮 P1）', () => {
     expect(useGameStore.getState().qi).toBe(80);
   });
 
+  it('锁定/解锁后：神识下回合扣除预览立即增减锁定成本', async () => {
+    const tm = await freshGame(6);
+    (tm as any).qiManager.setQi(40);
+    useGameStore.getState()._sync();
+    expect(useGameStore.getState().previewWaitQi().lockedQiCost).toBe(0);
+
+    useGameStore.getState().toggleLockCard(0);
+    expect(useGameStore.getState().previewWaitQi().lockedQiCost).toBe(TurnManager.LOCK_COST_PER_CARD);
+
+    useGameStore.getState().toggleLockCard(0);
+    expect(useGameStore.getState().previewWaitQi().lockedQiCost).toBe(0);
+  });
+
   it('最后一回合：等待预览返回当前气、零气耗（等待直接结束，不回气）', async () => {
     const tm = await freshGame(2);
     // 直接推进到最后一回合（第 60 回合）

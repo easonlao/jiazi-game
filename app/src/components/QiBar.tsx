@@ -18,6 +18,13 @@ interface QiSettlementAnimation {
   recoveryQi: number;
 }
 
+interface QueuedQiSettlement {
+  holdQiCost: number;
+  recoveryQi: number;
+  hasHoldingSettlement: boolean;
+  hasMarginCall: boolean;
+}
+
 export function QiBar() {
   const qi = useGameStore((s) => s.qi);
   const maxQi = useGameStore((s) => s.maxQi);
@@ -35,6 +42,9 @@ export function QiBar() {
   const lastEventId = useRef(0);
   const floaterSeq = useRef(0);
   const lastRoundEventId = useRef(0);
+  const settlementQueue = useRef<QueuedQiSettlement[]>([]);
+  const settlementRunning = useRef(false);
+  const settlementTimer = useRef<number | null>(null);
 
   useEffect(() => {
     const hasAnimatedSettlement = Boolean(
@@ -63,33 +73,59 @@ export function QiBar() {
     const hasMarginCall = settlement?.marginCallTriggered ?? false;
     // 空丹田时保留原有净变化飘字；分段动画只为解释「卡牌炼化 → 耗神」这条气路。
     if (!hasHoldingSettlement && holdQiCost <= 0 && !hasMarginCall) return;
-    const animationId = roundEvent.id;
-    const timers: number[] = [];
+    settlementQueue.current.push({ holdQiCost, recoveryQi, hasHoldingSettlement, hasMarginCall });
 
-    const setPhase = (phase: QiSettlementPhase) => {
-      setSettlementAnimation({ id: animationId, phase, holdQiCost, recoveryQi });
-    };
+    // 不让下一回合的状态更新取消上一回合尚未到达的回神阶段。
+    if (!settlementRunning.current) {
+      settlementRunning.current = true;
+      const runNext = () => {
+        const next = settlementQueue.current.shift();
+        if (!next) {
+          settlementRunning.current = false;
+          settlementTimer.current = null;
+          return;
+        }
 
-    // 丹田炼化飞行约 0.9 秒完成后，再显示神识扣除；空丹田则立即进入气量结算。
-    const hasQiCost = holdQiCost > 0;
-    const costDelay = hasHoldingSettlement ? 900 : 0;
-    if (hasQiCost) timers.push(window.setTimeout(() => setPhase('cost'), costDelay));
-    const backlashDelay = costDelay + (hasQiCost ? 520 : 0);
-    const recoveryDelay = backlashDelay + (hasMarginCall ? 500 : 0);
-    if (hasMarginCall) timers.push(window.setTimeout(() => setPhase('backlash'), backlashDelay));
-    timers.push(window.setTimeout(() => setPhase('recovery'), recoveryDelay));
-    timers.push(window.setTimeout(() => setSettlementAnimation(null), recoveryDelay + 650));
+        const hasQiCost = next.holdQiCost > 0;
+        const startDelay = next.hasHoldingSettlement ? 900 : 0;
+        settlementTimer.current = window.setTimeout(() => {
+          const phases: QiSettlementPhase[] = [];
+          if (hasQiCost) phases.push('cost');
+          if (next.hasMarginCall) phases.push('backlash');
+          phases.push('recovery');
+          let index = 0;
 
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [roundEvent, lastSettlement, currentRound, totalRounds, baseRecovery]);
+          const showNextPhase = () => {
+            const phase = phases[index++];
+            if (!phase) {
+              setSettlementAnimation(null);
+              runNext();
+              return;
+            }
+            setSettlementAnimation({ id: roundEvent.id, phase, holdQiCost: next.holdQiCost, recoveryQi: next.recoveryQi });
+            settlementTimer.current = window.setTimeout(showNextPhase, phase === 'recovery' ? 650 : 520);
+          };
+          showNextPhase();
+        }, startDelay);
+      };
+      runNext();
+    }
+  }, [roundEvent]);
+
+  useEffect(() => () => {
+    if (settlementTimer.current !== null) window.clearTimeout(settlementTimer.current);
+    settlementQueue.current = [];
+    settlementRunning.current = false;
+  }, []);
 
   const ratio = Math.max(0, Math.min(1, qi / maxQi));
-  const { afterQi, holdQiCost, willQiDeplete, willMarginCall } = previewWaitQi();
+  const { afterQi, holdQiCost, lockedQiCost, willQiDeplete, willMarginCall } = previewWaitQi();
   const currentHoldQiCost = turnManager?.getCurrentHoldQiCost() ?? 0;
   const waitBonus = turnManager?.getWaitBonus() ?? 0;
   const recoveryQi = baseRecovery + waitBonus;
   // 调息预览使用下回合结算口径；没有持仓时回退到当前耗神值，避免气路信息消失。
   const projectedHoldQiCost = holdQiCost > 0 ? holdQiCost : currentHoldQiCost;
+  const projectedLockedQiCost = lockedQiCost;
   const isFinalRound = currentRound >= totalRounds;
 
   // 当前神识归零即显示"神识耗尽"（不依赖反噬事件残留）
@@ -162,17 +198,18 @@ export function QiBar() {
         <div className="mb-1.5 text-xs text-ink-light">
           结束游戏，不再进行持仓结算
         </div>
-      ) : projectedHoldQiCost > 0 ? (
+      ) : projectedHoldQiCost > 0 || projectedLockedQiCost > 0 ? (
         <div className="mb-1.5 space-y-0.5" data-testid="qi-settlement-flow">
-          <div className="text-[11px] text-ink-light">下回合气路</div>
+          <div className="text-[11px] text-ink-light">下回合神识流转</div>
           <div
             className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-tight tabular-nums"
             aria-label="下回合神识结算路径"
           >
             <b className="text-ink">{qi.toFixed(0)}</b>
-            <span className={QI_COST_COLOR}>−{projectedHoldQiCost.toFixed(0)} 炼化</span>
+            {projectedHoldQiCost > 0 && <span className={QI_COST_COLOR}>−{projectedHoldQiCost.toFixed(0)} 炼化</span>}
+            {projectedLockedQiCost > 0 && <span className="text-amber-700">−{projectedLockedQiCost.toFixed(0)} 锁定神识</span>}
             <span className="text-wood-light">→</span>
-            <b className={willQiDeplete ? 'text-qi-critical' : 'text-ink'}>{(qi - projectedHoldQiCost).toFixed(0)}</b>
+            <b className={willQiDeplete ? 'text-qi-critical' : 'text-ink'}>{(qi - projectedHoldQiCost - projectedLockedQiCost).toFixed(0)}</b>
             {willMarginCall && <span className="font-bold text-qi-critical">⚠ 反噬</span>}
             <span className="text-wood-light">→</span>
             <span className="font-semibold text-qi-full">+{recoveryQi.toFixed(0)} 调息</span>
@@ -185,13 +222,13 @@ export function QiBar() {
           </div>
           {willMarginCall && (
             <div className="text-[10px] font-medium text-qi-critical">
-              先判反噬，再回气
+              先判反噬，再回神
             </div>
           )}
         </div>
       ) : (
         <div className="mb-1 text-[11px] text-ink-light" data-testid="qi-settlement-flow">
-          下回合气路 <b className="text-ink tabular-nums">{qi.toFixed(0)}</b>
+          下回合神识流转 <b className="text-ink tabular-nums">{qi.toFixed(0)}</b>
           <span className="mx-1 text-wood-light">→</span>
           <span className="font-semibold text-qi-full">+{recoveryQi.toFixed(0)} 调息</span>
           <span className="mx-1 text-wood-light">→</span>

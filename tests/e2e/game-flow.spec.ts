@@ -64,7 +64,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByText('季内第 1 回合', { exact: true })).toBeVisible();
     await expect(page.getByText(/季内 \d+\//)).toHaveCount(0);
     const qiFlow = page.getByTestId('qi-settlement-flow');
-    await expect(qiFlow).toContainText('下回合气路');
+    await expect(qiFlow).toContainText('下回合神识流转');
     await expect(qiFlow).toContainText('+20 调息');
     // 验证操作按钮可见（使用 role 定位，避免子文本干扰）
     await expect(page.getByRole('button', { name: /纳灵/ })).toBeVisible();
@@ -263,6 +263,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     await expect(page.getByTestId('settlement-animation')).toBeVisible({ timeout: 2_000 });
     await expect(page.getByTestId('settlement-card-flight').first()).toBeVisible({ timeout: 2_000 });
+    await expect(page.getByTestId('settlement-card-flight').first()).toHaveText('');
+    await expect(page.getByTestId('settlement-card-flight').first()).toHaveAttribute('aria-label', /炼化/);
     const qiAnimation = page.getByTestId('settlement-qi-animation');
     await expect(qiAnimation).toHaveText(/−\d+ 神识/, { timeout: 2_500 });
     await expect(qiAnimation).toHaveText(/\+\d+ 神识/, { timeout: 3_500 });
@@ -277,6 +279,9 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
+    await expect(qiAnimation).toBeVisible({ timeout: 2_000 });
+    await expect(qiAnimation).toHaveText(/−\d+ 神识/, { timeout: 2_500 });
+    await expect(qiAnimation).toHaveText(/\+\d+ 神识/, { timeout: 4_000 });
 
     // ===== 第 3 回合：释灵 =====
     // 点击丹田中的第一张牌

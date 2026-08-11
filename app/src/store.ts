@@ -215,10 +215,11 @@ interface GameStore {
   previewSellInfo: (slotIndex: number) => { score: number; qiChange: number } | null;
   previewHoldEarning: (cardIndex: number) => number;
   previewHoldQiCost: (cardIndex: number) => number;
-  /** 预测点「等待」后状态：afterQi 最终气量（强平时不作为确定值展示）、holdQiCost 持仓气耗、midQi 扣气后中间气量 */
+  /** 预测点「等待」后状态：afterQi 最终神识、持仓耗神、牵神成本与扣除后中间神识。 */
   previewWaitQi: () => {
     afterQi: number;
     holdQiCost: number;
+    lockedQiCost: number;
     midQi: number;
     /** 扣气后气归零或为负。 */
     willQiDeplete: boolean;
@@ -1059,7 +1060,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   previewWaitQi() {
     const tm = get().turnManager;
     if (!tm) return {
-      afterQi: get().qi, holdQiCost: 0, midQi: get().qi,
+      afterQi: get().qi, holdQiCost: 0, lockedQiCost: 0, midQi: get().qi,
        willQiDeplete: false, willMarginCall: false, hasLeverage: false,
     };
 
@@ -1067,7 +1068,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 不会发生下一回合结算或回气，预览必须返回当前气、零气耗。
     if (get().currentRound >= tm.getTotalRounds()) {
       return {
-        afterQi: get().qi, holdQiCost: 0, midQi: get().qi,
+        afterQi: get().qi, holdQiCost: 0, lockedQiCost: 0, midQi: get().qi,
          willQiDeplete: false, willMarginCall: false, hasLeverage: false,
       };
     }
@@ -1080,6 +1081,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const currentSeason = tm.getCurrentSeason();
     const handSlots = tm.getHand();
     let holdQiCost = 0;
+    const lockedQiCost = tm.getLockedCardIds().length * TurnManager.LOCK_COST_PER_CARD;
     let hasLeverage = false;
     for (const slot of handSlots) {
       if (!slot) continue;
@@ -1093,7 +1095,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       );
     }
     const qi = get().qi;
-    const midQi = qi - holdQiCost;
+    const midQi = qi - holdQiCost - lockedQiCost;
     const willQiDeplete = midQi <= 0;
     const willMarginCall = willQiDeplete && hasLeverage;
     // 强平候选数 > 0 时最终气取决于被随机强平的仓位（不确定值）；UI 在 willMarginCall 分支不展示该值。
@@ -1101,7 +1103,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ? midQi
       : Math.min(tm.getMaxQi(), midQi + tm.getBaseRecovery() + tm.getWaitBonus());
 
-    return { afterQi, holdQiCost, midQi, willQiDeplete, willMarginCall, hasLeverage };
+    return { afterQi, holdQiCost, lockedQiCost, midQi, willQiDeplete, willMarginCall, hasLeverage };
   },
 }));
 

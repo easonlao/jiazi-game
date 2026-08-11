@@ -146,33 +146,29 @@ html, body, #root {
 }
 .float-up { animation: floatUp 1.3s ease-out forwards; }
 
-/* 回合结算：炼化收益从丹田飞向顶部修为。神识扣除/回神由 QiBar 按顺序显示。 */
+/* 回合结算：炼化收益从丹田飞向顶部修为，以「无数字光点/能量粒子」表达正负语义
+   （正收益=翠绿光点，反噬=赤红光点）。神识扣除/回神由 QiBar 按顺序显示。 */
 @keyframes settlementCardFlight {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.72) rotate(-3deg); }
-  14% { opacity: 1; transform: translate(-50%, -50%) scale(1.05) rotate(0deg); }
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  45% { transform: translate(-50%, -50%) scale(0.85); }
   76% {
     opacity: 1;
-    transform: translate(calc(-50% + var(--settlement-flight-x)), calc(-50% + var(--settlement-flight-y))) scale(0.88) rotate(2deg);
+    transform: translate(calc(-50% + var(--settlement-flight-x)), calc(-50% + var(--settlement-flight-y))) scale(0.8);
   }
   100% {
     opacity: 0;
-    transform: translate(calc(-50% + var(--settlement-flight-x)), calc(-50% + var(--settlement-flight-y))) scale(0.45) rotate(0deg);
+    transform: translate(calc(-50% + var(--settlement-flight-x)), calc(-50% + var(--settlement-flight-y))) scale(0.3);
   }
 }
 .settlement-card-flight {
   position: fixed;
   z-index: 70;
-  min-width: 3.25rem;
-  padding: 0.25rem 0.45rem;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  background: rgba(250, 246, 238, 0.96);
-  box-shadow: 0 3px 12px rgba(71, 45, 39, 0.18);
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 6px 2px currentColor, 0 0 18px 5px color-mix(in srgb, currentColor 55%, transparent);
   animation: settlementCardFlight 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 

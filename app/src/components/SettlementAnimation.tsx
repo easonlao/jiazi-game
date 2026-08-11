@@ -103,9 +103,8 @@ export function SettlementAnimation() {
             className={`settlement-card-flight ${flight.earning >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}
             style={style}
             data-testid="settlement-card-flight"
-          >
-            {flight.earning >= 0 ? '+' : ''}{flight.earning.toFixed(1)}
-          </span>
+            aria-label={flight.earning >= 0 ? '炼化收益' : '炼化反噬'}
+          />
         );
       })}
     </div>

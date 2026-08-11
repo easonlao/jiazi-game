@@ -1,5 +1,5 @@
 import { useGameStore } from '../store';
-import { buildProjectedHoldings } from '@core/index';
+import { buildProjectedHoldings, TurnManager } from '@core/index';
 
 function signed(value: number) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
@@ -56,6 +56,13 @@ export function SettlementPreviewModal() {
   const projectedEarnings = projectedHold.reduce((sum, s) => sum + s.earning, 0);
   const projectedQiCost = projectedHold.reduce((sum, s) => sum + s.qiCost, 0);
   const projectedLeverageCount = projectedHold.filter((s) => s.isLeverage).length;
+  const boughtLockedCard = preview.action.type === 'buy'
+    && publicCards[preview.action.cardIndex]
+    && turnManager?.isCardLocked(publicCards[preview.action.cardIndex].id);
+  const projectedLockedQiCost = Math.max(
+    0,
+    (turnManager?.getLockedCardIds().length ?? 0) - (boughtLockedCard ? 1 : 0),
+  ) * TurnManager.LOCK_COST_PER_CARD;
 
   const hasProjection =
     projectedHold.length > 0 || preview.action.type === 'wait';
@@ -223,12 +230,17 @@ export function SettlementPreviewModal() {
             <div className="rounded-lg border border-blue-600/30 bg-blue-50/60 px-3 py-2 text-xs text-ink-light">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-blue-800">下回合一览</span>
-                {projectedHold.length > 0 && (
+                {(projectedHold.length > 0 || projectedLockedQiCost > 0) && (
                   <span className="font-bold tabular-nums">
-                    <span className={projectedEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
-                      {signed(projectedEarnings)}修为
-                    </span>
-                    <span className="text-qi-critical ml-1">-{projectedQiCost.toFixed(1)}神识</span>
+                    {projectedHold.length > 0 && (
+                      <>
+                        <span className={projectedEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
+                          {signed(projectedEarnings)}修为
+                        </span>
+                        <span className="text-qi-critical ml-1">-{projectedQiCost.toFixed(1)}神识</span>
+                      </>
+                    )}
+                    {projectedLockedQiCost > 0 && <span className="text-amber-700 ml-1">-{projectedLockedQiCost.toFixed(1)}锁定神识</span>}
                   </span>
                 )}
               </div>
