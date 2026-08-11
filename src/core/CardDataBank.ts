@@ -1,4 +1,4 @@
-import { JiaziCard, JiaziCardData, Element, YinYang } from './JiaziCard';
+import { JiaziCard, JiaziCardData, Element, YinYang } from './JiaziCard.ts';
 
 /** 卡牌数据银行 - 加载和管理所有甲子卡牌 */
 export class CardDataBank {

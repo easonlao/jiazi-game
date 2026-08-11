@@ -4,7 +4,10 @@ import { PlayerIdentityPanel } from './PlayerIdentityPanel';
 interface StartScreenProps {
   turnManager: ReturnType<typeof useGameStore.getState>['turnManager'];
   hasSave: boolean;
-  onStart: () => void;
+  startingGame: boolean;
+  startGameError: string | null;
+  onStart: () => Promise<void>;
+  onStartLocal: () => Promise<void>;
   onContinue: () => void;
   onLeaderboard: () => void;
 }
@@ -13,7 +16,16 @@ interface StartScreenProps {
  * 启动加载/开始页：标题、玩法简介、开始按钮或加载中状态。
  * 检测到存档时显示"继续游戏"，否则显示"开始游戏"。
  */
-export function StartScreen({ turnManager, hasSave, onStart, onContinue, onLeaderboard }: StartScreenProps) {
+export function StartScreen({
+  turnManager,
+  hasSave,
+  startingGame,
+  startGameError,
+  onStart,
+  onStartLocal,
+  onContinue,
+  onLeaderboard,
+}: StartScreenProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
       <div className="text-center shrink-0">
@@ -36,24 +48,41 @@ export function StartScreen({ turnManager, hasSave, onStart, onContinue, onLeade
             <>
               <button
                 onClick={onContinue}
-                className="w-full py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95"
+                disabled={startingGame}
+                className="w-full py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 disabled:cursor-wait disabled:opacity-50"
               >
-                继续游戏
+                继续本地游戏
               </button>
               <button
                 onClick={onStart}
-                className="w-full py-3 rounded-xl border-2 border-wood-mid text-ink text-base font-bold font-serif hover:bg-wood-light transition-colors active:scale-95"
+                disabled={startingGame}
+                className="w-full py-3 rounded-xl border-2 border-wood-mid text-ink text-base font-bold font-serif hover:bg-wood-light transition-colors active:scale-95 disabled:cursor-wait disabled:opacity-50"
               >
-                新游戏
+                {startingGame ? '正在连接云端…' : '新游戏'}
               </button>
             </>
           ) : (
             <button
               onClick={onStart}
-              className="w-full py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95"
+              disabled={startingGame}
+              className="w-full py-3 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 disabled:cursor-wait disabled:opacity-50"
             >
-              开始游戏
+              {startingGame ? '正在连接云端…' : '开始游戏'}
             </button>
+          )}
+          {startGameError && (
+            <div className="flex flex-col gap-2">
+              <p role="alert" className="text-center text-xs text-qi-critical">
+                {startGameError}
+              </p>
+              <button
+                onClick={onStartLocal}
+                disabled={startingGame}
+                className="w-full py-2.5 rounded-xl border border-wood-mid text-ink-light text-sm font-serif hover:bg-wood-light transition-colors active:scale-95 disabled:cursor-wait disabled:opacity-50"
+              >
+                本地开局（不上云端榜）
+              </button>
+            </div>
           )}
           <button
             onClick={onLeaderboard}

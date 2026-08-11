@@ -22,11 +22,14 @@ export default function App() {
   const tick = useGameStore((s) => s.tick);
   const initialize = useGameStore((s) => s.initialize);
   const startGame = useGameStore((s) => s.startGame);
+  const startLocalGame = useGameStore((s) => s.startLocalGame);
   const loadGameFromSave = useGameStore((s) => s.loadGameFromSave);
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
   const closeLeaderboard = useGameStore((s) => s.closeLeaderboard);
   const showToast = useGameStore((s) => s.showToast);
   const hasSave = useGameStore((s) => s.hasSave);
+  const startingGame = useGameStore((s) => s.startingGame);
+  const startGameError = useGameStore((s) => s.startGameError);
   const leaderboardOpen = useGameStore((s) => s.leaderboardOpen);
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -57,16 +60,17 @@ export default function App() {
           <StartScreen
             turnManager={turnManager}
             hasSave={hasSave}
-            onStart={() => {
-              startGame();
-              showToast('游戏开始');
+            startingGame={startingGame}
+            startGameError={startGameError}
+            onStart={async () => {
+              if (await startGame()) showToast('游戏开始');
+            }}
+            onStartLocal={async () => {
+              await startLocalGame();
             }}
             onContinue={() => {
-              // 成功才提示"继续游戏"；失败时 store 已按失败原因弹对应 toast
-              // （版本过新 → 存档版本过新，请更新游戏；其他 → 读档失败）
-              if (loadGameFromSave()) {
-                showToast('继续游戏');
-              }
+              // 成功与失败提示都由 store 统一给出；成功时需明确这是本地续局、不会上云。
+              loadGameFromSave();
             }}
             onLeaderboard={openLeaderboard}
           />

@@ -1,6 +1,6 @@
-import type { RandomSource } from './RandomSource';
-import type { JiaziCard } from './JiaziCard';
-import { Element, YinYang } from './JiaziCard';
+import type { RandomSource } from './RandomSource.ts';
+import type { JiaziCard } from './JiaziCard.ts';
+import { Element, YinYang } from './JiaziCard.ts';
 
 /**
  * 季内评分波动模型。

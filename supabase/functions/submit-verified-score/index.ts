@@ -5,7 +5,10 @@ import {
   ReplayValidationError,
   type ReplayAction,
 } from '../../../src/core/ReplayRunner.ts';
-import type { ReplayRulesSnapshot } from '../../../src/core/ReplayRules.ts';
+import {
+  CURRENT_REPLAY_RULES,
+  type ReplayRulesSnapshot,
+} from '../../../src/core/ReplayRules.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -45,20 +48,74 @@ Deno.serve(async (req) => {
 
   const { data: session, error: sessionError } = await supabase
     .from('game_sessions')
-    .select('id, player_id, status, rules_version, replay_seed, rules_snapshot, verified_at')
+    .select('id, player_id, status, rules_version, replay_seed, rules_snapshot, verified_at, final_score, rounds_completed')
     .eq('id', sessionId)
     .eq('player_id', link.player_id)
     .maybeSingle();
   if (sessionError) return json({ error: 'internal_error' }, 500);
   if (!session) return json({ error: 'session_not_found' }, 404);
-  if (session.verified_at || session.status === 'completed') {
-    return json({ error: 'session_already_submitted' }, 409);
+  if (session.verified_at) {
+    const { data: leaderboardEntry, error: leaderboardError } = await supabase
+      .from('leaderboard_entries')
+      .select('session_id')
+      .eq('session_id', session.id)
+      .maybeSingle();
+    if (leaderboardError) return json({ error: 'internal_error' }, 500);
+    let leaderboardSubmitted = Boolean(leaderboardEntry);
+    const verifiedScore = typeof session.final_score === 'number' ? session.final_score : null;
+    // 会话校验成功后若榜单插入曾瞬时失败，V4 重试必须补插；旧版本只读历史记录，不新增榜单。
+    if (
+      !leaderboardSubmitted &&
+      String(session.rules_version) === String(CURRENT_REPLAY_RULES.rulesVersion) &&
+      verifiedScore !== null &&
+      verifiedScore >= 0
+    ) {
+      const { data: profile, error: profileError } = await supabase
+        .from('player_profiles')
+        .select('public_player_id, leaderboard_eligible, display_name')
+        .eq('id', link.player_id)
+        .single();
+      if (profileError || !profile) return json({ error: 'internal_error' }, 500);
+      const eligible = profile.leaderboard_eligible === true &&
+        typeof profile.display_name === 'string' && profile.display_name.trim().length > 0;
+      if (eligible) {
+        const { error: repairError } = await supabase
+          .from('leaderboard_entries')
+          .insert({
+            public_player_id: profile.public_player_id,
+            score: verifiedScore,
+            rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
+            session_id: session.id,
+          });
+        if (repairError && repairError.code !== '23505') {
+          console.error('submit-verified-score leaderboard repair failed', repairError);
+          return json({ error: 'internal_error' }, 500);
+        }
+        leaderboardSubmitted = true;
+      }
+    }
+    return json({
+      verified: true,
+      score: verifiedScore,
+      leaderboard_submitted: leaderboardSubmitted,
+      rules_version: String(session.rules_version),
+      rounds: typeof session.rounds_completed === 'number' ? session.rounds_completed : 60,
+    }, 200);
+  }
+  if (session.status === 'completed') {
+    return json({ error: 'session_not_active' }, 409);
   }
   if (session.status !== 'started' && session.status !== 'running') {
     return json({ error: 'session_not_active' }, 409);
   }
   if (!Number.isSafeInteger(session.replay_seed) || !isReplayRulesSnapshot(session.rules_snapshot)) {
     return json({ error: 'session_not_verifiable' }, 409);
+  }
+  if (
+    String(session.rules_version) !== String(CURRENT_REPLAY_RULES.rulesVersion) ||
+    session.rules_snapshot.rulesVersion !== CURRENT_REPLAY_RULES.rulesVersion
+  ) {
+    return json({ error: 'rules_version_not_supported' }, 422);
   }
 
   let replay;
@@ -113,7 +170,7 @@ Deno.serve(async (req) => {
       .insert({
         public_player_id: profile.public_player_id,
         score: finalScore,
-        rules_version: String(replay.rulesVersion),
+        rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
         session_id: session.id,
       });
     if (leaderboardError && leaderboardError.code !== '23505') {
@@ -126,7 +183,7 @@ Deno.serve(async (req) => {
     verified: true,
     score: finalScore,
     leaderboard_submitted: eligible && finalScore >= 0,
-    rules_version: String(replay.rulesVersion),
+    rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
     rounds: replay.rounds,
   }, 200);
 });

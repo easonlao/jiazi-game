@@ -1,4 +1,4 @@
-import type { Season } from './SeasonCycle';
+import type { Season } from './SeasonCycle.ts';
 
 /** 五行元素 */
 export enum Element {

@@ -14,7 +14,7 @@
  * - 未获同意前队列关闭，事件直接丢弃。
  */
 
-import { isTradeRulesVersion, type ReplayAction, type StorageProvider } from '@core/index';
+import { CURRENT_RULES_VERSION, type ReplayAction, type StorageProvider } from '@core/index';
 import {
   TELEMETRY_CONSENT_VERSION,
   TelemetryQueue,
@@ -36,15 +36,6 @@ import {
 const CONSENT_KEY = 'jiazi_consent';
 const IDENTITY_KEY = 'jiazi_player_identity';
 const RECOVERY_SESSION_KEY = 'jiazi_recovery_code_session';
-
-/**
- * 已部署服务端能够校验的规则版本。默认只开放生产 V3；V4 在独立后端部署完成前
- * 保持本地模式，避免开发预览向生产 Supabase 创建无法完成的测试会话。
- */
-function isServerVerifiedRulesVersion(rulesVersion: string): boolean {
-  const configured = import.meta.env.VITE_VERIFIED_RULES_VERSIONS?.trim() || '3';
-  return configured.split(',').map((value) => value.trim()).includes(rulesVersion);
-}
 
 /** 与 package.json 版本保持一致（发版时同步修改） */
 export const APP_VERSION = '0.2.0';
@@ -202,7 +193,6 @@ export class TelemetryController {
     /** 该局开始时的 player_id（固定，身份切换不影响提交归属）。 */
     playerId: string;
   } | null = null;
-  private preparedSession: VerifiedSessionStart | null = null;
   private sessionProgress: SessionProgress = { rounds: 0, final_score: 0, margin_call_count: 0 };
   private pagehideBound = false;
 
@@ -238,24 +228,16 @@ export class TelemetryController {
     return this.session?.session_id ?? null;
   }
 
-  /** 在游戏真正开始前向服务端申请 seed；失败时返回 null，调用方保留本地模式。 */
+  /** 在当前版本游戏真正开始前向服务端申请 seed；失败时返回 null。 */
   async prepareVerifiedSession(meta: ActiveSessionMeta): Promise<VerifiedSessionStart | null> {
     const requestedRulesVersion = Number(meta.rules_version);
     if (
-      this.preparedSession &&
-      this.preparedSession.rules_snapshot.rulesVersion !== requestedRulesVersion
-    ) {
-      this.preparedSession = null;
-    }
-    if (
-      !isTradeRulesVersion(requestedRulesVersion) ||
-      !isServerVerifiedRulesVersion(meta.rules_version) ||
+      requestedRulesVersion !== CURRENT_RULES_VERSION ||
       meta.game_mode !== 'volatility_trade' ||
       !this.state.consent?.granted ||
       !this.state.identity ||
       !this.state.telemetryEnabled
     ) return null;
-    if (this.preparedSession) return this.preparedSession;
     const identity = this.state.identity;
     try {
       const prepared = await this.backend.startVerifiedSession(identity.player_id, {
@@ -270,22 +252,14 @@ export class TelemetryController {
         consent_version: String(this.state.consent.version),
       });
       if (prepared?.rules_snapshot.rulesVersion !== requestedRulesVersion) {
-        console.warn('[telemetry] 服务端规则版本与客户端不一致，回退本地模式');
+        console.warn('[telemetry] 服务端规则版本与客户端不一致，交由玩家决定是否本地开局');
         return null;
       }
-      this.preparedSession = prepared;
       return prepared;
     } catch (e) {
-      console.warn('[telemetry] verified session 准备失败，回退本地模式', e);
+      console.warn('[telemetry] verified session 准备失败，交由玩家决定是否本地开局', e);
       return null;
     }
-  }
-
-  /** 取出一次已准备的服务端会话；未准备好时返回 null。 */
-  takePreparedSession(): VerifiedSessionStart | null {
-    const prepared = this.preparedSession;
-    this.preparedSession = null;
-    return prepared;
   }
 
   private setState(patch: Partial<TelemetryControllerState>): void {
@@ -340,7 +314,6 @@ export class TelemetryController {
   declineConsent(): void {
     writeConsent(this.storage, false);
     this.session = null;
-    this.preparedSession = null;
     this.verification.clear();
     this.setTelemetryEnabled(false);
     this.setState({
@@ -417,13 +390,15 @@ export class TelemetryController {
 
   /** 开始一次游戏会话（仅同意后生效；返回是否启用）。 */
   startSession(meta: ActiveSessionMeta, verified: VerifiedSessionStart | null = null): boolean {
-    // 未被当前后端明确开放的交易规则仅在本地运行。这样开发预览既不会
-    // 创建不可校验的 game_sessions，也不会上传对应的 game_events。
-    if (
-      meta.game_mode === 'volatility_trade' &&
-      isTradeRulesVersion(Number(meta.rules_version)) &&
-      !isServerVerifiedRulesVersion(meta.rules_version)
-    ) return false;
+    // 活动交易局只允许当前规则版本，并且必须绑定服务端 seed 会话。
+    // 旧版本只保留存档/历史重放兼容，不再创建新的云端会话或事件。
+    if (meta.game_mode === 'volatility_trade') {
+      if (
+        Number(meta.rules_version) !== CURRENT_RULES_VERSION ||
+        !verified ||
+        verified.rules_snapshot.rulesVersion !== CURRENT_RULES_VERSION
+      ) return false;
+    }
     if (!this.state.consent?.granted || !this.state.identity || !this.state.telemetryEnabled) return false;
     const session_id = verified?.session_id ?? newUuid();
     const started_at = verified?.started_at ?? new Date().toISOString();

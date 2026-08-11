@@ -2,7 +2,7 @@
 /** 季节类型 */
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 
-import { MathRandomSource, RandomSource } from './RandomSource';
+import { MathRandomSource, RandomSource } from './RandomSource.ts';
 
 /**
  * 季节循环管理器

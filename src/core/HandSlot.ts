@@ -1,4 +1,4 @@
-import { JiaziCard } from './JiaziCard';
+import { JiaziCard } from './JiaziCard.ts';
 
 /** 手牌槽位 */
 export class HandSlot {

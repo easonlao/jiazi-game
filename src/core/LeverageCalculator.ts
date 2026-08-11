@@ -1,5 +1,5 @@
 /** 杠杆计算器（数值参数来自注入的 BalanceConfig） */
-import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig';
+import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
 
 export class LeverageCalculator {
   private readonly cfg: BalanceConfig;

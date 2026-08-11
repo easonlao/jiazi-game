@@ -10,10 +10,10 @@
  * 需显式传入对应实现。
  */
 
-import type { StorageProvider } from './StorageProvider';
-import type { RoundLogEntry } from './TurnManager';
-import type { ScoreVolatilitySnapshot } from './ScoreVolatility';
-import type { ScoreRules } from './ScoreManager';
+import type { StorageProvider } from './StorageProvider.ts';
+import type { RoundLogEntry } from './TurnManager.ts';
+import type { ScoreVolatilitySnapshot } from './ScoreVolatility.ts';
+import type { ScoreRules } from './ScoreManager.ts';
 
 /** 读档失败分类原因：GameSaveService.load 最近一次失败的原因（成功或尚未 load 时为 null）。 */
 export type GameSaveLoadError =

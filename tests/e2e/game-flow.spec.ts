@@ -127,14 +127,14 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     expect(texts.every((text) => text.includes('当前评分'))).toBe(true);
   });
 
-  test('volatility=0 保留基础规则兼容入口', async ({ page }) => {
+  test('旧 volatility=0 参数不再切换规则，新局仍统一为当前 V4', async ({ page }) => {
     await page.goto('/?volatility=0');
     await startGameAndDismiss(page);
-    await expect(page.locator('[data-volatility-experiment]')).toHaveCount(0);
-    await expect(page.locator('[data-volatility-delta]')).toHaveCount(0);
+    await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
+    await expect(page.locator('[data-volatility-delta]')).toHaveCount(3);
   });
 
-  test('volatility=1 显式入口显示波动提示与实际变化值', async ({ page }) => {
+  test('旧 volatility=1 参数同样使用当前 V4', async ({ page }) => {
     await page.goto('/?volatility=1');
     await startGameAndDismiss(page);
     await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
@@ -146,22 +146,6 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     expect(texts.every((text) => text.includes('当前评分'))).toBe(true);
     const deltaLabels = await page.locator('[data-volatility-delta]').allTextContents();
     expect(deltaLabels.every((text) => /^\([+-]\d+\)$/.test(text.trim()))).toBe(true);
-  });
-
-  test('卡面显示当季到固定下一季的评分趋势', async ({ page }) => {
-    await page.goto('/?volatility=0');
-    await startGameAndDismiss(page);
-
-    const cards = page.locator('.card-in');
-    await expect(cards.first()).toBeVisible();
-    const texts = await cards.allInnerTexts();
-    const pairs = texts
-      .map((text) => text.match(/([+-]?\d+\.\d)\s*→\s*([+-]?\d+\.\d)/))
-      .filter((match): match is RegExpMatchArray => match !== null);
-    expect(pairs.length).toBeGreaterThan(0);
-    // 若错误使用“下一回合结算季”，春季非季末会普遍出现同分箭头；
-    // 至少一张公开卡应能观察到春→夏的评分变化。
-    expect(pairs.some((match) => match[1] !== match[2])).toBe(true);
   });
 
   test('纳灵一张灵气流程', async ({ page }) => {

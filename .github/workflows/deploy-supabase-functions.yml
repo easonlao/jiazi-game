@@ -1,0 +1,81 @@
+name: Deploy Supabase Edge Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'src/core/**'
+      - '.github/workflows/deploy-supabase-functions.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Guard paired database migrations
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- supabase/migrations | grep -q .; then
+            echo "Database migrations changed in the same push. Apply and verify them before deploying Edge Functions."
+            exit 1
+          fi
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run cloud-session tests
+        run: pnpm exec vitest run tests/unit/telemetry_controller.test.ts tests/unit/analytics_backend.test.ts tests/unit/verification_controller.test.ts tests/integration/smoke.test.ts
+
+      - name: Build production client
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL"
+          test -n "$VITE_SUPABASE_PUBLISHABLE_KEY"
+          pnpm build
+
+      - name: Deploy Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_PROJECT_ID"
+          npx --yes supabase@2.113.0 functions deploy --project-ref "$SUPABASE_PROJECT_ID" --use-api
+
+      - name: Install Chromium for production verification
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify V4 session through leaderboard submission
+        env:
+          E2E_SUPABASE: '1'
+          E2E_TARGET: preview
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: pnpm exec playwright test tests/e2e/supabase-analytics.spec.ts

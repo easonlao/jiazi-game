@@ -8,9 +8,9 @@
  * 因此同一回合内锁定再解锁不产生任何费用。
  */
 
-import type { JiaziCard } from './JiaziCard';
-import type { CardPoolManager } from './CardPoolManager';
-import type { QiManager } from './QiManager';
+import type { JiaziCard } from './JiaziCard.ts';
+import type { CardPoolManager } from './CardPoolManager.ts';
+import type { QiManager } from './QiManager.ts';
 
 /** 锁定失败原因（供 UI 按具体状态提示，避免"多种可能混合展示"） */
 export type LockFailure =

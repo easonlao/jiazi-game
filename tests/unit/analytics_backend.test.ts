@@ -66,4 +66,32 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
       body: expect.objectContaining({ requested_rules_version: '4' }),
     });
   });
+
+  it('does not mistake a non-idempotent 409 response for a verified score', async () => {
+    const invoke = vi.fn(async () => ({
+      data: null,
+      error: {
+        message: 'Edge Function returned a non-2xx status code',
+        context: new Response(JSON.stringify({ error: 'session_not_active' }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      },
+    }));
+    const client = { functions: { invoke } } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const result = await backend.submitVerifiedScore('player-1', {
+      session_id: 'session-1',
+      actions: [],
+    });
+
+    expect(result).toEqual({
+      verified: false,
+      rejected: true,
+      score: null,
+      leaderboard_submitted: false,
+      message: 'session_not_active',
+    });
+  });
 });

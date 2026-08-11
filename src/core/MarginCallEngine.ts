@@ -11,15 +11,15 @@
  * 2026-08-05 用户设计确认：选牌随机 → 评分最高；强平不卖出（直接无收益 + 反噬罚分）。
  */
 
-import type { BalanceConfig } from './BalanceConfig';
-import type { HandManager } from './HandManager';
-import type { JiaziCard } from './JiaziCard';
-import type { CardPoolManager } from './CardPoolManager';
-import type { QiManager } from './QiManager';
-import type { ScoreManager } from './ScoreManager';
-import type { LeverageCalculator } from './LeverageCalculator';
-import type { SeasonCycle } from './SeasonCycle';
-import type { MarginCallDetail } from './TurnManager';
+import type { BalanceConfig } from './BalanceConfig.ts';
+import type { HandManager } from './HandManager.ts';
+import type { JiaziCard } from './JiaziCard.ts';
+import type { CardPoolManager } from './CardPoolManager.ts';
+import type { QiManager } from './QiManager.ts';
+import type { ScoreManager } from './ScoreManager.ts';
+import type { LeverageCalculator } from './LeverageCalculator.ts';
+import type { SeasonCycle } from './SeasonCycle.ts';
+import type { MarginCallDetail } from './TurnManager.ts';
 
 export interface MarginCallEngineDeps {
   qiManager: QiManager;

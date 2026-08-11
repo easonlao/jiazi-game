@@ -1,5 +1,6 @@
 # Supabase local project configuration (generated for the player analytics slice).
-# Mirrors the target project ref. Remote is NOT touched by this repo — apply via CLI.
+# Mirrors the target project ref. Production functions deploy through the pinned CLI,
+# either locally or via the GitHub Actions workflow.
 
 project_id = "weuwdzrgfoeomcauwgmv"
 
@@ -19,7 +20,7 @@ enabled = true
 port = 54323
 api_url = "http://127.0.0.1"
 
-[inbucket]
+[local_smtp]
 enabled = true
 port = 54324
 
@@ -40,9 +41,11 @@ enable_anonymous_sign_ins = true
 enable_signup = true
 double_confirm_changes = true
 
-[functions]
+[edge_runtime]
 enabled = true
-verify_jwt = true
+policy = "per_worker"
+inspector_port = 8083
+deno_version = 2
 
 [functions.provision-player]
 enabled = true
@@ -63,7 +66,9 @@ verify_jwt = true
 [analytics]
 enabled = false
 
-[pgbouncer]
+[db.pooler]
 enabled = false
+port = 54329
 pool_mode = "transaction"
-max_client_conn = 200
+default_pool_size = 20
+max_client_conn = 100

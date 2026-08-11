@@ -1,5 +1,5 @@
-import { JiaziCard } from './JiaziCard';
-import { HandSlot } from './HandSlot';
+import { JiaziCard } from './JiaziCard.ts';
+import { HandSlot } from './HandSlot.ts';
 
 /**
  * 手牌管理器

@@ -1,21 +1,21 @@
-import { JiaziCard, Element, YinYang } from './JiaziCard';
-import { CardDataBank } from './CardDataBank';
-import { SeasonCycle, Season } from './SeasonCycle';
-import { QiManager } from './QiManager';
+import { JiaziCard, Element, YinYang } from './JiaziCard.ts';
+import { CardDataBank } from './CardDataBank.ts';
+import { SeasonCycle, Season } from './SeasonCycle.ts';
+import { QiManager } from './QiManager.ts';
 import {
   BALANCED_TRADE_SCORE_RULES,
   DEFAULT_SCORE_RULES,
   ScoreManager,
   TRADE_SCORE_RULES,
   type ScoreRules,
-} from './ScoreManager';
-import { LeverageCalculator } from './LeverageCalculator';
-import { HandManager } from './HandManager';
-import { HandSlot } from './HandSlot';
-import { CardPoolManager } from './CardPoolManager';
-import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig';
-import { MathRandomSource, RandomSource } from './RandomSource';
-import { calculateHoldingSettlement } from './SettlementPreviewCalculator';
+} from './ScoreManager.ts';
+import { LeverageCalculator } from './LeverageCalculator.ts';
+import { HandManager } from './HandManager.ts';
+import { HandSlot } from './HandSlot.ts';
+import { CardPoolManager } from './CardPoolManager.ts';
+import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
+import { MathRandomSource, RandomSource } from './RandomSource.ts';
+import { calculateHoldingSettlement } from './SettlementPreviewCalculator.ts';
 import {
   GameSaveService,
   CURRENT_SCHEMA_VERSION,
@@ -28,10 +28,10 @@ import {
   type GameSnapshot,
   type GameSaveLoadError,
   type SupportedRulesVersion,
-} from './GameSaveService';
-import type { StorageProvider } from './StorageProvider';
-import { LockManager, type LockResult } from './LockManager';
-import { MarginCallEngine } from './MarginCallEngine';
+} from './GameSaveService.ts';
+import type { StorageProvider } from './StorageProvider.ts';
+import { LockManager, type LockResult } from './LockManager.ts';
+import { MarginCallEngine } from './MarginCallEngine.ts';
 import {
   cardAmplitude,
   createScoreVolatilityState,
@@ -40,7 +40,7 @@ import {
   type ScoreVolatilityConfig,
   type ScoreVolatilitySnapshot,
   type VolatilityTrend,
-} from './ScoreVolatility';
+} from './ScoreVolatility.ts';
 
 /** 游戏主状态 */
 export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'game_over';

@@ -52,6 +52,7 @@ let _initializing = false;
 
 /** TelemetryController 单例：store.initialize 内惰性创建（不阻塞初始化） */
 let _telemetryController: TelemetryController | null = null;
+let _telemetryInitPromise: Promise<void> | null = null;
 
 const _leaderboardRefreshGate = new LeaderboardRefreshGate();
 
@@ -63,24 +64,26 @@ const _leaderboardRefreshGate = new LeaderboardRefreshGate();
  */
 let _pendingAutoUnlockToast: string | null = null;
 
-/**
- * 开发默认使用 V4 平衡版交易规则；?volatility=0 保留基础规则兼容入口。
- * 旧存档仍由 TurnManager 按存档声明的 rulesVersion 读取，不会被入口默认值强行升级。
- */
-function isVolatilityEnabled(): boolean {
-  if (typeof window === 'undefined') return false;
-  return new URLSearchParams(window.location.search).get('volatility') !== '0';
-}
-
 function getTelemetryGameMeta(tm?: TurnManager) {
   const rulesVersion = tm?.getRulesVersion();
-  const resolvedRulesVersion = rulesVersion ?? (isVolatilityEnabled() ? CURRENT_RULES_VERSION : 1);
+  const resolvedRulesVersion = rulesVersion ?? CURRENT_RULES_VERSION;
   const volatility = resolvedRulesVersion !== 1;
   return {
     rules_version: String(resolvedRulesVersion),
     game_mode: volatility ? 'volatility_trade' : 'base',
     volatility_enabled: volatility,
   };
+}
+
+function ensureTelemetryInit(): Promise<void> {
+  if (!_telemetryController) return Promise.resolve();
+  if (!_telemetryInitPromise) {
+    _telemetryInitPromise = _telemetryController.init()
+      .catch((e) => {
+        console.error('[store] 遥测初始化失败:', e);
+      });
+  }
+  return _telemetryInitPromise;
 }
 
 /** 展示行动反馈 Toast：有自动解锁提示时优先展示并清空，否则用常规文案。 */
@@ -163,13 +166,14 @@ interface GameStore {
 
   // 生命周期
   initialize: () => Promise<void>;
-  startGame: () => void;
+  startGame: (localOnly?: boolean) => Promise<boolean>;
+  startLocalGame: () => Promise<boolean>;
   reset: () => void;
 
   // 存档恢复
   hasSave: boolean;
   loadGameFromSave: () => boolean;
-  startNewGame: () => void;
+  startNewGame: () => Promise<boolean>;
 
   // 排行榜
   leaderboardEntries: LeaderboardEntry[];
@@ -179,6 +183,8 @@ interface GameStore {
 
   // 遥测（consent/identity；云端未配置时走 no-op，不影响本地游玩）
   telemetryState: TelemetryControllerState | null;
+  startingGame: boolean;
+  startGameError: string | null;
   /** 云端排行榜（娱乐榜公开字段；云端未配置时为空数组） */
   cloudLeaderboard: CloudLeaderboardEntry[];
   cloudLeaderboardStatus: 'idle' | 'loading' | 'ready' | 'error';
@@ -463,6 +469,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   leaderboardEntries: [],
   leaderboardOpen: false,
   telemetryState: null,
+  startingGame: false,
+  startGameError: null,
   cloudLeaderboard: [],
   cloudLeaderboardStatus: 'idle',
   cloudLeaderboardError: null,
@@ -558,13 +566,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     try {
       const tm = new TurnManager(undefined, undefined, {
         storage: localStorageProvider,
-        ...(isVolatilityEnabled()
-          ? {
-            rulesVersion: CURRENT_REPLAY_RULES.rulesVersion,
-            scoreRules: CURRENT_REPLAY_RULES.scoreRules,
-            volatility: CURRENT_REPLAY_RULES.volatility,
-          }
-          : {}),
+        rulesVersion: CURRENT_REPLAY_RULES.rulesVersion,
+        scoreRules: CURRENT_REPLAY_RULES.scoreRules,
+        volatility: CURRENT_REPLAY_RULES.volatility,
       });
       await tm.initialize();
 
@@ -598,15 +602,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           },
         });
         set({ telemetryState: _telemetryController.getState() });
-        void _telemetryController.init()
-          .then(() => {
-            if (isVolatilityEnabled()) {
-              void _telemetryController?.prepareVerifiedSession(getTelemetryGameMeta(tm));
-            }
-          })
-          .catch((e) => {
-            console.error('[store] 遥测初始化失败:', e);
-          });
+        void ensureTelemetryInit();
       }
     } catch (e) {
       console.error('[store] 初始化失败:', e);
@@ -615,69 +611,95 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  startGame() {
+  async startGame(localOnly = false) {
     const tm = get().turnManager;
-    if (!tm) return;
-    _telemetryController?.abandonSession('reset');
+    if (!tm || get().startingGame) return false;
 
-    // 若已提前拿到服务端 seed，则用同一 seed 创建新的真实引擎实例。
-    // 这条路径是异步的；云端未配置或 seed 尚未准备好时继续走下面的本地同步路径。
-    const prepared = _telemetryController?.takePreparedSession() ?? null;
-    if (prepared) {
-      tm.clearSave();
-      set({ hasSave: false, gameState: 'init', _endedSessionId: null, verificationState: null });
-      void (async () => {
-        try {
-          const random = new SeededRandomSource(prepared.seed);
-          const snapshot = prepared.rules_snapshot;
-          const verifiedTm = new TurnManager(undefined, random, {
-            storage: localStorageProvider,
-            rulesVersion: snapshot.rulesVersion,
-            scoreRules: snapshot.scoreRules,
-            volatility: snapshot.volatility,
-            volatilityRandom: random,
-          });
-          await verifiedTm.initialize();
-          bindTurnManagerCallbacks(verifiedTm, set, get);
-          set({ turnManager: verifiedTm });
-          verifiedTm.startGame();
-          get()._sync();
-          set({
-            selectedPublicCard: -1,
-            selectedHandCard: -1,
-            useLeverage: false,
-            pendingAction: null,
-            settlementPreview: null,
-            buySettlementEvent: null,
-          });
-          _telemetryController?.startSession(getTelemetryGameMeta(verifiedTm), prepared);
-        } catch (error) {
-          console.error('[store] 服务端校验局初始化失败，回退本地模式:', error);
-          get().showToast('云端校验暂不可用，本局仅保留在本地');
-          tm.reset();
-          tm.startGame();
-          get()._sync();
+    const controller = _telemetryController;
+    const telemetryState = controller?.getState() ?? null;
+    const shouldAwaitVerifiedStart = !localOnly && telemetryState?.consent?.granted === true;
+
+    set({ startingGame: true, startGameError: null });
+    try {
+      if (shouldAwaitVerifiedStart && controller) {
+        await ensureTelemetryInit();
+        const readyState = controller.getState();
+        if (!readyState.consent?.granted || !readyState.identity || !readyState.telemetryEnabled) {
+          const message = '云端连接失败。可重试，或改为本地开局（本局不上云端榜）。';
+          set({ startGameError: message });
+          get().showToast('云端连接失败，请重试');
+          return false;
         }
-      })();
-      return;
-    }
 
-    // 开始新游戏前清除旧存档
-    tm.clearSave();
-    set({ hasSave: false, _endedSessionId: null, verificationState: null });
-    // 重置引擎（清空上一局的 roundLog/decisionLog/手牌/牌池等），再开新局。
-    // 否则复用同一 TurnManager 实例时，新局会残留上一局的回合记录（行迹可见旧数据）。
-    // 注意：不能在重置后清空 FX 事件——首回合合法回气（+10）是正常事件，
-    // 清除会导致开局回气动画丢失；上一局的残留动画已在 reset() 中清空。
-    tm.reset();
-    tm.startGame();
-    get()._sync();
-    set({
-      selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
-      pendingAction: null, settlementPreview: null, buySettlementEvent: null,
-    });
-    // 遥测：开启新局会话（未同意/云端不可用时静默 no-op，不阻塞开局；读档不经过此路径）
-    _telemetryController?.startSession(getTelemetryGameMeta(tm));
+        const prepared = await controller.prepareVerifiedSession(getTelemetryGameMeta(tm));
+        if (!prepared) {
+          const message = '云端连接失败。可重试，或改为本地开局（本局不上云端榜）。';
+          set({ startGameError: message });
+          get().showToast('云端连接失败，请重试');
+          return false;
+        }
+
+        const random = new SeededRandomSource(prepared.seed);
+        const snapshot = prepared.rules_snapshot;
+        const verifiedTm = new TurnManager(undefined, random, {
+          storage: localStorageProvider,
+          rulesVersion: snapshot.rulesVersion,
+          scoreRules: snapshot.scoreRules,
+          volatility: snapshot.volatility,
+          volatilityRandom: random,
+        });
+        await verifiedTm.initialize();
+        if (!controller.startSession(getTelemetryGameMeta(verifiedTm), prepared)) {
+          throw new Error('verified-session-start-rejected');
+        }
+
+        tm.clearSave();
+        set({ hasSave: false, gameState: 'init', _endedSessionId: null, verificationState: null });
+        bindTurnManagerCallbacks(verifiedTm, set, get);
+        set({ turnManager: verifiedTm });
+        verifiedTm.startGame();
+        get()._sync();
+        set({
+          selectedPublicCard: -1,
+          selectedHandCard: -1,
+          useLeverage: false,
+          pendingAction: null,
+          settlementPreview: null,
+          buySettlementEvent: null,
+        });
+        return true;
+      }
+
+      // 开始新游戏前清除旧存档
+      tm.clearSave();
+      set({ hasSave: false, _endedSessionId: null, verificationState: null });
+      // 重置引擎（清空上一局的 roundLog/decisionLog/手牌/牌池等），再开新局。
+      // 否则复用同一 TurnManager 实例时，新局会残留上一局的回合记录（行迹可见旧数据）。
+      // 注意：不能在重置后清空 FX 事件——首回合合法回气（+10）是正常事件，
+      // 清除会导致开局回气动画丢失；上一局的残留动画已在 reset() 中清空。
+      tm.reset();
+      tm.startGame();
+      get()._sync();
+      set({
+        selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
+        pendingAction: null, settlementPreview: null, buySettlementEvent: null,
+      });
+      if (localOnly && telemetryState?.consent?.granted) {
+        get().showToast('已开始本地对局，本局不上云端榜');
+      }
+      return true;
+    } catch (error) {
+      console.error('[store] 开局失败:', error);
+      controller?.abandonSession('reset');
+      const message = localOnly
+        ? '本地开局失败，请重试'
+        : '云端连接失败。可重试，或改为本地开局（本局不上云端榜）。';
+      set({ startGameError: message });
+      get().showToast(localOnly ? '本地开局失败，请重试' : '云端连接失败，请重试');
+      return false;
+    } finally {
+      set({ startingGame: false });
+    }
   },
 
   loadGameFromSave() {
@@ -695,9 +717,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
       get()._sync();
       set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, buySettlementEvent: null, hasSave: false });
-      // 刷新/换设备读档后建立新的分析会话；上一页若仍有会话则先标记为放弃。
+      // 存档没有携带服务端 seed 与完整动作链，续局只能作为本地局继续。
+      // 明确终止旧页面会话且不创建伪云端会话，避免终局误导玩家会自动上榜。
       _telemetryController?.abandonSession('reset');
-      _telemetryController?.startSession(getTelemetryGameMeta(tm));
+      get().showToast('已继续本地存档，本局不进入云端校验');
       return ok;
     }
     // 读档失败：区分「存档版本过新」、已结束存档与一般失败。
@@ -714,7 +737,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   startNewGame() {
-    get().startGame();
+    return get().startGame();
+  },
+
+  startLocalGame() {
+    return get().startGame(true);
   },
 
   openLeaderboard() {
@@ -731,10 +758,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   async grantTelemetryConsent(recoveryCode?: string) {
     await _telemetryController?.grantConsent(recoveryCode);
-    const tm = get().turnManager;
-    if (tm && isVolatilityEnabled()) {
-      void _telemetryController?.prepareVerifiedSession(getTelemetryGameMeta(tm));
-    }
   },
 
   declineTelemetryConsent() {
@@ -747,10 +770,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   async recoverPlayer(recoveryCode) {
     const identity = await _telemetryController?.recoverIdentity(recoveryCode);
-    const tm = get().turnManager;
-    if (identity && tm && isVolatilityEnabled()) {
-      void _telemetryController?.prepareVerifiedSession(getTelemetryGameMeta(tm));
-    }
     return identity !== null && identity !== undefined;
   },
 
@@ -766,7 +785,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     try {
       const entries = await controller.fetchLeaderboard(
         50,
-        getTelemetryGameMeta(get().turnManager ?? undefined).rules_version,
+        String(CURRENT_RULES_VERSION),
       );
       if (!_leaderboardRefreshGate.isCurrent(requestId)) return;
       set({ cloudLeaderboard: entries, cloudLeaderboardStatus: 'ready', cloudLeaderboardError: null });

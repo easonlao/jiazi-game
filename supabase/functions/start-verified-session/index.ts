@@ -1,8 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import {
   cloneReplayRulesSnapshot,
-  TRADE_REPLAY_RULES,
-  BALANCED_TRADE_REPLAY_RULES,
+  CURRENT_REPLAY_RULES,
 } from '../../../src/core/ReplayRules.ts';
 
 const CORS_HEADERS = {
@@ -37,16 +36,8 @@ Deno.serve(async (req) => {
   if (!clientSessionId || clientSessionId.length > CLIENT_SESSION_ID_MAX) {
     return json({ error: 'invalid_client_session_id' }, 400);
   }
-  // 旧客户端未发送版本时继续使用 V3，保证服务端可先于前端安全部署。
-  const requestedRulesVersion = body?.requested_rules_version === undefined
-    ? TRADE_REPLAY_RULES.rulesVersion
-    : Number(body.requested_rules_version);
-  const rulesSource = requestedRulesVersion === TRADE_REPLAY_RULES.rulesVersion
-    ? TRADE_REPLAY_RULES
-    : requestedRulesVersion === BALANCED_TRADE_REPLAY_RULES.rulesVersion
-      ? BALANCED_TRADE_REPLAY_RULES
-      : null;
-  if (!rulesSource || !isVerifiedRulesVersionEnabled(String(requestedRulesVersion))) {
+  const requestedRulesVersion = Number(body?.requested_rules_version);
+  if (requestedRulesVersion !== CURRENT_REPLAY_RULES.rulesVersion) {
     return json({ error: 'rules_version_not_supported' }, 409);
   }
 
@@ -74,14 +65,14 @@ Deno.serve(async (req) => {
     }
     if (isValidStoredSession(existing)) {
       const storedRules = existing.rules_snapshot as Record<string, unknown>;
-      if (storedRules.rulesVersion !== rulesSource.rulesVersion) {
+      if (storedRules.rulesVersion !== CURRENT_REPLAY_RULES.rulesVersion) {
         return json({ error: 'session_rules_mismatch' }, 409);
       }
       return json(toResponse(existing), 200);
     }
   }
 
-  const rules = cloneReplayRulesSnapshot(rulesSource);
+  const rules = cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES);
   const seed = generateSeed();
   const sessionId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
@@ -136,12 +127,6 @@ function generateSeed(): number {
   const bytes = new Uint32Array(1);
   crypto.getRandomValues(bytes);
   return bytes[0] & 0x7fffffff;
-}
-
-/** 生产已切换 V4；开发客户端仍由 VITE_VERIFIED_RULES_VERSIONS 门控，默认只跑本地模式。 */
-function isVerifiedRulesVersionEnabled(rulesVersion: string): boolean {
-  const configured = Deno.env.get('VERIFIED_RULES_VERSIONS')?.trim() || '3,4';
-  return configured.split(',').map((value) => value.trim()).includes(rulesVersion);
 }
 
 function extractBearerToken(req: Request): string | null {

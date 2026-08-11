@@ -2,9 +2,9 @@ import {
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_TRADE,
   type SupportedRulesVersion,
-} from './GameSaveService';
-import { BALANCED_TRADE_SCORE_RULES, TRADE_SCORE_RULES, type ScoreRules } from './ScoreManager';
-import { BAND_FACTOR, type ScoreVolatilityConfig } from './ScoreVolatility';
+} from './GameSaveService.ts';
+import { BALANCED_TRADE_SCORE_RULES, TRADE_SCORE_RULES, type ScoreRules } from './ScoreManager.ts';
+import { BAND_FACTOR, type ScoreVolatilityConfig } from './ScoreVolatility.ts';
 
 /** 服务端和客户端共同使用的、可序列化的 V3 规则快照。 */
 export interface ReplayRulesSnapshot {
@@ -32,7 +32,7 @@ export const TRADE_REPLAY_RULES: ReplayRulesSnapshot = {
   scoreRules: { ...TRADE_SCORE_RULES },
 };
 
-/** V4 开发候选：冲突因子 3，释灵系数 6。 */
+/** 当前生产 V4：冲突因子 3，释灵系数 6。 */
 export const BALANCED_TRADE_REPLAY_RULES: ReplayRulesSnapshot = {
   rulesVersion: RULES_VERSION_BALANCED_TRADE,
   gameMode: 'volatility_trade',

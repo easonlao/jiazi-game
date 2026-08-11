@@ -123,15 +123,33 @@ function requireString(v: unknown, field: string): string | null {
   return typeof v === 'string' && v.length > 0 && v.length <= 128 ? v : null;
 }
 
-/** 提取 Edge Function 调用的 HTTP 状态码与错误信息（Supabase FunctionsHttpError 等）。 */
-function extractFunctionError(error: unknown): { statusCode: number | null; message: string } {
+/** 提取 Edge Function 调用的 HTTP 状态码与 JSON 错误码（Supabase FunctionsHttpError 等）。 */
+async function extractFunctionError(error: unknown): Promise<{ statusCode: number | null; message: string }> {
   if (typeof error === 'object' && error !== null) {
-    const ctx = (error as { context?: { status_code?: unknown } }).context;
-    const statusCode = ctx && typeof ctx.status_code === 'number' ? ctx.status_code : null;
-    const message =
+    const ctx = (error as {
+      context?: {
+        status?: unknown;
+        status_code?: unknown;
+        clone?: () => { json?: () => Promise<unknown> };
+        json?: () => Promise<unknown>;
+      };
+    }).context;
+    const statusCode = ctx && typeof ctx.status === 'number'
+      ? ctx.status
+      : ctx && typeof ctx.status_code === 'number'
+        ? ctx.status_code
+        : null;
+    let message =
       typeof (error as { message?: unknown }).message === 'string'
         ? ((error as { message?: unknown }).message as string)
         : 'verification_error';
+    try {
+      const readable = ctx?.clone?.() ?? ctx;
+      const body = readable?.json ? await readable.json() : null;
+      if (isRecord(body) && typeof body.error === 'string') message = body.error;
+    } catch {
+      // 响应体不可读时保留 SDK 错误信息。
+    }
     return { statusCode, message };
   }
   return { statusCode: null, message: 'verification_error' };
@@ -302,20 +320,10 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
         message: ok ? null : 'verified_score_rejected',
       };
     }
-    const { statusCode, message } = extractFunctionError(error);
-    if (statusCode === 409) {
-      // 会话此前已成功校验（重复提交/响应丢失后重试）：视为已校验，云端记录已存在。
-      return {
-        verified: true,
-        rejected: false,
-        score: null,
-        leaderboard_submitted: true,
-        message: message || 'session_already_completed',
-      };
-    }
+    const { statusCode, message } = await extractFunctionError(error);
     return {
       verified: false,
-      rejected: statusCode === 422,
+      rejected: statusCode === 404 || statusCode === 409 || statusCode === 422,
       score: null,
       leaderboard_submitted: false,
       message: message || 'verification_error',

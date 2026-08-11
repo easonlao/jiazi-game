@@ -1,11 +1,11 @@
-import { SeededRandomSource } from './RandomSource';
+import { SeededRandomSource } from './RandomSource.ts';
 import {
   isSupportedRulesVersion,
   type SupportedRulesVersion,
-} from './GameSaveService';
-import type { ScoreRules } from './ScoreManager';
-import type { ScoreVolatilityConfig } from './ScoreVolatility';
-import { TurnManager, type GameState } from './TurnManager';
+} from './GameSaveService.ts';
+import type { ScoreRules } from './ScoreManager.ts';
+import type { ScoreVolatilityConfig } from './ScoreVolatility.ts';
+import { TurnManager, type GameState } from './TurnManager.ts';
 
 /** 玩家在一局游戏中提交给服务端的最小动作集合。 */
 export type ReplayAction =

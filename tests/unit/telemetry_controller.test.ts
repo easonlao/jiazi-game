@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
 import type { AnalyticsBackend, SessionUpsert, VerifiedSessionStart } from '../../app/src/lib/analyticsBackend';
 import type { StorageProvider } from '../../src/core/StorageProvider';
-import { cloneReplayRulesSnapshot, TRADE_REPLAY_RULES } from '../../src/core';
+import { cloneReplayRulesSnapshot, CURRENT_REPLAY_RULES } from '../../src/core';
 
 class MemoryStorage implements StorageProvider {
   private readonly values = new Map<string, string>();
@@ -78,6 +78,12 @@ const meta = {
   volatility_enabled: true,
 };
 
+const verifiedMeta = {
+  rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
+  game_mode: 'volatility_trade',
+  volatility_enabled: true,
+};
+
 describe('TelemetryController leaderboard eligibility', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -134,10 +140,9 @@ describe('TelemetryController leaderboard eligibility', () => {
       session_id: 'verified-session',
       started_at: '2026-08-10T00:00:00.000Z',
       seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(TRADE_REPLAY_RULES),
+      rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
     });
     const controller = new TelemetryController({ storage, backend });
-    const verifiedMeta = { rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true };
 
     await controller.init();
     const prepared = await controller.prepareVerifiedSession(verifiedMeta);
@@ -154,7 +159,7 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(JSON.stringify(backend.submitVerifiedScore.mock.calls[0])).not.toContain('999999');
   });
 
-  it('V4 后端未开放时不创建或上报会话，避免开发预览污染生产数据', async () => {
+  it('当前 V4 未拿到服务端 seed 时不允许创建普通交易会话', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
     const backend = createBackend();
@@ -163,34 +168,27 @@ describe('TelemetryController leaderboard eligibility', () => {
 
     await controller.init();
     await expect(controller.prepareVerifiedSession(v4Meta)).resolves.toBeNull();
-    expect(backend.startVerifiedSession).not.toHaveBeenCalled();
-    expect(controller.takePreparedSession()).toBeNull();
+    expect(backend.startVerifiedSession).toHaveBeenCalledTimes(1);
     expect(controller.startSession(v4Meta)).toBe(false);
     expect(controller.getActiveSessionId()).toBeNull();
     expect(backend.upsertSession).not.toHaveBeenCalled();
     expect(backend.uploadEvents).not.toHaveBeenCalled();
   });
 
-  it('规则版本切换时丢弃已缓存的旧校验会话', async () => {
+  it('旧 V3 只保留历史兼容，不再创建新的云端交易会话', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
     const backend = createBackend();
-    backend.startVerifiedSession.mockResolvedValue({
-      session_id: 'v3-session',
-      started_at: '2026-08-10T00:00:00.000Z',
-      seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(TRADE_REPLAY_RULES),
-    });
     const controller = new TelemetryController({ storage, backend });
 
     await controller.init();
     await expect(controller.prepareVerifiedSession({
       rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true,
-    })).resolves.toMatchObject({ session_id: 'v3-session' });
-    await expect(controller.prepareVerifiedSession({
-      rules_version: '4', game_mode: 'volatility_trade', volatility_enabled: true,
     })).resolves.toBeNull();
-    expect(controller.takePreparedSession()).toBeNull();
+    expect(controller.startSession({
+      rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true,
+    })).toBe(false);
+    expect(backend.startVerifiedSession).not.toHaveBeenCalled();
   });
 
   it('身份切换后，已开始的校验会话仍以开局时的 player_id 提交', async () => {
@@ -201,7 +199,7 @@ describe('TelemetryController leaderboard eligibility', () => {
       session_id: 'verified-session',
       started_at: '2026-08-10T00:00:00.000Z',
       seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(TRADE_REPLAY_RULES),
+      rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
     });
     backend.recoverIdentity.mockResolvedValue({
       player_id: 'player-2',
@@ -211,7 +209,6 @@ describe('TelemetryController leaderboard eligibility', () => {
       leaderboard_eligible: true,
     });
     const controller = new TelemetryController({ storage, backend });
-    const verifiedMeta = { rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true };
 
     await controller.init();
     const prepared = await controller.prepareVerifiedSession(verifiedMeta);
@@ -236,11 +233,10 @@ describe('TelemetryController leaderboard eligibility', () => {
       session_id: 'verified-session',
       started_at: '2026-08-10T00:00:00.000Z',
       seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(TRADE_REPLAY_RULES),
+      rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
     });
     backend.submitVerifiedScore.mockRejectedValueOnce(new Error('network down'));
     const controller = new TelemetryController({ storage, backend });
-    const verifiedMeta = { rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true };
 
     await controller.init();
     const prepared = await controller.prepareVerifiedSession(verifiedMeta);
