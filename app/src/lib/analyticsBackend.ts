@@ -98,7 +98,11 @@ export interface AnalyticsBackend {
   ensureSession(): Promise<boolean>;
   provision(displayName: string): Promise<ProvisionResult>;
   recoverIdentity(recoveryCode: string): Promise<PlayerIdentity>;
-  updateDisplayName(playerId: string, name: string): Promise<void>;
+  /**
+   * 更新显示昵称并返回服务端确认后的身份。
+   * 只有服务端确认返回的行才算成功（含 RLS/未命中拒绝）；实现不得静默成功。
+   */
+  updateDisplayName(playerId: string, name: string): Promise<PlayerIdentity>;
   uploadEvents(playerId: string, events: TelemetryEvent[]): Promise<void>;
   upsertSession(playerId: string, session: SessionUpsert): Promise<void>;
   startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null>;
@@ -240,12 +244,19 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     return identity;
   }
 
-  async updateDisplayName(playerId: string, name: string): Promise<void> {
-    const { error } = await this.client
+  async updateDisplayName(playerId: string, name: string): Promise<PlayerIdentity> {
+    // update 后 select+single 拿回服务端（DB 触发器）重新计算的资格，而不是乐观假设命中。
+    // RLS 拒绝或档案不存在时 PostgREST 返回空集，.single() 抛 PGRST116 使调用失败。
+    const { data, error } = await this.client
       .from('player_profiles')
       .update({ display_name: name })
-      .eq('id', playerId);
+      .eq('id', playerId)
+      .select('player_id:id, public_player_id, public_code, display_name, leaderboard_eligible')
+      .single();
     if (error) throw normalizeError(error);
+    const identity = parsePlayerIdentity(data);
+    if (!identity) throw new Error('updateDisplayName 未命中档案或返回异常');
+    return identity;
   }
 
   /** 上传事件到 game_events（追加只写，按客户端事件 ID 幂等去重）。 */
@@ -406,8 +417,8 @@ export class NoopAnalyticsBackend implements AnalyticsBackend {
     throw new Error('云端未配置');
   }
 
-  async updateDisplayName(): Promise<void> {
-    return undefined;
+  async updateDisplayName(): Promise<PlayerIdentity> {
+    throw new Error('云端未配置');
   }
 
   async uploadEvents(): Promise<void> {

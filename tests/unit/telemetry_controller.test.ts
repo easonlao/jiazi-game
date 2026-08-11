@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
-import type { AnalyticsBackend, SessionUpsert, VerifiedSessionStart } from '../../app/src/lib/analyticsBackend';
+import type { AnalyticsBackend, PlayerIdentity, SessionUpsert, VerifiedSessionStart } from '../../app/src/lib/analyticsBackend';
 import type { StorageProvider } from '../../src/core/StorageProvider';
 import { cloneReplayRulesSnapshot, CURRENT_REPLAY_RULES } from '../../src/core';
 
@@ -25,7 +25,15 @@ function createBackend() {
     ensureSession: vi.fn(async () => true),
     provision: vi.fn(),
     recoverIdentity: vi.fn(),
-    updateDisplayName: vi.fn(async () => undefined),
+    updateDisplayName: vi.fn(
+      async (_playerId: string, _name: string): Promise<PlayerIdentity> => ({
+        player_id: 'player-1',
+        public_player_id: 'public-1',
+        public_code: 'PUBLIC001',
+        display_name: '测试玩家',
+        leaderboard_eligible: true,
+      }),
+    ),
     uploadEvents: vi.fn(async () => undefined),
     upsertSession: vi.fn(async (_playerId: string, _session: SessionUpsert) => undefined),
     startVerifiedSession: vi.fn(async (): Promise<VerifiedSessionStart | null> => null),
@@ -305,6 +313,78 @@ describe('TelemetryController leaderboard eligibility', () => {
 
     await Promise.resolve();
     expect(backend.submitVerifiedScore).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe('TelemetryController.updateDisplayName', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('采用服务端返回的身份（含 DB 重算的资格），不乐观宣称有资格', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, false);
+    const backend = createBackend();
+    const serverIdentity: PlayerIdentity = {
+      player_id: 'player-1',
+      public_player_id: 'public-1',
+      public_code: 'PUBLIC001',
+      display_name: '服务端名',
+      leaderboard_eligible: true,
+    };
+    backend.updateDisplayName.mockResolvedValue(serverIdentity);
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    expect(controller.getState().identity?.leaderboard_eligible).toBe(false);
+    expect(await controller.updateDisplayName('服务端名')).toBe(true);
+
+    expect(backend.updateDisplayName).toHaveBeenCalledWith('player-1', '服务端名');
+    const state = controller.getState();
+    expect(state.identity?.display_name).toBe('服务端名');
+    // 资格完全来自服务端返回，而非本地乐观写 true。
+    expect(state.identity?.leaderboard_eligible).toBe(true);
+    expect(JSON.parse(storage.getItem('jiazi_player_identity')!)).toEqual(serverIdentity);
+  });
+
+  it('服务端返回仍未达标时，不宣称有资格', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, false);
+    const backend = createBackend();
+    backend.updateDisplayName.mockResolvedValue({
+      player_id: 'player-1',
+      public_player_id: 'public-1',
+      public_code: 'PUBLIC001',
+      display_name: '玩家',
+      leaderboard_eligible: false,
+    });
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    await controller.updateDisplayName('玩家');
+
+    expect(controller.getState().identity?.leaderboard_eligible).toBe(false);
+    expect(controller.getState().error).toBeNull();
+  });
+
+  it('未命中/服务端拒绝时返回 false，保持原身份并提示错误', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, false);
+    const backend = createBackend();
+    backend.updateDisplayName.mockRejectedValue(new Error('updateDisplayName 未命中档案或返回异常'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    const before = controller.getState().identity;
+    expect(await controller.updateDisplayName('新名字')).toBe(false);
+
+    expect(controller.getState().identity).toEqual(before);
+    expect(controller.getState().identity?.display_name).toBe('玩家');
+    expect(controller.getState().identity?.leaderboard_eligible).toBe(false);
+    expect(controller.getState().error).toBe('昵称更新失败，请稍后重试');
+    expect(JSON.parse(storage.getItem('jiazi_player_identity')!)).toEqual(before);
     warn.mockRestore();
   });
 });

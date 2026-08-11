@@ -21,8 +21,13 @@ test.describe('Supabase 匿名身份与遥测', () => {
         response.request().method() === 'PATCH',
     );
     await page.getByRole('button', { name: '保存玩家名称' }).click();
-    expect((await nameUpdateResponse).ok()).toBe(true);
+    const nameUpdateResult = await nameUpdateResponse;
+    expect(nameUpdateResult.ok()).toBe(true);
+    // 服务端确认：PATCH 返回 DB 触发器重算后的资格，必须已具备云端上榜资格。
+    const nameUpdateJson = await nameUpdateResult.json() as { leaderboard_eligible?: boolean };
+    expect(nameUpdateJson.leaderboard_eligible).toBe(true);
     await expect(page.getByText('E2E测试', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('已设置用户名，可进入云端榜')).toBeVisible({ timeout: 10_000 });
 
     // 延迟真实 start-verified-session 响应，验证 UI 会等待 server seed，
     // 而不是在请求未完成时静默开启不可校验的本地局。

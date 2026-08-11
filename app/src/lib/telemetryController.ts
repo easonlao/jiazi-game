@@ -373,11 +373,11 @@ export class TelemetryController {
       return false;
     }
     try {
-      await this.backend.updateDisplayName(this.state.identity.player_id, trimmed);
-      const next = { ...this.state.identity, display_name: trimmed };
-      next.leaderboard_eligible = true;
-      writeIdentity(this.storage, next);
-      this.setState({ identity: next, error: null });
+      // 采用服务端确认后返回的身份（含 DB 触发器重算的 leaderboard_eligible），
+      // 不乐观宣称有资格——update 未命中或 RLS 拒绝时后端必须抛错。
+      const identity = await this.backend.updateDisplayName(this.state.identity.player_id, trimmed);
+      writeIdentity(this.storage, identity);
+      this.setState({ identity, error: null });
       return true;
     } catch (e) {
       console.warn('[telemetry] updateDisplayName 失败', e);

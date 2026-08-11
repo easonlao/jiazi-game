@@ -95,3 +95,71 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
     });
   });
 });
+
+describe('SupabaseAnalyticsBackend.updateDisplayName', () => {
+  const PROFILE_ROW = {
+    player_id: 'player-1',
+    public_player_id: 'public-1',
+    public_code: 'PUBLIC001',
+    display_name: '测试玩家',
+    leaderboard_eligible: true,
+  };
+
+  /** 构造支持 update().eq().select().single() 链式调用的 mock client。 */
+  function createClientForUpdate(result: { data: unknown; error: unknown }) {
+    const single = vi.fn(async () => result);
+    const select = vi.fn(() => ({ single }));
+    const eq = vi.fn(() => ({ select }));
+    const update = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ update }));
+    const client = { from } as unknown as SupabaseClient;
+    return { client, single, select, eq, update };
+  }
+
+  it('update 后返回服务端确认的身份（含资格）', async () => {
+    const { client, select, eq, update } = createClientForUpdate({ data: PROFILE_ROW, error: null });
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    await expect(backend.updateDisplayName('player-1', '测试玩家')).resolves.toEqual(PROFILE_ROW);
+
+    expect(update).toHaveBeenCalledWith({ display_name: '测试玩家' });
+    expect(eq).toHaveBeenCalledWith('id', 'player-1');
+    expect(select).toHaveBeenCalledWith(
+      'player_id:id, public_player_id, public_code, display_name, leaderboard_eligible',
+    );
+  });
+
+  it('未命中（0 行返回）时失败，不静默成功', async () => {
+    const { client } = createClientForUpdate({
+      data: null,
+      error: {
+        message: 'JSON object requested, multiple (or no) rows returned',
+        code: 'PGRST116',
+        details: 'The result contains 0 rows',
+        hint: '',
+        code_level: 'PG',
+      },
+    });
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    await expect(backend.updateDisplayName('player-1', '玩家')).rejects.toThrow(
+      'multiple (or no) rows returned',
+    );
+  });
+
+  it('update 报错（RLS/网络/服务端）时失败', async () => {
+    const { client } = createClientForUpdate({ data: null, error: { message: 'update forbidden' } });
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    await expect(backend.updateDisplayName('player-1', '测试玩家')).rejects.toThrow('update forbidden');
+  });
+
+  it('返回异常形状（缺字段）时视为失败', async () => {
+    const { client } = createClientForUpdate({ data: { player_id: 'player-1' }, error: null });
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    await expect(backend.updateDisplayName('player-1', '测试玩家')).rejects.toThrow(
+      'updateDisplayName 未命中档案或返回异常',
+    );
+  });
+});

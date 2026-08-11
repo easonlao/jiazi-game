@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
   AnalyticsBackend,
+  PlayerIdentity,
   VerifiedSessionStart,
   VerifiedScoreOutcome,
   VerifiedScoreSubmission,
@@ -55,7 +56,15 @@ function makeBackend() {
     ensureSession: vi.fn(async () => true),
     provision: vi.fn(),
     recoverIdentity: vi.fn(),
-    updateDisplayName: vi.fn(async () => undefined),
+    updateDisplayName: vi.fn(
+      async (_playerId: string, _name: string): Promise<PlayerIdentity> => ({
+        player_id: 'p1',
+        public_player_id: 'public-1',
+        public_code: 'PUBLIC001',
+        display_name: '测试玩家',
+        leaderboard_eligible: true,
+      }),
+    ),
     uploadEvents: vi.fn(async () => undefined),
     upsertSession: vi.fn(async () => undefined),
     startVerifiedSession: vi.fn(async () => null as VerifiedSessionStart | null),
