@@ -172,6 +172,36 @@ html, body, #root {
   animation: settlementCardFlight 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@keyframes buyCardFlight {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.9); }
+  15% { opacity: 1; transform: translate(0, 0) scale(1); }
+  82% { opacity: 1; transform: translate(var(--buy-flight-x), var(--buy-flight-y)) scale(0.9); }
+  100% { opacity: 0; transform: translate(var(--buy-flight-x), var(--buy-flight-y)) scale(0.84); }
+}
+.buy-card-flight {
+  position: fixed;
+  z-index: 71;
+  width: 7.5rem;
+  min-height: 5.5rem;
+  padding: 0.6rem 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #38bdf8;
+  border-radius: 0.5rem;
+  background: rgba(240, 249, 255, 0.97);
+  color: #0c4a6e;
+  box-shadow: 0 0 10px rgba(14, 165, 233, 0.45), 0 4px 12px rgba(71, 45, 39, 0.18);
+  font-family: serif;
+  font-size: 1rem;
+  font-weight: 700;
+  pointer-events: none;
+  margin-left: -3.75rem;
+  margin-top: -2.75rem;
+  transform-origin: center;
+  animation: buyCardFlight 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @keyframes qiSettlementFx {
   0% { opacity: 0; transform: translateY(5px) scale(0.92); }
   18% { opacity: 1; transform: translateY(0) scale(1.04); }
@@ -207,6 +237,7 @@ html, body, #root {
 
 @media (prefers-reduced-motion: reduce) {
   .settlement-card-flight,
+  .buy-card-flight,
   .qi-settlement-fx { animation: none; }
 }
 

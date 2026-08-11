@@ -53,16 +53,17 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
           .map((card: JiaziCard, i: number) => {
           // 需要从 store 实时读 cost（因为 useLeverage 可能变了）
           return (
-            <PublicCardItem
-              key={`${i}-${card.id}`}
-              card={card}
-              index={i}
-              selected={selectedPublicCard === i}
-              onSelect={() => selectPublicCard(i)}
-              disabled={gameState !== 'player_action'}
-              locked={lockedCardIds.includes(card.id)}
-              onToggleLock={gameState === 'player_action' ? () => toggleLockCard(i) : undefined}
-            />
+            <div key={`${i}-${card.id}`} data-public-card-index={i} className="min-w-0">
+              <PublicCardItem
+                card={card}
+                index={i}
+                selected={selectedPublicCard === i}
+                onSelect={() => selectPublicCard(i)}
+                disabled={gameState !== 'player_action'}
+                locked={lockedCardIds.includes(card.id)}
+                onToggleLock={gameState === 'player_action' ? () => toggleLockCard(i) : undefined}
+              />
+            </div>
           );
         })}
       </div>

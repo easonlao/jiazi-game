@@ -1,4 +1,4 @@
-import type { SettlementDetail } from '@core/index';
+import type { SettlementDetail, Element } from '@core/index';
 
 /** FX 事件类型：id 递增，组件监听 id 变化触发动画 */
 export interface FxSeasonEvent {
@@ -18,6 +18,38 @@ export interface FxRoundEvent {
   id: number;
   round: number;
   season: string;
+}
+
+/**
+ * 跨回合买入结算事件（issue：cross-round buy settlement animation）。
+ * 玩家确认纳灵后游戏立即进入下一回合，此时公共牌已被移除、手牌已就位；
+ * 本事件在「执行买入前」由 store 快照卡牌身份与公共牌源几何，
+ * 供 BuySettlementAnimation 在新回合把购入牌从原公共位飞入丹田槽位，
+ * 再展示本次实际纳灵耗神（−N 神识），之后才轮到炼化/回神结算序列。
+ */
+export interface FxBuySettlementEvent {
+  id: number;
+  /** 被买入卡牌身份（供飞行卡牌渲染） */
+  cardId: number;
+  cardName: string;
+  tianGan: string;
+  diZhi: string;
+  tianGanElement: Element;
+  diZhiElement: Element;
+  mainElement: Element;
+  /** 实际纳灵耗神（正值；展示为 −N 神识）。与下回合持仓炼化/炼耗互不合并。 */
+  buyCost: number;
+  /** 燃灵（杠杆买入） */
+  useLeverage: boolean;
+  /** 买入前该公共牌处于锁定状态 */
+  wasLocked: boolean;
+  /** 行动前公共牌中心 view 坐标（无 DOM 环境为 0） */
+  sourceX: number;
+  sourceY: number;
+  /** 买入后所在的丹田槽位索引 */
+  slotIndex: number;
+  /** 目标回合（买入推进后的当前回合；用于判定是否本轮买入） */
+  round: number;
 }
 
 /** FX 事件 diff 前后对比所需的旧值快照 */
@@ -57,6 +89,22 @@ let fxSeq = 0;
 /** 重置 FX 序列（仅测试用） */
 export function _resetFxSeq(): void {
   fxSeq = 0;
+}
+
+/**
+ * 跨回合买入事件自增序列（由 store 的 confirmSettlementPreview 分配）。
+ * 买入事件不是 diff 产物，独立于 fxSeq；组件按 id 去重，天然支持重复触发。
+ */
+let buyFxSeq = 0;
+
+/** 重置买入事件序列（仅测试用） */
+export function _resetBuyFxSeq(): void {
+  buyFxSeq = 0;
+}
+
+/** 分配下一个跨回合买入结算事件 id */
+export function nextBuyFxId(): number {
+  return ++buyFxSeq;
 }
 
 /**

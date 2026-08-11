@@ -260,13 +260,19 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
 
+    const buyFlight = page.getByTestId('buy-card-flight');
+    await expect(buyFlight).toBeVisible({ timeout: 2_000 });
+    await expect(buyFlight).toHaveAttribute('aria-label', /纳灵/);
+    const buyQiAnimation = page.getByTestId('settlement-qi-animation');
+    await expect(buyQiAnimation).toHaveAttribute('aria-label', /纳灵耗神/, { timeout: 3_000 });
+    await expect(buyQiAnimation).toHaveAttribute('aria-label', /炼化耗神/, { timeout: 3_000 });
+    await expect(buyQiAnimation).toHaveAttribute('aria-label', /回神/, { timeout: 4_000 });
+
     await expect(page.getByTestId('settlement-animation')).toBeVisible({ timeout: 2_000 });
     await expect(page.getByTestId('settlement-card-flight').first()).toBeVisible({ timeout: 2_000 });
     await expect(page.getByTestId('settlement-card-flight').first()).toHaveText('');
     await expect(page.getByTestId('settlement-card-flight').first()).toHaveAttribute('aria-label', /炼化/);
-    const qiAnimation = page.getByTestId('settlement-qi-animation');
-    await expect(qiAnimation).toHaveText(/−\d+ 神识/, { timeout: 2_500 });
-    await expect(qiAnimation).toHaveText(/\+\d+ 神识/, { timeout: 3_500 });
+    const qiAnimation = buyQiAnimation;
 
     // 验证丹田数增加
     const handHeader = page.getByText(/丹田/);
@@ -279,8 +285,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
     await expect(qiAnimation).toBeVisible({ timeout: 2_000 });
-    await expect(qiAnimation).toHaveText(/−\d+ 神识/, { timeout: 2_500 });
-    await expect(qiAnimation).toHaveText(/\+\d+ 神识/, { timeout: 4_000 });
+    await expect(qiAnimation).toHaveAttribute('aria-label', /炼化耗神/, { timeout: 2_500 });
+    await expect(qiAnimation).toHaveAttribute('aria-label', /回神/, { timeout: 4_000 });
 
     // ===== 第 3 回合：释灵 =====
     // 点击丹田中的第一张牌

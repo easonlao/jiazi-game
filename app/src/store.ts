@@ -18,11 +18,14 @@ import {
 } from '@core/index';
 import {
   diffFxEvents,
+  nextBuyFxId,
   type FxSeasonEvent,
   type FxMarginCallEvent,
   type FxDeltaEvent,
   type FxRoundEvent,
+  type FxBuySettlementEvent,
 } from './store/fx-events';
+import { captureBuySourceGeometry } from './lib/buySettlementFx';
 import { localStorageProvider } from './platform/localStorageProvider';
 import { getSupabaseClient } from './platform/supabaseClient';
 import {
@@ -42,7 +45,7 @@ import {
 import { LeaderboardRefreshGate } from './lib/leaderboardRefresh';
 
 // 重新导出 FX 事件类型，供 hooks/useScreenShake 等消费者使用
-export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent };
+export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent, FxBuySettlementEvent };
 
 /** 防止 React StrictMode 下 initialize 被重复调用 */
 let _initializing = false;
@@ -155,6 +158,8 @@ interface GameStore {
   qiDelta: FxDeltaEvent | null;
   /** 回合推进 */
   roundEvent: FxRoundEvent | null;
+  /** 已确认纳灵：在新回合播放公共灵气入丹田动画（跨回合买入结算） */
+  buySettlementEvent: FxBuySettlementEvent | null;
 
   // 生命周期
   initialize: () => Promise<void>;
@@ -471,6 +476,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   scoreDelta: null,
   qiDelta: null,
   roundEvent: null,
+  buySettlementEvent: null,
 
   showToast: (msg: string) => {
     set({ toast: msg });
@@ -642,6 +648,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             useLeverage: false,
             pendingAction: null,
             settlementPreview: null,
+            buySettlementEvent: null,
           });
           _telemetryController?.startSession(getTelemetryGameMeta(verifiedTm), prepared);
         } catch (error) {
@@ -667,7 +674,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get()._sync();
     set({
       selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
-      pendingAction: null, settlementPreview: null,
+      pendingAction: null, settlementPreview: null, buySettlementEvent: null,
     });
     // 遥测：开启新局会话（未同意/云端不可用时静默 no-op，不阻塞开局；读档不经过此路径）
     _telemetryController?.startSession(getTelemetryGameMeta(tm));
@@ -687,7 +694,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         marginCallCount: tm.getMarginCallCount(),
       });
       get()._sync();
-      set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, hasSave: false });
+      set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, buySettlementEvent: null, hasSave: false });
       // 刷新/换设备读档后建立新的分析会话；上一页若仍有会话则先标记为放弃。
       _telemetryController?.abandonSession('reset');
       _telemetryController?.startSession(getTelemetryGameMeta(tm));
@@ -817,6 +824,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       scoreDelta: null,
       qiDelta: null,
       roundEvent: null,
+      buySettlementEvent: null,
     });
     // 同步 TurnManager 重置后的状态（gameState → 'init'），让 UI 回到开始界面
     get()._sync();
@@ -973,6 +981,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const tm = get().turnManager;
     const action = get().pendingAction;
     if (!tm || !action) return false;
+    // 跨回合买入动画：确认前快照公共牌身份与源几何——新回合渲染时公共牌已被移除、
+    // 手牌已就位，必须在这一步（DOM 仍含该公共牌）捕获，动画才保留「从原公共位入丹田」的来源感。
+    const buySourceCard = action.type === 'buy' ? tm.getPublicCards()[action.cardIndex] : null;
+    const buyCapture = action.type === 'buy' && buySourceCard
+      ? {
+          card: buySourceCard,
+          useLeverage: action.leverage,
+          wasLocked: tm.isCardLocked(buySourceCard.id),
+          source: captureBuySourceGeometry(action.cardIndex),
+        }
+      : null;
     // 终局行动会在 execute* 内触发 onGameEnd 并清空 controller 的活跃会话；
     // 先保存 session id，确保最终买/卖/等候与回合结算仍能入队。
     const telemetrySessionId = _telemetryController?.getActiveSessionId();
@@ -1007,6 +1026,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     set(patch);
     get()._sync();
+
+    // 确认成功：产生跨回合买入结算事件。耗神取实际行动事实（roundLog 归档的 actionQiChange），
+    // 缺失时回退到 preview 口径；与下回合持仓炼化/炼耗完全分离，不做视觉合并。
+    if (buyCapture) {
+      const targetSlotIndex = tm.getHand().findIndex((slot) => slot?.card.id === buyCapture.card.id);
+      const logs = tm.getRoundLog();
+      const lastLog = logs.length > 0 ? logs[logs.length - 1] : null;
+      const actualBuyCost = lastLog?.action === 'buy' && lastLog.actionCardName === buyCapture.card.name
+        ? Math.abs(lastLog.actionQiChange)
+        : tm.previewBuyCost(buyCapture.card, buyCapture.useLeverage);
+      if (targetSlotIndex >= 0) {
+        set({
+          buySettlementEvent: {
+            id: nextBuyFxId(),
+            cardId: buyCapture.card.id,
+            cardName: buyCapture.card.name,
+            tianGan: buyCapture.card.tianGan,
+            diZhi: buyCapture.card.diZhi,
+            tianGanElement: buyCapture.card.tianGanElement,
+            diZhiElement: buyCapture.card.diZhiElement,
+            mainElement: buyCapture.card.mainElement,
+            buyCost: actualBuyCost,
+            useLeverage: buyCapture.useLeverage,
+            wasLocked: buyCapture.wasLocked,
+            sourceX: buyCapture.source?.x ?? 0,
+            sourceY: buyCapture.source?.y ?? 0,
+            slotIndex: targetSlotIndex,
+            round: get().currentRound,
+          },
+        });
+      }
+    }
 
     recordActionTelemetry(before, get(), tm, action, undefined, telemetrySessionId);
 

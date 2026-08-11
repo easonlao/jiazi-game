@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store';
+import { BUY_COST_MS, BUY_FLIGHT_MS } from '../lib/buySettlementFx';
 
 interface Floater {
   id: number;
   delta: number;
 }
 
-type QiSettlementPhase = 'cost' | 'backlash' | 'recovery';
+type QiSettlementPhase = 'buy-cost' | 'cost' | 'backlash' | 'recovery';
 
 interface QiSettlementAnimation {
   id: number;
@@ -16,6 +17,8 @@ interface QiSettlementAnimation {
 }
 
 interface QueuedQiSettlement {
+  buyQiCost: number;
+  hasBuyAnimation: boolean;
   holdQiCost: number;
   recoveryQi: number;
   holdItemCount: number;
@@ -30,6 +33,7 @@ export function QiBar() {
   const baseRecovery = useGameStore((s) => s.baseRecovery);
   const qiDelta = useGameStore((s) => s.qiDelta);
   const roundEvent = useGameStore((s) => s.roundEvent);
+  const buyEvent = useGameStore((s) => s.buySettlementEvent);
   const lastSettlement = useGameStore((s) => s.lastSettlement);
 
   const [floaters, setFloaters] = useState<Floater[]>([]);
@@ -62,13 +66,15 @@ export function QiBar() {
     lastRoundEventId.current = roundEvent.id;
 
     const settlement = lastSettlement?.round === currentRound ? lastSettlement : null;
+    const hasBuyAnimation = buyEvent?.round === currentRound;
+    const buyQiCost = hasBuyAnimation ? (buyEvent?.buyCost ?? 0) : 0;
     const holdQiCost = settlement?.holdQiCost ?? 0;
     const recoveryQi = (settlement?.baseQiRecover ?? baseRecovery) + (settlement?.waitQiRecover ?? 0);
     const holdItemCount = settlement?.holdItems.length ?? 0;
     const hasMarginCall = settlement?.marginCallTriggered ?? false;
     // 空丹田时保留原有净变化飘字；有持仓时将炼化耗神与修为飞点置于同一阶段，随后才回神。
-    if (holdItemCount === 0 && holdQiCost <= 0 && !hasMarginCall) return;
-    settlementQueue.current.push({ holdQiCost, recoveryQi, holdItemCount, hasMarginCall });
+    if (!hasBuyAnimation && holdItemCount === 0 && holdQiCost <= 0 && !hasMarginCall) return;
+    settlementQueue.current.push({ buyQiCost, hasBuyAnimation, holdQiCost, recoveryQi, holdItemCount, hasMarginCall });
 
     // 不让下一回合的状态更新取消上一回合尚未到达的回神阶段。
     if (!settlementRunning.current) {
@@ -81,33 +87,43 @@ export function QiBar() {
           return;
         }
 
-        const hasQiCost = next.holdQiCost > 0;
-        const phases: QiSettlementPhase[] = [];
-        if (hasQiCost) phases.push('cost');
-        if (next.hasMarginCall) phases.push('backlash');
-        phases.push('recovery');
-        let index = 0;
+        const startPhases = () => {
+          const hasQiCost = next.holdQiCost > 0;
+          const phases: QiSettlementPhase[] = [];
+          if (next.buyQiCost > 0) phases.push('buy-cost');
+          if (hasQiCost) phases.push('cost');
+          if (next.hasMarginCall) phases.push('backlash');
+          phases.push('recovery');
+          let index = 0;
 
-        const showNextPhase = () => {
-          const phase = phases[index++];
-          if (!phase) {
-            setSettlementAnimation(null);
-            runNext();
-            return;
-          }
-          setSettlementAnimation({ id: roundEvent.id, phase, holdQiCost: next.holdQiCost, recoveryQi: next.recoveryQi });
-          // 与修为光点 0.9s 动画对齐：耗神阶段先与炼化同时出现，
-          // 多张牌错峰时等最后一个光点结束后再进入回神阶段。
-          const phaseDuration = phase === 'cost'
-            ? Math.max(900, 900 + Math.max(0, next.holdItemCount - 1) * 90)
-            : phase === 'recovery' ? 650 : 520;
-          settlementTimer.current = window.setTimeout(showNextPhase, phaseDuration);
+          const showNextPhase = () => {
+            const phase = phases[index++];
+            if (!phase) {
+              setSettlementAnimation(null);
+              runNext();
+              return;
+            }
+            setSettlementAnimation({ id: roundEvent.id, phase, holdQiCost: next.holdQiCost, recoveryQi: next.recoveryQi });
+            // 与修为光点 0.9s 动画对齐：耗神阶段先与炼化同时出现，
+            // 多张牌错峰时等最后一个光点结束后再进入回神阶段。
+            const phaseDuration = phase === 'buy-cost'
+              ? BUY_COST_MS
+              : phase === 'cost'
+                ? Math.max(900, 900 + Math.max(0, next.holdItemCount - 1) * 90)
+                : phase === 'recovery' ? 650 : 520;
+            settlementTimer.current = window.setTimeout(showNextPhase, phaseDuration);
+          };
+          showNextPhase();
         };
-        showNextPhase();
+        if (next.hasBuyAnimation) {
+          settlementTimer.current = window.setTimeout(startPhases, BUY_FLIGHT_MS);
+        } else {
+          startPhases();
+        }
       };
       runNext();
     }
-  }, [roundEvent]);
+  }, [roundEvent, buyEvent]);
 
   useEffect(() => () => {
     if (settlementTimer.current !== null) window.clearTimeout(settlementTimer.current);
@@ -159,7 +175,9 @@ export function QiBar() {
               className={`qi-settlement-fx qi-settlement-${settlementAnimation.phase}`}
               data-testid="settlement-qi-animation"
               aria-label={
-                settlementAnimation.phase === 'cost'
+                settlementAnimation.phase === 'buy-cost'
+                  ? `纳灵耗神 ${buyEvent?.buyCost?.toFixed(0) ?? '0'}`
+                  : settlementAnimation.phase === 'cost'
                   ? `炼化耗神 ${settlementAnimation.holdQiCost.toFixed(0)}`
                   : settlementAnimation.phase === 'backlash'
                     ? '反噬'
@@ -167,6 +185,9 @@ export function QiBar() {
               }
             >
               <span className="mr-1 text-[10px] font-normal text-ink-light">结算</span>
+              {settlementAnimation.phase === 'buy-cost' && buyEvent && buyEvent.round === currentRound && (
+                <>纳灵 −{buyEvent.buyCost.toFixed(0)} 神识</>
+              )}
               {settlementAnimation.phase === 'cost' && settlementAnimation.holdQiCost > 0 && (
                 <>−{settlementAnimation.holdQiCost.toFixed(0)} 神识</>
               )}
