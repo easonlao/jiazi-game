@@ -9,6 +9,7 @@ import {
   CURRENT_REPLAY_RULES,
   type ReplayRulesSnapshot,
 } from '../../../src/core/ReplayRules.ts';
+import { normalizeVerifiedScore } from '../../../src/core/VerifiedScore.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -136,13 +137,14 @@ Deno.serve(async (req) => {
   }
 
   const verifiedAt = new Date().toISOString();
-  const finalScore = Math.round(replay.score * 10) / 10;
+  // 会话、排行榜与返回响应共用同一规范化口径：先按 0.1 舍入，负分归零。
+  const finalScore = normalizeVerifiedScore(replay.score);
   const { data: updatedSession, error: updateError } = await supabase
     .from('game_sessions')
     .update({
       status: 'completed',
       rounds_completed: replay.rounds,
-      final_score: Math.max(0, finalScore),
+      final_score: finalScore,
       ended_at: verifiedAt,
       verified_at: verifiedAt,
     })
@@ -164,7 +166,7 @@ Deno.serve(async (req) => {
 
   const eligible = profile.leaderboard_eligible === true &&
     typeof profile.display_name === 'string' && profile.display_name.trim().length > 0;
-  if (eligible && finalScore >= 0) {
+  if (eligible) {
     const { error: leaderboardError } = await supabase
       .from('leaderboard_entries')
       .insert({
@@ -182,7 +184,7 @@ Deno.serve(async (req) => {
   return json({
     verified: true,
     score: finalScore,
-    leaderboard_submitted: eligible && finalScore >= 0,
+    leaderboard_submitted: eligible,
     rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
     rounds: replay.rounds,
   }, 200);

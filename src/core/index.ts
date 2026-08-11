@@ -14,6 +14,8 @@ export type {
 export { replayGame, ReplayValidationError, MAX_REPLAY_ACTIONS } from './ReplayRunner';
 export type { ReplayAction, ReplayRequest, ReplayResult } from './ReplayRunner';
 
+export { normalizeVerifiedScore } from './VerifiedScore';
+
 export {
   TRADE_REPLAY_RULES,
   BALANCED_TRADE_REPLAY_RULES,
