@@ -250,19 +250,36 @@ html, body, #root {
 
 @keyframes buyCardFlight {
   0% { opacity: 0; transform: translate(0, 0) scale(0.9); }
-  15% { opacity: 1; transform: translate(0, 0) scale(1); }
-  82% { opacity: 1; transform: translate(var(--buy-flight-x), var(--buy-flight-y)) scale(0.9); }
+  15% { opacity: 0.92; transform: translate(0, 0) scale(1); }
+  82% { opacity: 0.92; transform: translate(var(--buy-flight-x), var(--buy-flight-y)) scale(0.9); }
   100% { opacity: 0; transform: translate(var(--buy-flight-x), var(--buy-flight-y)) scale(0.84); }
 }
 .buy-card-flight {
   position: fixed;
   z-index: 71;
-  width: 6rem;
+  width: 7.5rem;
+  min-height: 8rem;
   pointer-events: none;
-  /* 无框无底：仅内容（干支文字+徽章）飞行，容器贴近内容，居中锚点收窄 */
-  margin-left: -3rem;
+  /* 完整卡面飞行（2026-08-14 定稿）：容器即卡面——五行边框/底色由组件内
+     elementBorder 类提供，居中锚点收窄；飞行中带轻微透明 + 五行光晕呼吸强调「在移动」，
+     落定时终点淡出，由真实手牌卡面承接。 */
+  margin-left: -3.75rem;
+  margin-top: -4rem;
   transform-origin: center;
-  animation: buyCardFlight 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  opacity: 0.92;
+  box-shadow: 0 0 10px color-mix(in srgb, currentColor 45%, transparent), 0 0 24px color-mix(in srgb, currentColor 28%, transparent);
+  animation: buyCardFlight 0.9s cubic-bezier(0.22, 1, 0.36, 1) both,
+             buyFlightBreath 0.9s ease-in-out both;
+}
+
+/* 飞行途中五行光晕呼吸（与 buyCardFlight 同 900ms 对齐；currentColor = 五行光晕色） */
+@keyframes buyFlightBreath {
+  0%, 100% {
+    box-shadow: 0 0 8px color-mix(in srgb, currentColor 38%, transparent), 0 0 18px color-mix(in srgb, currentColor 22%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 14px color-mix(in srgb, currentColor 60%, transparent), 0 0 34px color-mix(in srgb, currentColor 32%, transparent);
+  }
 }
 
 @keyframes qiSettlementFx {

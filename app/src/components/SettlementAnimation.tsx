@@ -1,8 +1,20 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { YinYang, type Element } from '@core/index';
+import { Element, YinYang } from '@core/index';
 import { useGameStore } from '../store';
 import { BUY_FLIGHT_MS, BUY_SEQUENCE_TOTAL_MS, prefersReducedMotion } from '../lib/buySettlementFx';
-import { elementScoreColor } from './CardVisual';
+import { elementBorder, elementScoreColor } from './CardVisual';
+
+/** 五行光晕色（与 CardVisual elementBorder 的边框色一致：emerald/red/amber/slate/sky 400）。 */
+const ELEMENT_GLOW: Record<Element, string> = {
+  [Element.WOOD]: '#34d399', // emerald-400
+  [Element.FIRE]: '#f87171', // red-400
+  [Element.EARTH]: '#fbbf24', // amber-400
+  [Element.METAL]: '#94a3b8', // slate-400
+  [Element.WATER]: '#38bdf8', // sky-400
+};
+
+/** 神识消耗统一色（与 PublicCard/HandCard 的 QI_COST_COLOR 一致：资源冷色） */
+const QI_COST_COLOR = 'text-sky-600';
 
 interface Flight {
   id: string;
@@ -15,6 +27,7 @@ interface Flight {
   delay: number;
 }
 
+/** 买入飞行卡面快照（字段与 FxBuySettlementEvent 对齐，渲染完整真实卡面）。 */
 interface BuyFlight {
   id: number;
   cardName: string;
@@ -24,6 +37,11 @@ interface BuyFlight {
   diZhiElement: Element;
   mainElement: Element;
   yinYang: YinYang;
+  score: number;
+  nextScore: number;
+  buyCost: number;
+  holdEarning: number;
+  holdQiCost: number;
   useLeverage: boolean;
   wasLocked: boolean;
   startX: number;
@@ -54,7 +72,11 @@ export function SettlementAnimation() {
     const event = buySettlementEvent;
     if (!event || event.id === lastBuyEventId.current || event.round !== currentRound) return;
     lastBuyEventId.current = event.id;
-    if (prefersReducedMotion() || (event.sourceX === 0 && event.sourceY === 0)) return;
+    // 减少动效偏好或无源几何：不播飞行，直接清事件让目标槽位立即显示手牌
+    if (prefersReducedMotion() || (event.sourceX === 0 && event.sourceY === 0)) {
+      useGameStore.setState({ buySettlementEvent: null });
+      return;
+    }
 
     let cancelled = false;
     const frame = window.requestAnimationFrame(() => {
@@ -73,6 +95,11 @@ export function SettlementAnimation() {
         diZhiElement: event.diZhiElement,
         mainElement: event.mainElement,
         yinYang: event.yinYang,
+        score: event.score,
+        nextScore: event.nextScore,
+        buyCost: event.buyCost,
+        holdEarning: event.holdEarning,
+        holdQiCost: event.holdQiCost,
         useLeverage: event.useLeverage,
         wasLocked: event.wasLocked,
         startX: event.sourceX,
@@ -81,7 +108,12 @@ export function SettlementAnimation() {
         deltaY: targetY - event.sourceY,
       });
     });
-    const clearTimer = window.setTimeout(() => setBuyFlight(null), BUY_FLIGHT_MS);
+    const clearTimer = window.setTimeout(() => {
+      setBuyFlight(null);
+      // 飞行结束：清空事件 → HandCards 目标槽位恢复真实手牌（飞行期间留空，
+      // 全程同一张牌视觉；2026-08-14 两层叠加反馈修复）。
+      useGameStore.setState({ buySettlementEvent: null });
+    }, BUY_FLIGHT_MS);
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
@@ -167,17 +199,21 @@ export function SettlementAnimation() {
             top: `${buyFlight.startY}px`,
             '--buy-flight-x': `${buyFlight.deltaX}px`,
             '--buy-flight-y': `${buyFlight.deltaY}px`,
+            color: ELEMENT_GLOW[buyFlight.mainElement],
           } as CSSProperties}
           data-testid="buy-card-flight"
           aria-label={`纳灵 ${buyFlight.cardName}`}
         >
-          {/* 飞行卡面：去掉边框与底色（用户反馈 2026-08-14 仍像"方框遮挡"），
-              只保留干支五行色文字 + 阴阳/燃/锁徽章，轻盈飞入丹田。
-              干支颜色沿用 CardVisual 的 elementScoreColor（未来换色自动跟随）；
-              无框无底靠浅阴影保证在米白界面上的可读性。 */}
-          <div className="relative flex h-full w-full flex-col items-center justify-center gap-1.5 select-none min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="text-3xl leading-none font-bold font-serif drop-shadow-sm">
+          {/* 完整真实卡面（2026-08-14 三轮迭代定稿）：与公共牌/手牌同款视觉——
+              干支五行着色、阴阳徽章、评分行「当前评分 → 下季」、三行信息（耗神/炼化/炼耗）。
+              落定时真实手牌已就位、两处卡面一致 → 视觉无缝衔接「就是这张牌飞进去了」。 */}
+          <div
+            className={`relative overflow-hidden rounded-lg border-2 select-none min-w-0 ${elementBorder[buyFlight.mainElement]}`}
+            data-testid="buy-flight-face"
+          >
+            {/* 顶部：干支（天干地支各自按五行着色）+ 阴阳徽章 + 燃灵/锁定徽章 */}
+            <div className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-0.5">
+              <span className="text-base max-md:text-[15px] leading-none font-bold truncate min-w-0">
                 <span className={elementScoreColor[buyFlight.tianGanElement]}>{buyFlight.tianGan}</span>
                 <span className={elementScoreColor[buyFlight.diZhiElement]}>{buyFlight.diZhi}</span>
               </span>
@@ -194,23 +230,60 @@ export function SettlementAnimation() {
                 </span>
                 {buyFlight.useLeverage && (
                   <span
-                    className="text-[9px] max-md:text-[8px] px-1.5 py-0.5 rounded font-bold bg-qi-critical text-white"
-                    title="燃灵买入"
+                    className="text-[9px] max-md:text-[9px] px-1.5 py-0.5 rounded font-bold bg-qi-critical text-white"
+                    title="燃灵（杠杆买入）"
                   >
                     燃
                   </span>
                 )}
                 {buyFlight.wasLocked && (
                   <span
-                    className="text-[9px] max-md:text-[8px] px-1.5 py-0.5 rounded font-bold bg-amber-500 text-white"
-                    title="锁定中买入"
+                    className="text-[9px] max-md:text-[9px] px-1.5 py-0.5 rounded font-bold border border-amber-500 bg-amber-100 text-amber-700"
+                    title="买入前处于锁定状态"
                   >
                     锁
                   </span>
                 )}
               </div>
             </div>
-            <span className="text-[10px] leading-tight text-ink-light/80 tracking-widest">纳灵入丹田</span>
+
+            {/* 评分行：当前评分 → 下季评分（与 CardVisual market 模式同结构） */}
+            <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5 max-md:py-1">
+              <div className="min-w-0 flex-1">
+                <span className="card-score-label block text-[10px] max-md:text-[9px] leading-tight text-ink-light">
+                  当前评分
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[buyFlight.mainElement]}`}>
+                    {buyFlight.score >= 0 ? '+' : ''}{buyFlight.score.toFixed(1)}
+                    <span className="mx-0.5 text-ink-light/50">→</span>
+                    {buyFlight.nextScore >= 0 ? '+' : ''}{buyFlight.nextScore.toFixed(1)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 三行信息：耗神 / 炼化 / 炼耗（与公共牌同口径，落定后与手牌一致） */}
+            <div className="divide-y divide-wood-light/35 text-[11px] max-md:text-[10px]">
+              <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
+                <span className="text-[9px] text-ink-light shrink-0">耗神</span>
+                <span className={`font-bold tabular-nums whitespace-nowrap ${QI_COST_COLOR}`}>
+                  -{buyFlight.buyCost} 神识
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
+                <span className="text-[9px] text-ink-light shrink-0">炼化</span>
+                <span className={`font-bold tabular-nums whitespace-nowrap ${buyFlight.holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
+                  {buyFlight.holdEarning >= 0 ? '+' : ''}{buyFlight.holdEarning.toFixed(1)}修为
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
+                <span className="text-[9px] text-ink-light shrink-0">炼耗</span>
+                <span className={`font-bold tabular-nums whitespace-nowrap ${QI_COST_COLOR}`}>
+                  -{buyFlight.holdQiCost.toFixed(1)}神识
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}

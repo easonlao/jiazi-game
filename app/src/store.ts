@@ -1227,6 +1227,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ? Math.abs(lastLog.actionQiChange)
         : tm.previewBuyCost(buyCapture.card, buyCapture.useLeverage);
       if (targetSlotIndex >= 0) {
+        // 飞行卡面快照（与落定手牌同口径，HandCards 的 score/holdEarning/holdQiCost 一致）：
+        // 买入已推进到新回合，取当前 tm 状态评分，玩家确认时预览与落定手牌视觉无缝衔接。
+        const flightScore = tm.getCardScore(buyCapture.card, tm.getCurrentSeason());
+        const flightNextScore = tm.getCardScore(buyCapture.card, tm.getFollowingSeason());
+        const flightLeverage = buyCapture.useLeverage ? tm.getLeverageMultiplier() : 1;
+        const flightHoldEarning = tm.previewHoldEarning(flightScore, flightLeverage);
+        const flightHoldQiCost = tm.previewHoldQiCost(flightScore, flightLeverage);
         set({
           buySettlementEvent: {
             id: nextBuyFxId(),
@@ -1241,6 +1248,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
             buyCost: actualBuyCost,
             useLeverage: buyCapture.useLeverage,
             wasLocked: buyCapture.wasLocked,
+            score: flightScore,
+            nextScore: flightNextScore,
+            holdEarning: flightHoldEarning,
+            holdQiCost: flightHoldQiCost,
             sourceX: buyCapture.source?.x ?? 0,
             sourceY: buyCapture.source?.y ?? 0,
             slotIndex: targetSlotIndex,

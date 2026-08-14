@@ -70,6 +70,14 @@ export interface FxBuySettlementEvent {
   useLeverage: boolean;
   /** 买入前该公共牌处于锁定状态 */
   wasLocked: boolean;
+  /** 当季评分（买入后当前季口径快照，供飞行卡面评分行；与落定手牌同口径） */
+  score: number;
+  /** 下季评分（供飞行卡面评分行「当前评分 → 下季」） */
+  nextScore: number;
+  /** 持有炼化（当季每回合；供飞行卡面三行信息） */
+  holdEarning: number;
+  /** 持有炼耗（当季每回合；供飞行卡面三行信息） */
+  holdQiCost: number;
   /** 行动前公共牌中心 view 坐标（无 DOM 环境为 0） */
   sourceX: number;
   sourceY: number;

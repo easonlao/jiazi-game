@@ -12,6 +12,14 @@ export function HandCards() {
   const season = useGameStore((s) => s.season);
   const turnManager = useGameStore((s) => s.turnManager);
   const marginCallEvent = useGameStore((s) => s.marginCallEvent);
+  const buySettlementEvent = useGameStore((s) => s.buySettlementEvent);
+  const currentRound = useGameStore((s) => s.currentRound);
+  // 跨回合买入飞行：目标槽位在飞行期间留空（飞行卡面从公共位飞入空槽位，
+  // 到达后手牌显示）——全程只有「一张牌」，避免飞行卡面与真实手牌重叠成两层
+  // （2026-08-14 用户反馈：两层叠加让玩家不觉得是同一张牌）。
+  const flyingSlot = buySettlementEvent?.round === currentRound
+    ? buySettlementEvent.slotIndex
+    : null;
 
   // 反噬来源感：被反噬的丹田槽位（slotIndex）在反噬动画期间播"崩坏"效果，
   // 与中央反噬大卡片同屏——玩家看到"丹田第 N 格崩了"→ 中央弹出惩罚数字的因果链（issue 04）。
@@ -59,6 +67,9 @@ export function HandCards() {
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
           {hand.map((slot: HandSlot | null, i: number) => {
+            // 买入飞行期间目标槽位留空：飞行卡面从公共位飞入，到达后手牌显示——
+            // 同一张牌全程只有一个视觉（2026-08-14 两层叠加反馈修复）。
+            if (flyingSlot === i) return <EmptySlot key={i} slotIndex={i} shattered={false} />;
             if (!slot) return <EmptySlot key={i} slotIndex={i} shattered={shatteredSlots.has(i)} />;
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
