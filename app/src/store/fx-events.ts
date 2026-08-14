@@ -1,4 +1,4 @@
-import type { SettlementDetail, Element, VoidStep } from '@core/index';
+import type { SettlementDetail, Element, VoidStep, YinYang } from '@core/index';
 
 /** FX 事件类型：id 递增，组件监听 id 变化触发动画 */
 export interface FxSeasonEvent {
@@ -62,6 +62,8 @@ export interface FxBuySettlementEvent {
   tianGanElement: Element;
   diZhiElement: Element;
   mainElement: Element;
+  /** 阴阳（供飞行卡面阴阳徽章，与 CardVisual 一致） */
+  yinYang: YinYang;
   /** 实际纳灵耗神（正值；展示为 −N 神识）。与下回合持仓炼化/炼耗互不合并。 */
   buyCost: number;
   /** 燃灵（杠杆买入） */

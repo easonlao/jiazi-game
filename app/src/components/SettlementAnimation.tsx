@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { YinYang, type Element } from '@core/index';
 import { useGameStore } from '../store';
 import { BUY_FLIGHT_MS, BUY_SEQUENCE_TOTAL_MS, prefersReducedMotion } from '../lib/buySettlementFx';
+import { elementBorder, elementScoreColor } from './CardVisual';
 
 interface Flight {
   id: string;
@@ -16,6 +18,14 @@ interface Flight {
 interface BuyFlight {
   id: number;
   cardName: string;
+  tianGan: string;
+  diZhi: string;
+  tianGanElement: Element;
+  diZhiElement: Element;
+  mainElement: Element;
+  yinYang: YinYang;
+  useLeverage: boolean;
+  wasLocked: boolean;
   startX: number;
   startY: number;
   deltaX: number;
@@ -57,6 +67,14 @@ export function SettlementAnimation() {
       setBuyFlight({
         id: event.id,
         cardName: event.cardName,
+        tianGan: event.tianGan,
+        diZhi: event.diZhi,
+        tianGanElement: event.tianGanElement,
+        diZhiElement: event.diZhiElement,
+        mainElement: event.mainElement,
+        yinYang: event.yinYang,
+        useLeverage: event.useLeverage,
+        wasLocked: event.wasLocked,
         startX: event.sourceX,
         startY: event.sourceY,
         deltaX: targetX - event.sourceX,
@@ -153,7 +171,49 @@ export function SettlementAnimation() {
           data-testid="buy-card-flight"
           aria-label={`纳灵 ${buyFlight.cardName}`}
         >
-          {buyFlight.cardName}
+          {/* 飞行卡面：与 CardVisual 同一套五行边框/底色、干支五行色、阴阳徽章，
+              让玩家看清「就是这张牌飞入丹田」，而不是一个方框飘过。 */}
+          <div
+            className={`relative flex h-full w-full flex-col overflow-hidden rounded-lg border-2 select-none min-w-0 ${elementBorder[buyFlight.mainElement]}`}
+          >
+            <div className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-0.5">
+              <span className="text-base max-md:text-[15px] leading-none font-bold truncate min-w-0">
+                <span className={elementScoreColor[buyFlight.tianGanElement]}>{buyFlight.tianGan}</span>
+                <span className={elementScoreColor[buyFlight.diZhiElement]}>{buyFlight.diZhi}</span>
+              </span>
+              <div className="flex gap-1 shrink-0">
+                <span
+                  className={`text-[10px] max-md:text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                    buyFlight.yinYang === YinYang.YANG
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-violet-500 text-white'
+                  }`}
+                  title={buyFlight.yinYang === YinYang.YANG ? '阳 · 波动较大' : '阴 · 较稳'}
+                >
+                  {buyFlight.yinYang === YinYang.YANG ? '阳' : '阴'}
+                </span>
+                {buyFlight.useLeverage && (
+                  <span
+                    className="text-[9px] max-md:text-[8px] px-1.5 py-0.5 rounded font-bold bg-qi-critical text-white"
+                    title="燃灵买入"
+                  >
+                    燃
+                  </span>
+                )}
+                {buyFlight.wasLocked && (
+                  <span
+                    className="text-[9px] max-md:text-[8px] px-1.5 py-0.5 rounded font-bold bg-amber-500 text-white"
+                    title="锁定中买入"
+                  >
+                    锁
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="mt-auto flex items-center justify-center border-t border-wood-light/35 bg-white/35 px-2 py-1">
+              <span className="text-[10px] max-md:text-[9px] leading-tight text-ink-light">纳灵入丹田</span>
+            </div>
+          </div>
         </div>
       )}
       {flights.map((flight) => {

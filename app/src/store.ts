@@ -1237,6 +1237,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             tianGanElement: buyCapture.card.tianGanElement,
             diZhiElement: buyCapture.card.diZhiElement,
             mainElement: buyCapture.card.mainElement,
+            yinYang: buyCapture.card.yinYang,
             buyCost: actualBuyCost,
             useLeverage: buyCapture.useLeverage,
             wasLocked: buyCapture.wasLocked,
