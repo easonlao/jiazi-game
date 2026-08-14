@@ -367,6 +367,20 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
         </span>
       </div>
 
+      {/* 空亡吞噬标记（V5 空亡规则；该回合时间被空亡牌吞噬） */}
+      {entry.voidSwallow && (
+        <div className="flex items-center gap-2 rounded-lg bg-slate-900 text-parchment px-2.5 py-2 mb-2">
+          <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-slate-700 text-slate-300 shrink-0">
+            ☰ 空亡
+          </span>
+          <span className="text-xs font-bold font-serif">时间吞噬 {entry.voidSwallow.totalK} 个季节</span>
+          <span className="ml-auto text-[10px] text-slate-300 tabular-nums">
+            {entry.voidSwallow.count} 次触发
+            {entry.voidSwallow.count > 1 && ` · 最大 K=${entry.voidSwallow.maxK}`}
+          </span>
+        </div>
+      )}
+
       {/* 行动层：本回合玩家操作（首回合/无行动则显示"开局"） */}
       {entry.action && badge ? (
         <div className="flex items-center gap-2.5 bg-[#FAF6EE] rounded-lg p-2.5">
@@ -401,7 +415,7 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
         </div>
       ) : (
         <div className="flex items-center justify-between bg-[#FAF6EE] rounded-lg p-2.5 text-xs text-ink-light">
-          <span>开局 · 天机初启</span>
+          <span>{entry.voidSwallow ? '空亡吞噬 · 无玩家行动' : '开局 · 天机初启'}</span>
           <span className="tabular-nums">修为 {fmtScore(entry.scoreAfter)}</span>
         </div>
       )}

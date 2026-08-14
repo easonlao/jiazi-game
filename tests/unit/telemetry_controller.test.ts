@@ -167,17 +167,17 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(JSON.stringify(backend.submitVerifiedScore.mock.calls[0])).not.toContain('999999');
   });
 
-  it('当前 V4 未拿到服务端 seed 时不允许创建普通交易会话', async () => {
+  it('当前版本（生产默认 V5）未拿到服务端 seed 时不允许创建普通交易会话', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
     const backend = createBackend();
     const controller = new TelemetryController({ storage, backend });
-    const v4Meta = { rules_version: '4', game_mode: 'volatility_trade', volatility_enabled: true };
+    const currentMeta = { rules_version: String(CURRENT_REPLAY_RULES.rulesVersion), game_mode: 'volatility_trade', volatility_enabled: true };
 
     await controller.init();
-    await expect(controller.prepareVerifiedSession(v4Meta)).resolves.toBeNull();
+    await expect(controller.prepareVerifiedSession(currentMeta)).resolves.toBeNull();
     expect(backend.startVerifiedSession).toHaveBeenCalledTimes(1);
-    expect(controller.startSession(v4Meta)).toBe(false);
+    expect(controller.startSession(currentMeta)).toBe(false);
     expect(controller.getActiveSessionId()).toBeNull();
     expect(backend.upsertSession).not.toHaveBeenCalled();
     expect(backend.uploadEvents).not.toHaveBeenCalled();

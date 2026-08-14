@@ -6,9 +6,9 @@ test.describe('Supabase 匿名身份与遥测', () => {
     '需要设置 E2E_SUPABASE=1，并提供 app/.env.local 后运行真实云端验收',
   );
 
-  test('V4 新局等待服务端 seed，并在完整 60 回合后校验入榜', async ({ page }) => {
-    test.setTimeout(180_000);
-    await page.goto('/');
+  test('V5 新局等待服务端 seed，并在完整 60 回合后校验入榜（2026-08-14 生产默认翻转）', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/?rules=v5');
 
     await expect(page.getByRole('button', { name: '同意并生成玩家 ID' })).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: '同意并生成玩家 ID' }).click();
@@ -53,13 +53,18 @@ test.describe('Supabase 匿名身份与遥测', () => {
       (response) => response.url().includes('/rest/v1/game_events') && response.request().method() === 'POST',
     );
     await page.getByRole('button', { name: '确认结束本回合' }).click();
-    await expect(page.getByText('纳灵成功', { exact: true })).toBeVisible({ timeout: 10_000 });
+    // V5：若本回合恰好抽入空亡，空亡 Toast 覆盖纳灵 Toast（P1-1 语义空亡最后写入）
+    await expect(page.getByText(/纳灵成功|空亡触发/).first()).toBeVisible({ timeout: 10_000 });
     expect((await actionUploadResponse).ok()).toBe(true);
 
-    // 第 2—59 回合全部调息；每次确认后直接推进到下一回合。
-    for (let round = 2; round <= 59; round++) {
+    // 推进到终局：V5 空亡吞噬会额外推进游戏回合（空亡回合玩家不可行动、回合 +1），
+    // 固定点击次数不可靠——循环调息直到「结束游戏」按钮出现（第 60 回合终局）。
+    for (;;) {
+      const endBtn = page.getByRole('button', { name: '结束游戏' });
+      if (await endBtn.isVisible({ timeout: 1_000 }).catch(() => false)) break;
       const waitButton = page.getByRole('button', { name: /调息/ });
-      await expect(waitButton).toBeVisible({ timeout: 10_000 });
+      // 空亡动画期间（~4.1s）无操作按钮，等待其恢复
+      await expect(waitButton).toBeVisible({ timeout: 15_000 });
       await waitButton.click();
       const confirmButton = page.getByRole('button', { name: '确认结束本回合' });
       await expect(confirmButton).toBeVisible({ timeout: 10_000 });
@@ -89,7 +94,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(result).toMatchObject({
       verified: true,
       leaderboard_submitted: true,
-      rules_version: '4',
+      rules_version: '5',
     });
 
     // 响应丢失后的重复提交必须幂等成功；若首次榜单插入曾失败，服务端会在这里补插。
@@ -106,7 +111,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(await retryResponse.json()).toMatchObject({
       verified: true,
       leaderboard_submitted: true,
-      rules_version: '4',
+      rules_version: '5',
     });
 
     const gameOverModal = page.locator('.modal-backdrop').filter({ hasText: '最终修为' });

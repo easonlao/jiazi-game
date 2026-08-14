@@ -1,4 +1,5 @@
 import { type JiaziCard, Element, YinYang } from '@core/JiaziCard';
+import { isVoidCard } from '@core/VoidCard';
 
 const elementBorder: Record<Element, string> = {
   [Element.WOOD]: 'border-emerald-400 bg-emerald-50/50',
@@ -60,6 +61,49 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
             ? 'text-qi-critical'
             : 'text-ink-light',
       };
+
+  // V5 空亡牌专属视觉（票 07）：暗色虚空风格，一眼区分于五行元素牌。
+  // 纯事件牌——不显示评分（恒为 0）、不显示耗神/炼化/炼耗等持有信息（不可买入），
+  // 仅保留牌名 + 虚空标记 + 锁定按钮（LockManager 按 id 操作，锁定保留期不重复触发）。
+  if (isVoidCard(card)) {
+    return (
+      <div
+        onClick={onClick}
+        className={`
+          card-in card-void relative overflow-hidden rounded-lg border-2 cursor-pointer select-none
+          transition-all duration-150 min-w-0
+          border-slate-700 bg-slate-900/90 text-parchment
+          ${selected
+            ? 'border-slate-300 shadow-lg scale-[1.02] -translate-y-0.5'
+            : 'hover:shadow-sm hover:border-slate-500'
+          }
+        `}
+      >
+        {/* 牌名：空亡（虚空暗色，不按五行着色） */}
+        <div className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-1">
+          <span className="text-base max-md:text-[15px] leading-none font-bold truncate min-w-0 text-slate-100">
+            {card.name}
+          </span>
+          <div className="flex gap-1 shrink-0">
+            <span
+              className="text-[10px] max-md:text-[9px] px-1.5 py-0.5 rounded font-bold bg-slate-700 text-slate-300"
+              title="空亡 · 纯事件牌"
+            >
+              ☰ 空亡
+            </span>
+            {badges}
+          </div>
+        </div>
+
+        {/* 虚空体：隐藏评分与持有信息，只传达「时间吞噬」意象 */}
+        <div className="border-y border-slate-700/70 bg-slate-800/50 px-2 py-2 text-center">
+          <span className="text-[10px] max-md:text-[9px] font-bold tracking-widest text-slate-400">
+            时间吞噬 · 非交易品
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

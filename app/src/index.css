@@ -118,6 +118,74 @@ html, body, #root {
 }
 .season-word { animation: seasonWord 2.2s ease-out backwards; }
 
+/* ═══ 空亡时间吞噬：四阶段固定时间线（票 08，2026-08-14 用户拍板，暗色虚空主题） ═══
+   阶段 1 空亡牌落入公共牌池 0.9s → 阶段 2 从牌位吞噬扩散 0.7s → 阶段 3 跳转最终季 1.5s
+   → 阶段 4 收尾「现世已易」1s；总时长固定约 4.1s，不随 K 变化（K 只影响「前进 N」数字）。 */
+
+/* 阶段 1：空亡牌从牌堆方向落入公共牌池第 1 位（顶部牌池场景，与真实牌区同布局）。 */
+@keyframes voidSlotDrop {
+  0% { opacity: 0; transform: translateY(-48px) scale(0.85); filter: blur(4px); }
+  55% { opacity: 1; transform: translateY(4px) scale(1.03); filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+.void-slot-drop { animation: voidSlotDrop 0.9s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+
+/* 占位牌淡入（其余灵气被压暗，只留轮廓）。 */
+@keyframes voidSlotFade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.void-slot-fade { animation: voidSlotFade 0.6s ease-out 0.25s backwards; }
+
+/* 阶段 2 吞噬：空亡牌从牌位被暗色溶解吞噬（牌不消失，而是被吞没），
+   暗色环从牌位中心向四周扩散；牌池下方小字「时间被吞噬」衔接（0.7s）。 */
+@keyframes voidSwallowCard {
+  0% { transform: translateY(0) scale(1); filter: blur(0) brightness(1); opacity: 1; }
+  40% { filter: blur(2px) brightness(0.8); opacity: 0.95; }
+  100% { transform: translateY(4px) scale(0.6); filter: blur(8px) brightness(0.45); opacity: 0.25; }
+}
+.void-swallow-card { animation: voidSwallowCard 0.7s ease-in forwards; }
+
+@keyframes voidSwallow {
+  0% { transform: translate(-50%, -50%) scale(0.06); opacity: 0.95; }
+  55% { opacity: 0.55; }
+  100% { transform: translate(-50%, -50%) scale(1.75); opacity: 0; }
+}
+.void-swallow-ring { animation: voidSwallow 0.7s ease-out forwards; }
+
+@keyframes voidSwallowText {
+  0% { opacity: 0; letter-spacing: 0.5em; }
+  45% { opacity: 1; letter-spacing: 0.35em; }
+  100% { opacity: 0; }
+}
+.void-swallow-text { animation: voidSwallowText 0.7s ease-out forwards; }
+
+/* 阶段 3 跳转：最终季从吞噬点中心放大浮现（承接阶段 2 的收缩），尾部淡出
+   与阶段 4 收尾语淡入衔接（动画总时长 1.5s = 阶段 3 时长，避免硬切）。 */
+@keyframes voidJumpWord {
+  0% { opacity: 0; transform: scale(0.25); filter: blur(8px); letter-spacing: 0.5em; }
+  30% { opacity: 1; transform: scale(1); filter: blur(0); letter-spacing: 0.16em; }
+  72% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.06); filter: blur(4px); }
+}
+.void-jump-word { animation: voidJumpWord 1.5s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+@keyframes voidJumpSub {
+  0% { opacity: 0; transform: translateY(10px); }
+  20% { opacity: 1; transform: translateY(0); }
+  72% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(6px); }
+}
+.void-jump-sub { animation: voidJumpSub 1.5s ease-out backwards; }
+
+/* 收尾语「现世已易」：略慢于快进卡，淡入停驻后淡出（总 ~1s）。 */
+@keyframes voidFinaleWord {
+  0% { opacity: 0; transform: translateY(22px) scale(1.25); letter-spacing: 0.45em; }
+  28% { opacity: 1; transform: translateY(0) scale(1); letter-spacing: 0.2em; }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px) scale(1.04); }
+}
+.void-finale-word { animation: voidFinaleWord 1s ease-out forwards; }
+
 /* ═══ 爆仓强化：警报脉冲 + 强平卡碎裂 ═══ */
 @keyframes alarmPulse {
   0%, 100% { opacity: 0.12; }

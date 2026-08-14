@@ -54,25 +54,42 @@ export const RULES_VERSION_TRADE = 3;
 /** 平衡版交易规则：降低冲突牌波动与释灵倍率，并与 V3 排行榜隔离。 */
 export const RULES_VERSION_BALANCED_TRADE = 4;
 
+/**
+ * 空亡规则（V5）：牌堆 63 张（60 甲子 + 3 空亡）、季节长度懒生成、双时钟时间吞噬。
+ * 语义门控见 docs/mechanics.md §9（2026-08-13 定稿）。仅在 rulesVersion=5 时激活；
+ * V1-V4 路径行为逐字节不变。2026-08-14 用户拍板：V5 为生产默认。
+ */
+export const RULES_VERSION_VOID = 5;
+
 /** 新局默认规则版本；旧存档仍按自身 rulesVersion 继续运行。 */
-export const CURRENT_RULES_VERSION = RULES_VERSION_BALANCED_TRADE;
+export const CURRENT_RULES_VERSION = RULES_VERSION_VOID;
 
 /** 当前代码可解释的规则版本集合；存档层与引擎层共用，避免两处规则门控漂移。 */
 export type SupportedRulesVersion =
   | typeof RULES_BASE
   | typeof RULES_VERSION_VOLATILE
   | typeof RULES_VERSION_TRADE
-  | typeof RULES_VERSION_BALANCED_TRADE;
+  | typeof RULES_VERSION_BALANCED_TRADE
+  | typeof RULES_VERSION_VOID;
 
 export function isSupportedRulesVersion(version: unknown): version is SupportedRulesVersion {
   return version === RULES_BASE ||
     version === RULES_VERSION_VOLATILE ||
     version === RULES_VERSION_TRADE ||
-    version === RULES_VERSION_BALANCED_TRADE;
+    version === RULES_VERSION_BALANCED_TRADE ||
+    version === RULES_VERSION_VOID;
 }
 
-export function isTradeRulesVersion(version: unknown): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE {
-  return version === RULES_VERSION_TRADE || version === RULES_VERSION_BALANCED_TRADE;
+/**
+ * 交易规则家族（V3/V4/V5）：携带"持仓收益 + 释灵倍率 + conflict_banded 季内波动"计分语义。
+ * V5（空亡）继承 V4 计分——设计定案（一审 P1-①）：V4 计分 + 空亡机制。
+ */
+export function isTradeRulesVersion(
+  version: unknown,
+): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE | typeof RULES_VERSION_VOID {
+  return version === RULES_VERSION_TRADE ||
+    version === RULES_VERSION_BALANCED_TRADE ||
+    version === RULES_VERSION_VOID;
 }
 
 /** 可序列化的手牌槽位快照。 */

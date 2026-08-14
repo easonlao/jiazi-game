@@ -21,6 +21,25 @@ export interface FxRoundEvent {
 }
 
 /**
+ * V5 空亡触发事件（批 2 动画信号，票 09 预留）：每张空亡牌触发分配一个 id 递增事件。
+ * 组件监听 id 变化即可驱动「时间吞噬」动画，天然支持同回合多张连续触发。
+ *
+ * ⚠️ 单槽契约（P2-2 定稿）：store 的 voidTriggerEvent 是单值槽，同一同步吞噬回合内
+ * 多张空亡牌连续触发时，后者覆盖前者，最终只保留**最后一张牌**的事件——动画按最后一张
+ * 的 K 播放；同回合总吞噬量（次数 / 季节步数）由合并 Toast（「连续吞噬 N 次」）补足。
+ * 消费方（VoidTriggerAnimation）不得假设能拿到同 tick 的全部触发。
+ */
+export interface FxVoidTriggerEvent {
+  id: number;
+  /** 本次吞噬的季节步数 K */
+  k: number;
+  /** 吞噬前的季节 */
+  prevSeason: string;
+  /** 吞噬后的季节 */
+  nextSeason: string;
+}
+
+/**
  * 跨回合买入结算事件（issue：cross-round buy settlement animation）。
  * 玩家确认纳灵后游戏立即进入下一回合，此时公共牌已被移除、手牌已就位；
  * 本事件在「执行买入前」由 store 快照卡牌身份与公共牌源几何，
@@ -105,6 +124,22 @@ export function _resetBuyFxSeq(): void {
 /** 分配下一个跨回合买入结算事件 id */
 export function nextBuyFxId(): number {
   return ++buyFxSeq;
+}
+
+/**
+ * V5 空亡触发事件自增序列（由 store 的 bindTurnManagerCallbacks 分配）。
+ * 空亡触发不是 diff 产物，独立于 fxSeq；组件按 id 去重，天然支持重复触发。
+ */
+let voidTriggerSeq = 0;
+
+/** 重置空亡触发序列（仅测试用） */
+export function _resetVoidTriggerSeq(): void {
+  voidTriggerSeq = 0;
+}
+
+/** 分配下一个空亡触发事件 id */
+export function nextVoidTriggerId(): number {
+  return ++voidTriggerSeq;
 }
 
 /**

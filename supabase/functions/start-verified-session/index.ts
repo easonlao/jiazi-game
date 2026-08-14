@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import {
   cloneReplayRulesSnapshot,
-  CURRENT_REPLAY_RULES,
+  getReplayRulesByVersion,
 } from '../../../src/core/ReplayRules.ts';
 
 const CORS_HEADERS = {
@@ -37,7 +37,10 @@ Deno.serve(async (req) => {
     return json({ error: 'invalid_client_session_id' }, 400);
   }
   const requestedRulesVersion = Number(body?.requested_rules_version);
-  if (requestedRulesVersion !== CURRENT_REPLAY_RULES.rulesVersion) {
+  // 可创建/校验的规则版本注册表（票 04 修正案：V4 生产默认 + V5 增量支持）。
+  // 未注册版本（V1-V3 及未知版本）沿用既有 409 拒绝；V4 判定与直用 CURRENT_REPLAY_RULES 一致。
+  const rules = getReplayRulesByVersion(requestedRulesVersion);
+  if (!rules) {
     return json({ error: 'rules_version_not_supported' }, 409);
   }
 
@@ -65,14 +68,14 @@ Deno.serve(async (req) => {
     }
     if (isValidStoredSession(existing)) {
       const storedRules = existing.rules_snapshot as Record<string, unknown>;
-      if (storedRules.rulesVersion !== CURRENT_REPLAY_RULES.rulesVersion) {
+      if (storedRules.rulesVersion !== rules.rulesVersion) {
         return json({ error: 'session_rules_mismatch' }, 409);
       }
       return json(toResponse(existing), 200);
     }
   }
 
-  const rules = cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES);
+  const snapshot = cloneReplayRulesSnapshot(rules);
   const seed = generateSeed();
   const sessionId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
@@ -83,12 +86,12 @@ Deno.serve(async (req) => {
       p_session_id: sessionId,
       p_client_session_id: clientSessionId,
       p_started_at: startedAt,
-      p_rules_version: String(rules.rulesVersion),
-      p_game_mode: rules.gameMode,
+      p_rules_version: String(snapshot.rulesVersion),
+      p_game_mode: snapshot.gameMode,
       p_app_version: stringField(body?.app_version, 32) ?? 'unknown',
       p_consent_version: stringField(body?.consent_version, 32) ?? '0',
       p_replay_seed: seed,
-      p_rules_snapshot: rules,
+      p_rules_snapshot: snapshot,
     })
     .maybeSingle();
 

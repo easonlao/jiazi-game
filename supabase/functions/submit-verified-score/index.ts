@@ -7,6 +7,7 @@ import {
 } from '../../../src/core/ReplayRunner.ts';
 import {
   CURRENT_REPLAY_RULES,
+  getReplayRulesByVersion,
   type ReplayRulesSnapshot,
 } from '../../../src/core/ReplayRules.ts';
 import { normalizeVerifiedScore } from '../../../src/core/VerifiedScore.ts';
@@ -112,9 +113,13 @@ Deno.serve(async (req) => {
   if (!Number.isSafeInteger(session.replay_seed) || !isReplayRulesSnapshot(session.rules_snapshot)) {
     return json({ error: 'session_not_verifiable' }, 409);
   }
+  // 规则版本门控：只接受注册表内可校验的版本（票 04 修正案 = V4 生产默认 + V5 增量）。
+  // 会话 rules_version 与规则快照的 rulesVersion 必须同时落在注册表且互相一致；
+  // V1-V3 历史对局只读，不重放、不上新榜（既有行为）。V4 判定与直用 CURRENT_REPLAY_RULES 一致。
+  const sessionRules = getReplayRulesByVersion(Number(session.rules_version));
   if (
-    String(session.rules_version) !== String(CURRENT_REPLAY_RULES.rulesVersion) ||
-    session.rules_snapshot.rulesVersion !== CURRENT_REPLAY_RULES.rulesVersion
+    !sessionRules ||
+    session.rules_snapshot.rulesVersion !== sessionRules.rulesVersion
   ) {
     return json({ error: 'rules_version_not_supported' }, 422);
   }
@@ -172,7 +177,9 @@ Deno.serve(async (req) => {
       .insert({
         public_player_id: profile.public_player_id,
         score: finalScore,
-        rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
+        // 榜单条目按会话自身规则版本落库（V4 会话恒为 '4'，与 CURRENT_REPLAY_RULES 一致；
+        // V5 会话落在 rules_version=5，后续按版本查询隔离）。
+        rules_version: String(session.rules_version),
         session_id: session.id,
       });
     if (leaderboardError && leaderboardError.code !== '23505') {
@@ -185,7 +192,7 @@ Deno.serve(async (req) => {
     verified: true,
     score: finalScore,
     leaderboard_submitted: eligible,
-    rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
+    rules_version: String(session.rules_version),
     rounds: replay.rounds,
   }, 200);
 });

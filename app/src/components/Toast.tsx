@@ -15,7 +15,7 @@ export function Toast() {
   if (!toast) return null;
 
   return (
-    <div className="toast-in absolute left-1/2 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2 px-4 py-2 rounded-full bg-ink/90 text-parchment text-sm font-medium shadow-lg">
+    <div className="toast-in absolute left-1/2 top-1/2 z-[90] -translate-x-1/2 -translate-y-1/2 px-4 py-2 rounded-full bg-ink/90 text-parchment text-sm font-medium shadow-lg">
       {toast}
     </div>
   );

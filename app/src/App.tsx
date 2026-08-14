@@ -8,6 +8,7 @@ import { SettlementAnimation } from './components/SettlementAnimation';
 import { ActionBar } from './components/ActionBar';
 import { SettlementPreviewModal } from './components/SettlementPreviewModal';
 import { SeasonTransition } from './components/SeasonTransition';
+import { VoidTriggerAnimation } from './components/VoidTriggerAnimation';
 import { MarginCallOverlay } from './components/MarginCallOverlay';
 import { Toast } from './components/Toast';
 import { HelpModal } from './components/HelpCenter';
@@ -93,6 +94,9 @@ export default function App() {
             <ActionBar />
             <SettlementPreviewModal />
             <SeasonTransition />
+            {/* 空亡时间吞噬动画（z-70，盖过 SeasonTransition z-20 / ActionBar z-30；
+                低于 MarginCallOverlay z-80——反噬动画照常置顶） */}
+            <VoidTriggerAnimation />
             <MarginCallOverlay />
             <Toast />
 

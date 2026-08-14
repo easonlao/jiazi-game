@@ -1,4 +1,5 @@
 import { useGameStore } from '../store';
+import { isVoidCard } from '@core/VoidCard';
 
 export function ActionBar() {
   const gameState = useGameStore((s) => s.gameState);
@@ -8,6 +9,7 @@ export function ActionBar() {
   const leverageMultiplier = useGameStore((s) => s.leverageMultiplier);
   const currentRound = useGameStore((s) => s.currentRound);
   const hand = useGameStore((s) => s.hand);
+  const publicCards = useGameStore((s) => s.publicCards);
   const qi = useGameStore((s) => s.qi);
   // 数值一律来自核心配置，禁止硬编码
   const baseRecovery = useGameStore((s) => s.baseRecovery);
@@ -23,17 +25,21 @@ export function ActionBar() {
   if (gameState !== 'player_action') {
     return (
       <div className="px-4 py-3 text-center text-sm text-ink-light">
-        {gameState === 'game_over' ? '游戏结束' : '结算中...'}
+        {gameState === 'game_over' ? '游戏结束' : gameState === 'void_round' ? '空亡吞噬中...' : '结算中...'}
       </div>
     );
   }
 
   // 最后一回合（totalRounds）核心禁止买入，前端同步禁用并提示
   const isFinalRound = currentRound >= totalRounds;
-  const canBuy = !isFinalRound && selectedPublicCard >= 0 && hand.filter((s) => s).length < hand.length;
+  const selectedCard = selectedPublicCard >= 0 ? publicCards[selectedPublicCard] : null;
+  // P2-3：空亡牌是纯事件牌不可买入，选中空亡牌时纳灵按钮不启用
+  const isSelectedVoidCard = selectedCard ? isVoidCard(selectedCard) : false;
+  const canBuy = !isFinalRound && !isSelectedVoidCard && selectedPublicCard >= 0 && hand.filter((s) => s).length < hand.length;
   const canSell = selectedHandCard >= 0;
   const buyCost = canBuy ? previewBuyCost(selectedPublicCard) : 0;
-  const affordBuy = buyCost <= qi;
+  // P2-3：previewBuyCost 对空亡牌返回 -1 哨兵，buyCost < 0 一律视为不可负担（按钮禁用）
+  const affordBuy = buyCost >= 0 && buyCost <= qi;
 
   return (
     <div className="z-10 flex flex-col gap-1 px-4 py-1.5 max-md:py-1 bg-[#faf6ee] border-t border-wood-light md:sticky md:bottom-0 max-md:fixed max-md:left-0 max-md:right-0 max-md:bottom-0 max-md:z-30 max-md:max-w-[428px] max-md:mx-auto">

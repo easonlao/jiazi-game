@@ -25,10 +25,12 @@ import {
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_VOLATILE,
   RULES_VERSION_TRADE,
+  RULES_VERSION_VOID,
   type GameSnapshot,
   type GameSaveLoadError,
   type SupportedRulesVersion,
 } from './GameSaveService.ts';
+import { isVoidCard, VoidCard, VOID_CARD_COUNT } from './VoidCard.ts';
 import type { StorageProvider } from './StorageProvider.ts';
 import { LockManager, type LockResult } from './LockManager.ts';
 import { MarginCallEngine } from './MarginCallEngine.ts';
@@ -43,7 +45,20 @@ import {
 } from './ScoreVolatility.ts';
 
 /** 游戏主状态 */
-export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'game_over';
+export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'void_round' | 'game_over';
+
+/**
+ * V5 空亡触发信息（onVoidTrigger 回调载荷；供 UI Toast 提示 / 批 2 动画消费）。
+ * 每张空亡牌掷 K 后调用一次；prevSeason/nextSeason 为吞噬前后季节。
+ */
+export interface VoidTriggerInfo {
+  /** 本次吞噬的季节步数 K（缺省 uniform 2~12，可注入调整） */
+  k: number;
+  /** 吞噬前的季节（spring/summer/autumn/winter） */
+  prevSeason: string;
+  /** 吞噬后的季节 */
+  nextSeason: string;
+}
 
 /** 玩家操作类型（settle = 终局出清：系统强制平仓，非玩家主动操作，不计入行为统计） */
 export type ActionType = 'buy' | 'sell' | 'wait' | 'lock' | 'unlock' | 'settle';
@@ -111,6 +126,20 @@ export interface RoundLogEntry {
   sellScore: number | null;
   /** 行动消耗或变动的神识（买入=纳灵耗神；卖出=归还锁气；调息=0） */
   actionQiChange: number;
+  /**
+   * V5 空亡吞噬回合标记：该回合被空亡牌吞噬时为吞噬详情；非空亡回合/旧存档缺省
+   * （V1-V4 恒无，存档协议保持旧形状——只有空亡回合记录才带本字段）。
+   */
+  voidSwallow?: {
+    /** 该回合空亡触发次数（抽入的空亡牌张数） */
+    count: number;
+    /** 该回合季节时钟累计吞噬步数（各触发 K 之和） */
+    totalK: number;
+    /** 该回合单次最大吞噬 K */
+    maxK: number;
+    /** 该回合「整季吞掉」事件次数（触发中一次吞噬跨过至少一个完整季节；旧存档缺省为 0） */
+    swallowed?: number;
+  } | null;
   /**
    * 本回合抽牌后玩家可见的公共牌池快照（含锁定保留牌）。
    * 供后续分析体系使用：验证牌池随机性、评估玩家在"当时可选牌"下的决策质量、
@@ -293,6 +322,20 @@ export class TurnManager {
   static readonly LOCK_COST_PER_CARD = LockManager.LOCK_COST_PER_CARD;
   /** 锁定张数上限：展示牌数 - 1（锁满则公共位全占，每回合 0 张新牌，游戏僵死） */
   static readonly MAX_LOCKED_CARDS = LockManager.MAX_LOCKED_CARDS;
+  /** V5 空亡时间吞噬：K ~ uniform[2, 12]（含端点）定稿默认值，走注入的种子随机源。 */
+  static readonly VOID_K_MIN = 2;
+  static readonly VOID_K_MAX = 12;
+
+  /** 实际生效的空亡参数（options.voidConfig 覆盖，缺省 = 定稿值：3 张 / K 2~12）。 */
+  private readonly voidCardCount: number;
+  private readonly voidKMin: number;
+  private readonly voidKMax: number;
+  /** V5 空亡观测统计（纯只读，不改变任何行为）：触发次数 / 整季吞掉事件次数 / 单次最大吞噬 K。 */
+  private voidTriggers: number = 0;
+  private voidSwallowedEvents: number = 0;
+  private voidMaxK: number = 0;
+  /** 最近一次空亡吞噬回合详情（buildRoundLogEntry 归档后清空；非空亡回合为 null）。 */
+  private lastVoidSwallow: NonNullable<RoundLogEntry['voidSwallow']> | null = null;
 
   // 局内反馈与统计
   private lastSettlementDetail: SettlementDetail | null = null;
@@ -315,6 +358,8 @@ export class TurnManager {
   private onGameEnd?: (finalScore: number) => void;
   /** 锁定牌被自动解锁（付不起锁定费时回合末触发），携带被解锁的牌 ID 列表 */
   private onLockAutoUnlocked?: (cardIds: number[]) => void;
+  /** V5 空亡触发回调：每张空亡牌掷 K 后调用一次（供 UI Toast / 批 2 动画） */
+  private onVoidTrigger?: (info: VoidTriggerInfo) => void;
 
   // 存档服务（序列化与 LocalStorage 边界）
   private readonly saveService: GameSaveService;
@@ -331,6 +376,18 @@ export class TurnManager {
       rulesVersion?: SupportedRulesVersion;
       /** 交易规则的计分参数；v1/v2 使用旧默认值。 */
       scoreRules?: Partial<ScoreRules>;
+      /**
+       * V5 空亡参数（可选注入；缺省 = 定稿值：张数 3 / K 2~12）。
+       * 仅 rulesVersion=5 时生效；V1-V4 路径完全不读取，行为逐字节不变。
+       */
+      voidConfig?: {
+        /** 空亡牌张数（0 = 无空亡牌，V5 引擎仍走懒生成季长）。 */
+        voidCardCount?: number;
+        /** 空亡 K 掷骰下限（缺省 2）。 */
+        voidKMin?: number;
+        /** 空亡 K 掷骰上限（缺省 12）。 */
+        voidKMax?: number;
+      };
     },
   ) {
     const balanceConfig = config ?? DEFAULT_BALANCE_CONFIG;
@@ -349,18 +406,36 @@ export class TurnManager {
     // 构造默认只决定"新局/模拟"的规则；读档后由 importSnapshot 按存档声明覆盖。
     this.rulesVersion = options?.rulesVersion
       ?? (this.scoreVolatilityConfig.enabled ? RULES_VERSION_VOLATILE : RULES_BASE);
-    const defaultScoreRules = this.rulesVersion === RULES_VERSION_BALANCED_TRADE
-      ? BALANCED_TRADE_SCORE_RULES
-      : this.rulesVersion === RULES_VERSION_TRADE
-        ? TRADE_SCORE_RULES
+    const defaultScoreRules = this.rulesVersion === RULES_VERSION_TRADE
+      ? TRADE_SCORE_RULES
+      : (this.rulesVersion === RULES_VERSION_BALANCED_TRADE || this.rulesVersion === RULES_VERSION_VOID)
+        ? BALANCED_TRADE_SCORE_RULES // V5 继承 V4 计分（一审 P1-① 定案）
         : DEFAULT_SCORE_RULES;
     this.initialRulesVersion = this.rulesVersion;
     this.initialScoreRules = {
       ...defaultScoreRules,
       ...options?.scoreRules,
     };
-    this.cardDataBank = new CardDataBank();
-    this.seasonCycle = new SeasonCycle(randomSource, options?.skipSeasonGenerate ?? false);
+    // 空亡参数：可选注入（voidConfig），缺省 = 定稿值（3 张 / K 2~12）。
+    // 必须在 CardDataBank 构造之前解析（后者按张数生成空亡牌）。
+    // 仅 rulesVersion=5 生效；V1-V4 不读取。K 边界做归一化防止非法范围。
+    this.voidKMin = Math.min(
+      options?.voidConfig?.voidKMin ?? TurnManager.VOID_K_MIN,
+      options?.voidConfig?.voidKMax ?? TurnManager.VOID_K_MAX,
+    );
+    this.voidKMax = Math.max(
+      options?.voidConfig?.voidKMin ?? TurnManager.VOID_K_MIN,
+      options?.voidConfig?.voidKMax ?? TurnManager.VOID_K_MAX,
+    );
+    this.voidCardCount = Math.max(0, Math.floor(options?.voidConfig?.voidCardCount ?? VOID_CARD_COUNT));
+    this.cardDataBank = new CardDataBank(this.voidCardCount);
+    // V5 空亡规则：SeasonCycle 走懒生成（换季时从种子随机源抽下一季长度）。
+    this.seasonCycle = new SeasonCycle(
+      randomSource,
+      this.rulesVersion === RULES_VERSION_VOID
+        ? { lazy: true, skipGenerate: options?.skipSeasonGenerate ?? false }
+        : (options?.skipSeasonGenerate ?? false),
+    );
     this.qiManager = new QiManager(undefined, balanceConfig);
     this.scoreManager = new ScoreManager(this.initialScoreRules);
     this.leverageCalculator = new LeverageCalculator(balanceConfig);
@@ -412,6 +487,11 @@ export class TurnManager {
     return this.rulesVersion === RULES_VERSION_VOLATILE || isTradeRulesVersion(this.rulesVersion);
   }
 
+  /** V5 空亡规则门控：仅 rulesVersion=5 时激活双时钟吞噬/懒生成/63 张牌堆。 */
+  private isVoidRulesVersion(): boolean {
+    return this.rulesVersion === RULES_VERSION_VOID;
+  }
+
   getCardScore(card: JiaziCard, season: string): number {
     const baseScore = card.getSeasonScore(season, this.balanceConfig);
     // 门控以"当前生效规则版本"为准（读档后=存档声明），而非构造函数开关；
@@ -440,6 +520,21 @@ export class TurnManager {
   /** 当前实际生效的规则版本；读档后以存档声明为准。 */
   getRulesVersion(): SupportedRulesVersion {
     return this.rulesVersion;
+  }
+
+  /**
+   * V5 空亡观测统计（只读，不改变行为）：触发次数、整季吞掉事件次数与单次最大吞噬 K。
+   * swallowedEvents = 触发中「一次吞噬跨过至少一个完整季节」的次数（事件口径，
+   * 与 void-season-probe.mts 的 fullSkip 一致，供「每局 ≈1.4 次整季吞掉」对照）；
+   * maxVoidK = 全局限时单次吞噬最大 K（无触发时为 0）。
+   * 仅 rulesVersion=5 时有值；V1-V4 恒为 0。
+   */
+  getVoidStats(): { triggers: number; swallowedEvents: number; maxVoidK: number } {
+    return {
+      triggers: this.voidTriggers,
+      swallowedEvents: this.voidSwallowedEvents,
+      maxVoidK: this.voidMaxK,
+    };
   }
 
   /** 当前实验性波动状态，供模拟器和诊断输出使用。 */
@@ -497,16 +592,28 @@ export class TurnManager {
   }
 
   /**
+   * 组装开局牌堆：V5 用全套 63 张（60 甲子 + 3 空亡）；V1-V4 只装 60 张甲子牌，
+   * 空亡牌不入堆（行为与旧版逐字节一致）。
+   */
+  private buildDeckCards(): JiaziCard[] {
+    const all = this.cardDataBank.getAllCards();
+    return this.isVoidRulesVersion() ? all : all.filter((card) => !isVoidCard(card));
+  }
+
+  /**
    * 初始化游戏，拉取卡牌数据，并初始化牌池
    */
   async initialize(): Promise<void> {
     await this.cardDataBank.initialize();
-    const cards = this.cardDataBank.getAllCards();
-    this.cardPoolManager.initialize(cards);
+    this.cardPoolManager.initialize(this.buildDeckCards());
 
     this.currentRound = 1;
     this.state = 'init';
     this.lastAction = null;
+    this.voidTriggers = 0;
+    this.voidSwallowedEvents = 0;
+    this.voidMaxK = 0;
+    this.lastVoidSwallow = null;
 
     console.log('[TurnManager] 游戏初始化完成');
   }
@@ -521,6 +628,10 @@ export class TurnManager {
 
   /**
    * 单回合的处理引擎，串联结算、抽牌、神识回复
+   *
+   * V5 空亡规则（rulesVersion=5）分支：抽牌先行——空亡牌抽入公共牌区当回合即触发
+   * 时间吞噬（季节时钟前进 K、游戏回合只走 1、玩家不可行动、结算落在跳跃后的季节），
+   * 因此必须在结算之前完成抽牌与季节跳跃。V1-V4 与 V5 未触发回合走原流程，行为一致。
    */
   private processRound(): void {
     if (this.currentRound > TurnManager.TOTAL_ROUNDS) {
@@ -551,6 +662,17 @@ export class TurnManager {
       finalScore: 0,
     };
 
+    // V5 空亡规则：先抽牌并检测空亡触发。触发回合由 processVoidRound 接管（结算落在
+    // 跳跃后的季节），不进入玩家行动。
+    if (this.isVoidRulesVersion()) {
+      this.drawPublicCards();
+      const voidCards = this.collectVoidTriggers();
+      if (voidCards.length > 0) {
+        this.processVoidRound(voidCards);
+        return;
+      }
+    }
+
     // 1. 持仓结算
     this.settleHoldings();
 
@@ -561,8 +683,10 @@ export class TurnManager {
       this.onLockAutoUnlocked?.(autoUnlockedIds);
     }
 
-    // 2. 抽牌（锁定牌保留在公共区，抽 drawCount - 锁定数 张新牌）
-    this.cardPoolManager.drawCards(this.lockManager.getLockedCardIds());
+    // 2. 抽牌（V5 已在上面抽过；锁定牌保留在公共区，抽 drawCount - 锁定数 张新牌）
+    if (!this.isVoidRulesVersion()) {
+      this.drawPublicCards();
+    }
 
     // 3. 神识回复
     this.recoverQi();
@@ -583,6 +707,116 @@ export class TurnManager {
     this.state = 'player_action';
     this.onStateChange?.('player_action');
     this.onTurnStart?.(this.currentRound);
+  }
+
+  /** 抽牌入口：锁定牌保留在公共区，其余位由牌堆新牌填充。 */
+  private drawPublicCards(): void {
+    this.cardPoolManager.drawCards(this.lockManager.getLockedCardIds());
+  }
+
+  /**
+   * 检测本轮"新抽入"的空亡牌（触发只针对新抽入；锁定保留期的空亡牌不重复触发）。
+   * @returns 本轮新抽入的空亡牌列表（0 张 = 未触发）
+   */
+  private collectVoidTriggers(): VoidCard[] {
+    const lockedIds = new Set(this.lockManager.getLockedCardIds());
+    return this.cardPoolManager
+      .getPublicCards()
+      .filter((card) => !lockedIds.has(card.id))
+      .filter((card): card is VoidCard => isVoidCard(card));
+  }
+
+  /**
+   * V5 空亡吞噬回合：空亡牌已抽入公共牌区，立即触发。
+   * 流程（mechanics.md §9）：
+   * 1. 季节时钟前进 K（每张抽中的空亡牌独立掷 K，K ~ uniform[2,12]，走种子随机源）；
+   * 2. 游戏回合只走 1（advanceAfterVoid），该回合玩家不可行动；
+   * 3. 持仓照常结算一次，结算落在跳跃后的季节；反噬/强平照常判定；
+   * 4. 仅自然回复 +10 神识（无调息 +10 加成）；
+   * 5. 触发当回合结束后空亡牌回牌堆，下回合可再抽出（每张可反复触发）。
+   */
+  private processVoidRound(voidCards: VoidCard[]): void {
+    // 0. 空亡吞噬回合状态：该回合玩家不可行动，UI 显示「空亡吞噬中...」。
+    //    V1-V4 路径不进入（仅 rulesVersion=5 触发时）。吞噬回合结束后由
+    //    advanceAfterVoid → processRound 恢复为 player_action（或 game_over）。
+    this.state = 'void_round';
+    this.onStateChange?.('void_round');
+
+    // 1. 季节时钟吞噬：K 掷骰走注入的种子随机源（服务端重放可复现）。
+    //    K 范围 = voidConfig.voidKMin/voidKMax（缺省 2~12）；观测统计只增不改行为。
+    let totalK = 0;
+    let maxK = 0;
+    let swallowedCount = 0;
+    for (const _voidCard of voidCards) {
+      const idxBefore = this.seasonCycle.getCurrentSeasonIndex();
+      const prevSeason = this.seasonCycle.getCurrentSeason();
+      const k = this.random.int(this.voidKMin, this.voidKMax + 1);
+      this.seasonCycle.advanceBy(k);
+      const idxAfter = this.seasonCycle.getCurrentSeasonIndex();
+      const nextSeason = this.seasonCycle.getCurrentSeason();
+      this.voidTriggers++;
+      totalK += k;
+      if (k > maxK) maxK = k;
+      if (k > this.voidMaxK) this.voidMaxK = k;
+      // 整季吞掉事件：一次吞噬跨过至少一个完整季节（季索引净差 ≥ 2），
+      // 与 probe 的 fullSkip 同义（连吞两季在 probe 中计入 fullSkip 事件）。
+      if (idxAfter - idxBefore >= 2) {
+        this.voidSwallowedEvents++;
+        swallowedCount++;
+      }
+      // 每张空亡牌触发后立即通知（供 UI Toast 提示与批 2 动画消费）。
+      this.onVoidTrigger?.({ k, prevSeason, nextSeason });
+    }
+    this.lastVoidSwallow = { count: voidCards.length, totalK, maxK, swallowed: swallowedCount };
+    // 换季/季内滚动后刷新波动状态（V5 无波动，但保持与其他规则版本的语义一致）。
+    this.refreshScoreVolatility();
+
+    // 2. 结算落点 = 跳跃后的季节（持仓结算、反噬/强平照常判定）。
+    if (this.lastSettlementDetail) {
+      this.lastSettlementDetail.season = this.seasonCycle.getCurrentSeason();
+    }
+    this.settleHoldings();
+
+    // 3. 锁定费照常结算（吞噬回合仍是一个游戏回合）。
+    const autoUnlockedIds = this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason());
+    if (autoUnlockedIds.length > 0) {
+      this.onLockAutoUnlocked?.(autoUnlockedIds);
+    }
+
+    // 4. 仅自然回复 +10，无调息加成（该回合玩家不可行动）。
+    this.recoverQi(false);
+
+    if (this.lastSettlementDetail) {
+      this.lastSettlementDetail.finalQi = this.qiManager.getQi();
+      this.lastSettlementDetail.finalScore = this.scoreManager.getScore();
+    }
+
+    // 5. 归档本回合（action = 上一回合的行动；空亡回合本身无玩家行动）。
+    this.roundLog.push(this.buildRoundLogEntry());
+
+    // 6. 触发当回合结束后牌回牌堆：空亡回合无玩家行动，公共区未锁定牌需显式回堆，
+    //    否则下回合 drawCards 会把它们静默丢弃（deck 流失——"公共池缩水"同源 bug）。
+    const { unlocked } = this.lockManager.partitionLocked(this.cardPoolManager.getPublicCards());
+    this.cardPoolManager.returnCards(unlocked);
+
+    // 7. 该回合玩家不可行动：直接推进游戏回合（不回调玩家行动、不应用等待加成）。
+    this.lastAction = null;
+    this.advanceAfterVoid();
+  }
+
+  /**
+   * 吞噬回合的推进：游戏回合只走 1，季节时钟已在 processVoidRound 中跳跃 K。
+   * void_round → player_action（或 game_over）的状态恢复由 processRound / endGame
+   * 完成（processRound 结算完毕置 player_action；终局分支置 game_over）。
+   * 第 60 回合被吞噬时直接终局（空亡回合已在归档时完成记录，跳过终局归档避免重复）。
+   */
+  private advanceAfterVoid(): void {
+    this.currentRound++;
+    if (this.currentRound > TurnManager.TOTAL_ROUNDS) {
+      this.endGame();
+      return;
+    }
+    this.processRound();
   }
 
   /**
@@ -621,6 +855,11 @@ export class TurnManager {
       actionQiChange = this.lastActionCard.qiReturn; // 归还锁气（正值）
     }
 
+    // 空亡吞噬回合标记：processVoidRound 置入、消费后清空。
+    // 非空亡回合恒为 null → 用 ?? undefined 使 V1-V4 存档不写本字段（快照协议不变形）。
+    const voidSwallow = this.lastVoidSwallow;
+    this.lastVoidSwallow = null;
+
     return {
       round: this.currentRound,
       season,
@@ -631,6 +870,7 @@ export class TurnManager {
       buyScore,
       sellScore,
       actionQiChange,
+      ...(voidSwallow ? { voidSwallow } : {}),
       // 本回合抽牌后的公共牌池快照（buildRoundLogEntry 在 drawCards 之后调用，
       // getPublicCards() 即玩家本回合看到的候选牌，含锁定保留牌）
       publicCards: this.cardPoolManager.getPublicCards().map((card) => ({
@@ -697,9 +937,11 @@ export class TurnManager {
 
 
   /**
-   * 自然回复玩家的神识，若上回合选择等待则提供额外奖励
+   * 自然回复玩家的神识，若上回合选择等待则提供额外奖励。
+   * @param applyWaitBonus 是否应用等待加成；V5 空亡吞噬回合传 false（该回合玩家
+   *   不可行动，仅自然回复 +10，无调息 +10 加成——mechanics.md §9）。
    */
-  private recoverQi(): void {
+  private recoverQi(applyWaitBonus: boolean = true): void {
     const totalLocked = this.getTotalLockedQi();
     const baseRecovery = this.qiManager.getBaseRecovery();
     this.qiManager.recover(baseRecovery, totalLocked);
@@ -707,7 +949,7 @@ export class TurnManager {
       this.lastSettlementDetail.baseQiRecover = baseRecovery;
     }
 
-    if (this.lastAction === 'wait') {
+    if (applyWaitBonus && this.lastAction === 'wait') {
       const waitBonus = this.qiManager.getWaitBonus();
       this.qiManager.recover(waitBonus, totalLocked);
       if (this.lastSettlementDetail) {
@@ -734,6 +976,12 @@ export class TurnManager {
 
     const card = this.cardPoolManager.getPublicCards()[cardIndex];
     if (!card) return false;
+
+    // V5 空亡牌是纯事件牌，不可买入（mechanics.md §9）。
+    if (isVoidCard(card)) {
+      console.log('[TurnManager] 空亡牌不可买入');
+      return false;
+    }
 
     // 检查手牌是否已满
     if (!this.handManager.canBuy()) {
@@ -1158,6 +1406,8 @@ export class TurnManager {
       this.validateScoreRules(data.scoreRules);
     }
     this.rulesVersion = declaredRules;
+    // V5 空亡规则：SeasonCycle 懒生成模式跟随存档声明（base 构造读 V5 档也要懒生成）。
+    this.seasonCycle.setLazy(declaredRules === RULES_VERSION_VOID);
     this.scoreManager.setRules(
       isTradeRulesVersion(declaredRules) ? data.scoreRules! : DEFAULT_SCORE_RULES,
     );
@@ -1301,6 +1551,26 @@ export class TurnManager {
     }
     // 补录记录 round 可能小于现有记录，统一按回合排序保证看板正序展示
     this.roundLog.sort((a, b) => a.round - b.round);
+
+    // 8.6 空亡观测统计重建（票 P2-1）：voidTriggers/voidSwallowedEvents/voidMaxK 是
+    // 纯内存计数、不入快照，但 roundLog 已持久化每回合 voidSwallow。局中存档→续局后
+    // 必须从 roundLog 汇总还原，否则 GameOverModal 结算摘要只统计续局后的触发数。
+    // 口径与 processVoidRound 实时累计一致：count 求和 = 触发次数、swallowed 求和 =
+    // 整季吞掉事件、maxK 取最大 = 最长吞噬 K。旧存档（voidSwallow 无 swallowed 子字段）
+    // 按 0 处理（历史数据不完整，可接受降级）。
+    let voidTriggers = 0;
+    let voidSwallowed = 0;
+    let voidMaxK = 0;
+    for (const entry of this.roundLog) {
+      const vs = entry.voidSwallow;
+      if (!vs) continue;
+      voidTriggers += vs.count;
+      voidSwallowed += vs.swallowed ?? 0;
+      if (vs.maxK > voidMaxK) voidMaxK = vs.maxK;
+    }
+    this.voidTriggers = voidTriggers;
+    this.voidSwallowedEvents = voidSwallowed;
+    this.voidMaxK = voidMaxK;
   }
 
   /**
@@ -1445,6 +1715,11 @@ export class TurnManager {
   /** 设置锁定牌被自动解锁回调（付不起锁定费时回合末触发），携带被解锁的牌 ID 列表 */
   setOnLockAutoUnlocked(callback: (cardIds: number[]) => void): void {
     this.onLockAutoUnlocked = callback;
+  }
+
+  /** 设置 V5 空亡触发回调：每张空亡牌掷 K 后调用一次（供 UI Toast / 批 2 动画） */
+  setOnVoidTrigger(callback: (info: VoidTriggerInfo) => void): void {
+    this.onVoidTrigger = callback;
   }
 
   /** 按 ID 获取卡牌（供 UI 解析自动解锁牌的名称等） */
@@ -1716,6 +1991,8 @@ export class TurnManager {
       if (this.currentRound >= TurnManager.TOTAL_ROUNDS || !this.handManager.canBuy()) return null;
       const card = this.cardPoolManager.getPublicCards()[action.cardIndex];
       if (!card) return null;
+      // V5 空亡牌不可买入，预览一致拒绝（纯事件牌）。
+      if (isVoidCard(card)) return null;
       const buyScore = this.getCardScore(card, currentSeason);
       const buyCost = this.qiManager.calculateBuyCost(buyScore, action.leverage);
       if (!this.qiManager.canAfford(buyCost)) return null;
@@ -1887,11 +2164,13 @@ export class TurnManager {
 
   /** 重置游戏 */
   reset(): void {
-    this.seasonCycle.reset();
     // 新局默认规则回到构造默认（volatility enabled → 波动规则，否则 base）。
     // 重置只用于"开新局"，规则归属不继承上一局读档的声明。
     this.activeVolatilityConfig = this.scoreVolatilityConfig;
     this.rulesVersion = this.initialRulesVersion;
+    // 懒生成跟随规则版本：读档切到 V5 后 reset 开新局，需先还原季节模式再重排。
+    this.seasonCycle.setLazy(this.initialRulesVersion === RULES_VERSION_VOID);
+    this.seasonCycle.reset();
     this.scoreManager.setRules(this.initialScoreRules);
     this.scoreVolatilityState = this.isVolatilityRulesVersion()
       ? createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig)
@@ -1903,7 +2182,7 @@ export class TurnManager {
     // 重置牌池后必须重新装填全套卡牌：CardPoolManager.reset 只清空牌堆，
     // 若不重建，新一局 startGame → drawCards 会从空牌堆抽不出公共牌，
     // 导致界面只剩季节、无牌可买（游戏卡死）。
-    this.cardPoolManager.initialize(this.cardDataBank.getAllCards());
+    this.cardPoolManager.initialize(this.buildDeckCards());
 
     this.currentRound = 1;
     this.state = 'init';
@@ -1917,6 +2196,10 @@ export class TurnManager {
     this.totalSells = 0;
     this.totalWaits = 0;
     this.totalLeverageBuys = 0;
+    this.voidTriggers = 0;
+    this.voidSwallowedEvents = 0;
+    this.voidMaxK = 0;
+    this.lastVoidSwallow = null;
   }
 
   private refreshScoreVolatility(): void {

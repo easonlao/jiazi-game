@@ -9,6 +9,7 @@ export type {
   RoundLogEntry,
   DecisionScenario,
   DecisionEntry,
+  VoidTriggerInfo,
 } from './TurnManager';
 
 export { replayGame, ReplayValidationError, MAX_REPLAY_ACTIONS } from './ReplayRunner';
@@ -19,13 +20,16 @@ export { normalizeVerifiedScore } from './VerifiedScore';
 export {
   TRADE_REPLAY_RULES,
   BALANCED_TRADE_REPLAY_RULES,
+  VOID_REPLAY_RULES,
+  SUPPORTED_REPLAY_RULES,
+  getReplayRulesByVersion,
   CURRENT_REPLAY_RULES,
   cloneReplayRulesSnapshot,
 } from './ReplayRules';
-export type { ReplayRulesSnapshot } from './ReplayRules';
+export type { ReplayRulesSnapshot, VoidReplayRulesSnapshot } from './ReplayRules';
 
-export { SeasonCycle } from './SeasonCycle';
-export type { Season } from './SeasonCycle';
+export { SeasonCycle, LAZY_SEASON_LENGTH_DISTRIBUTION } from './SeasonCycle';
+export type { Season, SeasonCycleOptions } from './SeasonCycle';
 
 export { QiManager } from './QiManager';
 export { ScoreManager } from './ScoreManager';
@@ -38,6 +42,8 @@ export { CardDataBank } from './CardDataBank';
 
 export { JiaziCard, Element, YinYang } from './JiaziCard';
 export type { JiaziCardData } from './JiaziCard';
+
+export { VoidCard, isVoidCard, VOID_CARD_ID_START, VOID_CARD_COUNT, VOID_CARD_NAME } from './VoidCard';
 
 export { HandSlot } from './HandSlot';
 
@@ -71,6 +77,7 @@ export {
   RULES_VERSION_VOLATILE,
   RULES_VERSION_TRADE,
   RULES_VERSION_BALANCED_TRADE,
+  RULES_VERSION_VOID,
 } from './GameSaveService';
 export type { GameSnapshot, GameSaveLoadError, SupportedRulesVersion, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
 

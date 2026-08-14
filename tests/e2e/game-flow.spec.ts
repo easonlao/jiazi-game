@@ -36,9 +36,38 @@ async function startGameAndDismiss(page: import('@playwright/test').Page) {
   await dismissSettlement(page);
 }
 
+/** 当前回合数：从顶部「第 X 回合 / 60」读取。 */
+async function currentRound(page: import('@playwright/test').Page): Promise<number> {
+  const topText = await page.locator('h1').first().innerText().catch(() => '');
+  const m = topText.match(/第\s*(\d+)\s*回合/);
+  return m ? Number(m[1]) : 1;
+}
+
+/**
+ * 循环调息推进到目标回合。
+ * V5 空亡吞噬会额外推进游戏回合（空亡回合玩家不可行动、回合 +1），
+ * 固定点击次数在随机空亡下不可靠——循环读取回合数直到 >= target；
+ * 若已到第 60 回合（「结束游戏」按钮出现，终局）也退出。
+ */
+async function advanceToRound(page: import('@playwright/test').Page, target: number) {
+  for (;;) {
+    const round = await currentRound(page);
+    if (round >= target) return;
+    const endBtn = page.getByRole('button', { name: '结束游戏' });
+    if (await endBtn.isVisible({ timeout: 1_000 }).catch(() => false)) return;
+    const waitBtn = page.getByRole('button', { name: /调息/ });
+    await expect(waitBtn).toBeVisible({ timeout: 10_000 });
+    await waitBtn.click();
+    await dismissSettlement(page);
+  }
+}
+
 test.describe('甲子纪 E2E 游戏流程', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    // 确定性流程回归：`?rules=v4` 固定 V4 规则（无空亡随机推进）。
+    // V5 空亡为生产默认，但其随机性会破坏固定回合/季节断言（空亡回合玩家不可行动、
+    // 回合被跳过）；V5 行为由引擎单测与空亡专项浏览器验证覆盖（2026-08-14 翻转）。
+    await page.goto('/?rules=v4');
   });
 
   test('页面加载并显示开始界面', async ({ page }) => {
@@ -127,15 +156,15 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     expect(texts.every((text) => text.includes('当前评分'))).toBe(true);
   });
 
-  test('旧 volatility=0 参数不再切换规则，新局仍统一为当前 V4', async ({ page }) => {
-    await page.goto('/?volatility=0');
+  test('旧 volatility=0 参数不再切换规则，新局仍统一为 V4（E2E 固定规则）', async ({ page }) => {
+    await page.goto('/?rules=v4&volatility=0');
     await startGameAndDismiss(page);
     await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
     await expect(page.locator('[data-volatility-delta]')).toHaveCount(3);
   });
 
-  test('旧 volatility=1 参数同样使用当前 V4', async ({ page }) => {
-    await page.goto('/?volatility=1');
+  test('旧 volatility=1 参数同样使用 V4（E2E 固定规则）', async ({ page }) => {
+    await page.goto('/?rules=v4&volatility=1');
     await startGameAndDismiss(page);
     await expect(page.locator('[data-volatility-experiment]')).toBeVisible();
     await expect(page.locator('[data-volatility-delta]')).toHaveCount(3);
@@ -176,8 +205,10 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 确认后直接进入下一回合，不再弹出第二个结算画面。
     await dismissSettlement(page);
 
-    // 验证 Toast 出现「纳灵成功」
-    await expect(page.getByText('纳灵成功', { exact: true })).toBeVisible({ timeout: 5_000 });
+    // 验证 Toast 出现「纳灵成功」（V5：若本回合恰好抽入空亡，空亡 Toast 会覆盖
+    // 纳灵 Toast——P1-1 语义空亡最后写入；买入成功的实质证据是手牌出现，见下）
+    const successToast = page.getByText(/纳灵成功|空亡触发/);
+    await expect(successToast.first()).toBeVisible({ timeout: 5_000 });
     const handSection = page.locator('h3:has-text("丹田")').locator('..');
     // 未开燃灵：手牌卡面可见且无"燃"字徽章（杠杆信息暴露方式：仅开启时显示"燃"字徽章 + title）
     await expect(handSection.locator('.card-in')).toBeVisible({ timeout: 5_000 });
@@ -344,20 +375,18 @@ test.describe('甲子纪 E2E 游戏流程', () => {
   test('游戏结束与重新开始', async ({ page }) => {
     await startGameAndDismiss(page);
 
-    // 快速推进到第 59 回合（全部等待）
-    for (let round = 1; round <= 58; round++) {
-      const waitBtn = page.getByRole('button', { name: /调息/ });
-      await expect(waitBtn).toBeVisible({ timeout: 10_000 });
-      await waitBtn.click();
+    // 快速推进到第 59 回合（全部等待）。
+    // V5 空亡吞噬会额外推进游戏回合（空亡回合玩家不可行动但回合 +1），
+    // 固定点击次数不可靠——改为循环读取回合数直到 >= 59。
+    await advanceToRound(page, 59);
+
+    // 第 60 回合：「结束游戏」按钮（末回合 ActionBar 显示，点击确认终局）。
+    // 空亡可能把第 59 回合直接吞到 60，此时已出现结束按钮，无需再调息。
+    if (!(await page.getByRole('button', { name: '结束游戏' }).isVisible().catch(() => false))) {
+      await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 10_000 });
+      await page.getByRole('button', { name: /调息/ }).click();
       await dismissSettlement(page);
     }
-
-    // 第 59 回合：等待按钮可见
-    await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 10_000 });
-    await page.getByRole('button', { name: /调息/ }).click();
-    await dismissSettlement(page);
-
-    // 第 60 回合：「结束游戏」按钮（末回合 ActionBar 显示，点击确认终局）
     const endBtn = page.getByRole('button', { name: '结束游戏' });
     await expect(endBtn).toBeVisible({ timeout: 10_000 });
     await endBtn.click();

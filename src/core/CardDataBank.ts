@@ -1,8 +1,15 @@
 import { JiaziCard, JiaziCardData, Element, YinYang } from './JiaziCard.ts';
+import { VOID_CARD_COUNT, VOID_CARD_ID_START, VoidCard } from './VoidCard.ts';
 
 /** 卡牌数据银行 - 加载和管理所有甲子卡牌 */
 export class CardDataBank {
   private cards: Map<number, JiaziCard> = new Map();
+  /** V5 空亡牌张数（可选注入；缺省 = VOID_CARD_COUNT 定稿值 3）。 */
+  private readonly voidCardCount: number;
+
+  constructor(voidCardCount: number = VOID_CARD_COUNT) {
+    this.voidCardCount = Math.max(0, Math.floor(voidCardCount));
+  }
 
   /** 从 JSON 数据初始化 */
   async initialize(): Promise<void> {
@@ -20,6 +27,21 @@ export class CardDataBank {
       // 测试环境（Node.js）下 fetch 相对 URL 会失败，属于正常现象；
       // 使用默认数据可保证 60 张甲子循环卡牌完整可用。
       this.loadDefaultCards();
+    }
+    // 追加 3 张同名空亡纯事件牌（V5 牌堆专用）。V1-V4 是否入堆由 TurnManager
+    // 按规则版本门控（buildDeckCards 过滤），本库始终持有它们以便读档按 id 还原。
+    this.addVoidCards();
+  }
+
+  /**
+   * 追加同名空亡纯事件牌（id 61 起，张数 = voidCardCount，缺省 3 = V5 定稿值）。
+   * initialize 可能被重复调用（幂等守卫：已存在则跳过）。
+   */
+  private addVoidCards(): void {
+    if (this.cards.has(VOID_CARD_ID_START)) return;
+    for (let i = 0; i < this.voidCardCount; i++) {
+      const card = new VoidCard(VOID_CARD_ID_START + i);
+      this.cards.set(card.id, card);
     }
   }
 

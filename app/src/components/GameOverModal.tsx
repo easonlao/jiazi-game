@@ -25,6 +25,7 @@ export function GameOverModal() {
   const totalLeverageBuys = useGameStore((s) => s.totalLeverageBuys);
   const totalWaits = useGameStore((s) => s.totalWaits);
   const decisionLog = useGameStore((s) => s.decisionLog);
+  const voidStats = useGameStore((s) => s.voidStats);
   const reset = useGameStore((s) => s.reset);
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
   const openDashboard = useGameStore((s) => s.openDashboard);
@@ -104,6 +105,18 @@ export function GameOverModal() {
             </span>
           </div>
         </div>
+
+        {/* 本局空亡记录（V5 空亡规则；仅触发过才显示，V1-V4 恒不渲染） */}
+        {voidStats.triggers > 0 && (
+          <div className="bg-white rounded-xl p-3 mb-3 shadow-sm">
+            <div className="text-left text-xs font-bold font-serif text-ink mb-2">本局空亡记录</div>
+            <div className="flex justify-between text-[11px] text-ink-light tabular-nums">
+              <span>空亡触发 <span className="font-bold text-ink">{voidStats.triggers}</span> 次</span>
+              <span>整季吞掉 <span className="font-bold text-ink">{voidStats.swallowedEvents}</span> 次</span>
+              <span>最长吞噬 <span className="font-bold text-ink">K={voidStats.maxVoidK}</span></span>
+            </div>
+          </div>
+        )}
 
         {/* 上限对齐：六维（锚定真引擎调参验证的冲顶机制，与分数强相关） */}
         <div className="mb-3">
