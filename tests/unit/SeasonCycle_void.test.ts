@@ -85,14 +85,43 @@ describe('V5 懒生成季长分布', () => {
 });
 
 describe('V5 懒生成按需抽取（无界时钟）', () => {
-  it('构造时不预生成整局表；首次访问当前季长度才抽取', () => {
+  it('构造时预生成首季长度；换季由 advance 预生成下一季（引擎确定性，2026-08-14 修复）', () => {
     const sc = new SeasonCycle(new SeededRandomSource(1), { lazy: true });
-    // 懒生成：构造后尚未生成任何长度
-    expect(sc.getSeasonLengths()).toEqual([]);
-    const firstLength = sc.getCurrentSeasonLength();
-    expect(firstLength).toBeGreaterThanOrEqual(4);
-    expect(firstLength).toBeLessThanOrEqual(12);
-    expect(sc.getSeasonLengths()).toEqual([firstLength]);
+    // 修复后：构造即生成首季长度（确定性时机，不依赖外部首次访问）
+    const lengths = sc.getSeasonLengths();
+    expect(lengths).toHaveLength(1);
+    expect(lengths[0]).toBeGreaterThanOrEqual(4);
+    expect(lengths[0]).toBeLessThanOrEqual(12);
+    // 换季时 advance 预生成下一季长度
+    const springLen = lengths[0]!;
+    sc.advanceBy(springLen); // 越过春 → 夏 r1
+    expect(sc.getSeasonLengths()).toHaveLength(2);
+    expect(sc.getSeasonLengths()[1]).toBeGreaterThanOrEqual(4);
+    expect(sc.getSeasonLengths()[1]).toBeLessThanOrEqual(12);
+  });
+
+  it('外部读取季长（UI 模拟）不消耗随机数：同一 seed 后续随机序列不受读取影响（回归保护）', () => {
+    // 回归：懒生成季长若由外部读取触发，会消耗共享随机源 → 客户端 UI 局与
+    // 服务端纯引擎重放随机序列分叉 → V5 空亡触发点/K 值不同 → replay_rejected。
+    const seqAfterRead = (seed: number): number[] => {
+      const random = new SeededRandomSource(seed);
+      const sc = new SeasonCycle(random, { lazy: true });
+      // 模拟 UI：提前读取季长（修复前会额外消耗随机数）
+      sc.getCurrentSeasonLength();
+      sc.getCurrentSeasonLength();
+      void sc;
+      // 用同一随机源后续抽 3 个数（模拟抽牌序列）
+      return [random.next(), random.next(), random.next()];
+    };
+    const seqNoRead = (seed: number): number[] => {
+      const random = new SeededRandomSource(seed);
+      new SeasonCycle(random, { lazy: true });
+      // 不读取季长（服务端重放路径）
+      return [random.next(), random.next(), random.next()];
+    };
+    // 修复后：读取季长不消耗随机数 → 两路径后续随机序列一致
+    expect(seqAfterRead(42)).toEqual(seqNoRead(42));
+    expect(seqAfterRead(99)).toEqual(seqNoRead(99));
   });
 
   it('换季时才抽取下一季长度（同种子可复现）', () => {

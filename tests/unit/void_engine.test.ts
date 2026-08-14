@@ -164,11 +164,11 @@ describe('V5 双时钟吞噬回合', () => {
   it('K 掷骰走注入的种子随机源：脚本源精确定位 K=5，不引入 Math.random', async () => {
     // RNG 消耗：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（int(2,13)），
     // 其后 returnCards 消耗 3 次（值取 0.9 保证插回牌堆深处，避免第 6 回合再抽到空亡）。
-    const values = new Array<number>(66).fill(0.5);
-    values[62] = 0.3; // int(2,13): 2 + floor(0.3*11) = 5
-    values[63] = 0.9;
+    const values = new Array<number>(69).fill(0.5);
+    values[63] = 0.3; // int(2,13): 2 + floor(0.3*11) = 5
     values[64] = 0.9;
     values[65] = 0.9;
+    values[66] = 0.9;
     // volatilityRandom 独立成流：V5 继承 V4 波动语义后，吞噬回合 refreshScoreVolatility
     // 会从波动流掷骰——必须与主随机分离，避免扰动 K/回堆的脚本定位。
     const tm = new TurnManager(undefined, new ScriptedRandom(values), {
@@ -190,12 +190,12 @@ describe('V5 双时钟吞噬回合', () => {
   });
 
   it('空亡回合持仓结算落在跳跃后的季节，反噬/强平照常判定', async () => {
-    const values = new Array<number>(67).fill(0.5);
-    values[62] = 0.3; // K=5
-    values[63] = 0.95; // 强平回牌
-    values[64] = 0.95; // 公共牌回堆 ×3
-    values[65] = 0.95;
+    const values = new Array<number>(69).fill(0.5);
+    values[63] = 0.3; // K=5
+    values[64] = 0.95; // 强平回牌
+    values[65] = 0.95; // 公共牌回堆 ×3
     values[66] = 0.95;
+    values[67] = 0.95;
     const tm = new TurnManager(undefined, new ScriptedRandom(values), {
       rulesVersion: RULES_VERSION_VOID,
       volatilityRandom: new SeededRandomSource(999), // 波动流独立，见上一条注释
@@ -356,7 +356,7 @@ describe('V5 空亡参数注入（voidConfig，票 05 授权扩展）', () => {
 
   it('voidKMin=voidKMax=1：K 恒为 1（脚本源验证注入 K 范围生效）', async () => {
     // RNG 消耗：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（int(1,2)，任意值 → 1）。
-    const values = new Array<number>(66).fill(0.9);
+    const values = new Array<number>(69).fill(0.9);
     const tm = new TurnManager(undefined, new ScriptedRandom(values), {
       rulesVersion: RULES_VERSION_VOID,
       volatilityRandom: new SeededRandomSource(999),
@@ -377,7 +377,7 @@ describe('V5 空亡参数注入（voidConfig，票 05 授权扩展）', () => {
   it('吞季统计：强 K 一次吞噬跨过至少一季 → swallowedEvents=1（与 probe fullSkip 口径一致）', async () => {
     // 春 r1 + K=13，季长 4：1+13 > 4+4 → 越过夏整季（并继续越过秋）→ 落冬 r2。
     // 季索引净差 = 3 ≥ 2 → 整季吞掉事件计数 1（事件口径，非按季累计）。
-    const values = new Array<number>(66).fill(0.9);
+    const values = new Array<number>(69).fill(0.9);
     const tm = new TurnManager(undefined, new ScriptedRandom(values), {
       rulesVersion: RULES_VERSION_VOID,
       volatilityRandom: new SeededRandomSource(999),
@@ -409,11 +409,11 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
   it('onVoidTrigger 回调：每张空亡牌掷 K 后调用，携带 k 与跳跃前后季节', async () => {
     // RNG 消耗：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（int(2,13)，0.3 → K=5），
     // 其后 returnCards 消耗 3 次（0.9 插回牌堆深处）。
-    const values = new Array<number>(66).fill(0.5);
-    values[62] = 0.3; // K=5
-    values[63] = 0.9;
+    const values = new Array<number>(69).fill(0.5);
+    values[63] = 0.3; // K=5
     values[64] = 0.9;
     values[65] = 0.9;
+    values[66] = 0.9;
     const tm = new TurnManager(undefined, new ScriptedRandom(values), {
       rulesVersion: RULES_VERSION_VOID,
       volatilityRandom: new SeededRandomSource(999),
@@ -452,7 +452,7 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
   });
 
   it('void_round → game_over：第 60 回合被空亡吞噬直接终局', async () => {
-    const tm = new TurnManager(undefined, new ScriptedRandom(new Array<number>(66).fill(0.5)), {
+    const tm = new TurnManager(undefined, new ScriptedRandom(new Array<number>(69).fill(0.5)), {
       rulesVersion: RULES_VERSION_VOID,
       volatilityRandom: new SeededRandomSource(999),
     });
@@ -473,10 +473,10 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
   it('maxVoidK 统计：多张空亡牌同回合触发取单次最大 K', async () => {
     // 3 张空亡牌置牌堆顶，同回合各掷一次 K：0.1→3 / 0.5→7 / 0.9→11。
     // RNG 消耗：initialize 62 次 → K×3（62/63/64）→ returnCards ×3（65/66/67）。
-    const values = new Array<number>(68).fill(0.9);
-    values[62] = 0.1; // K=3：春 r3 → 春 r6
-    values[63] = 0.5; // K=7：春 r6 → 夏 r1
-    values[64] = 0.9; // K=11：夏 r1 → 夏 r12（季长 12，不跨季）
+    const values = new Array<number>(69).fill(0.9);
+    values[63] = 0.1; // K=3：春 r3 → 春 r6
+    values[64] = 0.5; // K=7：春 r6 → 夏 r1
+    values[65] = 0.9; // K=11：夏 r1 → 夏 r12（季长 12，不跨季）
     const tm = new TurnManager(undefined, new ScriptedRandom(values), {
       rulesVersion: RULES_VERSION_VOID,
       volatilityRandom: new SeededRandomSource(999),

@@ -61,6 +61,14 @@ export class SeasonCycle {
     if (!opts.skipGenerate && !this.lazy) {
       this.generateSeasonLengths();
     }
+    // V5 懒生成确定性修复（2026-08-14）：构造时立即生成**首季**长度。
+    // 若留到首次访问才生成，客户端 UI（store._sync 每回合读季长）会提前触发
+    // 懒生成消耗随机数，服务端纯引擎重放则到 advance 才消耗 → 随机源分叉 →
+    // V5 空亡触发点/K 值不同 → replay_rejected。构造即生成使两端随机消耗时机一致；
+    // 后续每季长度由 advance() 换季时预生成（见 advance 注释）。
+    if (this.lazy && !opts.skipGenerate) {
+      this.generateLazySeasonLength(0);
+    }
   }
 
   /**
@@ -204,7 +212,9 @@ export class SeasonCycle {
 
   /**
    * 获取当前季节的总回合数长度
-   * V5 懒生成：首次访问时从种子随机源抽取并缓存；最后一季按剩余预算 clamp。
+   * V5 懒生成：长度由引擎推进确定性预生成（构造生成首季 + advance 换季生成下一季），
+   * 本方法**只读缓存、不消耗随机数**——外部（UI 读季长）不会改变随机源状态，
+   * 保证客户端 UI 局与服务端纯引擎重放随机序列一致（2026-08-14 replay_rejected 根因修复）。
    * @returns 当前季节长度
    */
   getCurrentSeasonLength(): number {
@@ -212,6 +222,8 @@ export class SeasonCycle {
     if (existing !== undefined) return existing;
     // V1-V4 幻影季兜底与旧行为一致（表外索引返回 12，不触发懒生成）。
     if (!this.lazy) return 12;
+    // V5 防御：正常路径下引擎已预生成（构造首季 + advance 换季），此处兜底生成
+    // 仅覆盖「读档恢复后当前季未预生成」的极端情况（loadState 会覆盖长度）。
     return this.generateLazySeasonLength(this.currentSeasonIndex);
   }
 
@@ -237,6 +249,15 @@ export class SeasonCycle {
       this.currentSeasonIndex++;
       this.currentRoundInSeason = 1;
       console.log(`[SeasonCycle] 季节切换: ${this.getCurrentSeason()}`);
+      // V5 懒生成确定性修复（2026-08-14）：换季时**立即**为下一季抽取长度并缓存，
+      // 使随机源消耗时机由引擎推进决定，而非依赖外部首次访问（UI 读季长会提前触发
+      // 懒生成消耗随机数 → 客户端 UI 局与服务端纯引擎重放随机源状态分叉 →
+      // V5 空亡触发点/K 值不同 → replay_rejected）。
+      // getCurrentSeasonLength 后续只读缓存，不再因外部读取而消耗随机数。
+      // 已存在的长度（loadState 预设/读档恢复）不覆盖——只补未生成的季。
+      if (this.lazy && this.seasonLengths[this.currentSeasonIndex] === undefined) {
+        this.generateLazySeasonLength(this.currentSeasonIndex);
+      }
       return true;
     }
 
