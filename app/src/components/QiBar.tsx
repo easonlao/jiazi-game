@@ -51,7 +51,7 @@ export function QiBar() {
       && lastSettlement?.round === currentRound
       && ((lastSettlement.holdItems.length ?? 0) > 0 || lastSettlement.holdQiCost > 0),
     );
-    // 有持仓结算时由下面的分段动画表达「耗神 → 回神」；没有持仓时保留即时气量飘字。
+    // 有持仓结算时由下面的分段动画表达「耗神 → 回神」；没有持仓时保留即时神识飘字。
     if (qiDelta && qiDelta.id !== lastEventId.current && qiDelta.delta !== 0 && !hasAnimatedSettlement) {
       lastEventId.current = qiDelta.id;
       const id = ++floaterSeq.current;
@@ -145,7 +145,7 @@ export function QiBar() {
 
   return (
     <div className="px-3 py-1.5 max-md:py-1 bg-[#faf6ee] border-b border-wood-light">
-      {/* 当前气量 */}
+      {/* 当前神识值 */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 relative">
           <span className="font-bold font-serif text-ink text-sm">神识</span>
@@ -157,7 +157,7 @@ export function QiBar() {
             {qi.toFixed(0)}
           </span>
           <span className="text-sm text-ink-light">/ {maxQi}</span>
-          {/* 气量飘字：多个同时出现时横向错开 */}
+          {/* 神识飘字：多个同时出现时横向错开 */}
           {floaters.map((f, idx) => (
             <span
               key={f.id}

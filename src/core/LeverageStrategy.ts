@@ -16,7 +16,7 @@ import type { HandSlot } from './HandSlot';
 export const HIGH_SCORE_THRESHOLD = 20;
 /** 杠杆槽位上限：玩家同时持有的杠杆牌最多 2 张 */
 export const MAX_LEVERAGE_SLOTS = 2;
-/** 少数情况开第 2 张杠杆的最低气量门槛：神识极充足才敢加第 2 张（避免双杠杆神识崩盘） */
+/** 少数情况开第 2 张杠杆的最低神识门槛：神识极充足才敢加第 2 张（避免双杠杆神识崩盘） */
 export const SECOND_LEVERAGE_MIN_QI = 55;
 /** 季末（下回合换季）风险高，少数情况也不开第 2 张杠杆 */
 export const SECOND_LEVERAGE_AVOID_SEASON_END = true;
@@ -26,9 +26,9 @@ export interface LeverageDecisionContext {
   candidateScore: number;
   /** 当前手牌中已启用杠杆的槽位数 */
   currentLeverageSlots: number;
-  /** 当前气量 */
+  /** 当前神识值 */
   qi: number;
-  /** 气量上限 */
+  /** 神识上限 */
   maxQi: number;
   /** 是否季末（下回合将换季）：季末加杠杆会放大换季亏损 */
   isSeasonEnd: boolean;

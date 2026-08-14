@@ -1,7 +1,7 @@
 /**
  * 强平引擎：处理玩家爆仓时对杠杆仓位的强制平仓。
  *
- * 领域术语「强平」是系统强制（气量归零触发），与玩家主动「卖出」是两个概念（见 CONTEXT.md）。
+ * 领域术语「强平」是系统强制（神识归零触发），与玩家主动「卖出」是两个概念（见 CONTEXT.md）。
  *
  * 强平会选中「当前评分最高」的杠杆牌（正分最大者，价值最高的牌），
  * 被反噬的牌**不产生卖出收益**（无卖出结算），直接承受反噬罚分。
@@ -45,7 +45,7 @@ export class MarginCallEngine {
   }
 
   /**
-   * 执行强平循环：气量 ≤ 0 时不断平仓「评分最高」的杠杆牌，直到气回正或无杠杆牌可平。
+   * 执行强平循环：神识 ≤ 0 时不断平仓「评分最高」的杠杆牌，直到神识回正或无杠杆牌可平。
    * @returns 本次强平的明细（供 UI 展示）
    */
   execute(): MarginCallDetail[] {
@@ -88,7 +88,7 @@ export class MarginCallEngine {
       const targetIndex = target.index;
       const slot = hand[targetIndex]!;
 
-      // 强平移除卡牌（不产生卖出收益，也不扣卖出气耗、不提供卖出即时回气），并将卡牌回洗入牌堆
+      // 强平移除卡牌（不产生卖出收益，也不扣卖出耗神、不提供卖出即时回神），并将卡牌回洗入牌堆
       const liquidatedSlot = handManager.sell(targetIndex);
       if (liquidatedSlot) {
         cardPoolManager.returnCards([liquidatedSlot.card]);
@@ -111,7 +111,7 @@ export class MarginCallEngine {
       );
       scoreManager.applyMarginCallPenalty(marginCallPenalty);
 
-      // 强平返还部分占用气
+      // 强平返还部分锁定气
       const forcedLiquidationQiReturn = Math.floor(slot.lockedQi * qiManager.getForcedLiquidationQiReturnFactor());
       qiManager.recover(forcedLiquidationQiReturn, newTotalLocked);
 
@@ -123,12 +123,12 @@ export class MarginCallEngine {
         penaltyScore: marginCallPenalty,
         leverage: effectiveLeverage,
         cardScore: currentScore,
-        reason: `气量归零强制平仓，杠杆 ${effectiveLeverage}x，卡牌评分 ${currentScore}，扣分 ${marginCallPenalty}（杠杆 × |评分| × ${penaltyCoeff}）`
+        reason: `神识归零强制平仓，杠杆 ${effectiveLeverage}x，卡牌评分 ${currentScore}，扣分 ${marginCallPenalty}（杠杆 × |评分| × ${penaltyCoeff}）`
       });
 
       console.log(`[MarginCallEngine] 爆仓强平：移除卡牌 ${slot.card.name}（评分最高 ${currentScore}），无卖出收益，扣分 ${marginCallPenalty}（${effectiveLeverage} × |${currentScore}| × ${penaltyCoeff}），退回锁定气 ${forcedLiquidationQiReturn}`);
 
-      // 强平成功后退出，不再提供低保缓冲——玩家必须自行管理气量，感受到爆仓的持续压力
+      // 强平成功后退出，不再提供低保缓冲——玩家必须自行管理神识，感受到爆仓的持续压力
       break;
     }
 

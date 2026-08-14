@@ -75,7 +75,7 @@ export interface HandContextCard extends ContextCard {
   use_leverage: boolean;
 }
 
-/** 行动事件的公共字段（每个行动事件都携带的气/分/情境上下文） */
+/** 行动事件的公共字段（每个行动事件都携带的神识/分/情境上下文） */
 export interface BaseActionPayload {
   session_id: string;
   round: number;

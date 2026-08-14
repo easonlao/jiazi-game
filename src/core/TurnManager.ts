@@ -160,7 +160,7 @@ export interface RoundLogEntry {
    * 需要时由引擎按 roundLog.round 反查，避免快照与计算口径漂移）。
    */
   publicCards: { id: number; name: string; mainElement: Element; yinYang: YinYang }[];
-  /** 本回合结算明细（持仓炼化/耗神/回气/反噬，来自 lastSettlementDetail） */
+  /** 本回合结算明细（持仓炼化/耗神/回神/反噬，来自 lastSettlementDetail） */
   settlement: SettlementDetail;
   /** 该回合结束时的总分数 */
   scoreAfter: number;
@@ -201,13 +201,13 @@ export interface DecisionEntry {
 }
 
 
-/** 主动卖出时的价差与气量流转明细。 */
+/** 主动卖出时的价差与神识流转明细。 */
 export interface SalePreviewBreakdown {
   buyScore: number;
   currentScore: number;
   leverage: number;
   scoreChange: number;
-  /** 占用气返还受气上限截断后的实际到账量。 */
+  /** 锁定气返还受神识上限截断后的实际到账量。 */
   lockedQiReturn: number;
   qiChange: number;
 }
@@ -946,7 +946,7 @@ export class TurnManager {
       this.lastSettlementDetail.holdQiCost = holdingSettlement.holdQiCost;
     }
 
-    // 强制扣除全部持仓气耗（支持扣成负数或0）
+    // 强制扣除全部持仓耗神（支持扣成负数或0）
     if (holdingSettlement.holdQiCost > 0) {
       this.qiManager.deductQi(holdingSettlement.holdQiCost);
     }
@@ -994,7 +994,7 @@ export class TurnManager {
     if (this.state !== 'player_action') return false;
 
     // 最后一回合禁止买入：买入后会推进到第 61 回合直接结束，
-    // 所买卡牌没有下一回合结算、也没有占用气返还，是纯损失操作。
+    // 所买卡牌没有下一回合结算、也没有锁定气返还，是纯损失操作。
     if (this.currentRound >= TurnManager.TOTAL_ROUNDS) {
       console.log('[TurnManager] 最后一回合无法买入');
       return false;
@@ -1113,14 +1113,14 @@ export class TurnManager {
       effectiveLeverage
     );
 
-    // 移除卡牌以释放对应的占用气锁定额，并将卡牌回洗入牌池
+    // 移除卡牌以释放对应的锁定气额，并将卡牌回洗入牌池
     const soldSlot = this.handManager.sell(slotIndex);
     if (soldSlot) {
       this.cardPoolManager.returnCards([soldSlot.card]);
     }
     const newTotalLocked = this.getTotalLockedQi();
 
-    // 归还全部占用气（lockedQi 是从总气里扣掉的子集，卖牌时退回）
+    // 归还全部锁定气（lockedQi 是从总神识里扣掉的子集，卖牌时退回）
     if (soldSlot) {
       this.qiManager.recover(soldSlot.lockedQi);
     }
@@ -1283,7 +1283,7 @@ export class TurnManager {
       // 收益计入修为（独立口径，不入 totalSellEarnings / totalSells）
       this.scoreManager.addSettleEarnings(settleScore);
 
-      // 卡回洗入牌池 + 归还占用气 + 清空槽位（终局后无后续玩法，但保持状态一致）
+      // 卡回洗入牌池 + 归还锁定气 + 清空槽位（终局后无后续玩法，但保持状态一致）
       this.cardPoolManager.returnCards([slot.card]);
       this.qiManager.recover(slot.lockedQi);
       this.handManager.sell(i);
@@ -1515,7 +1515,7 @@ export class TurnManager {
     });
     this.handManager.loadHand(restoredHand);
 
-    // 5. 还原气值（基于最新手牌计算的 totalLockedQi）
+    // 5. 还原神识值（基于最新手牌计算的 totalLockedQi）
     this.qiManager.setQi(data.qi, this.getTotalLockedQi());
 
     // 6. 还原公共牌池与牌堆
@@ -1778,7 +1778,7 @@ export class TurnManager {
     return this.qiManager.getQi();
   }
 
-  /** 每回合自然回气量 */
+  /** 每回合自然回神量 */
   getBaseRecovery(): number {
     return this.qiManager.getBaseRecovery();
   }
@@ -1793,7 +1793,7 @@ export class TurnManager {
     return this.qiManager.getBuyEntryFee();
   }
 
-  /** 等待动作的额外回气奖励 */
+  /** 等待动作的额外回神奖励 */
   getWaitBonus(): number {
     return this.qiManager.getWaitBonus();
   }
@@ -1833,7 +1833,7 @@ export class TurnManager {
     return this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason());
   }
 
-  /** 获取当前回合已经生效的持仓气耗（用于 HUD/卡面，不是等待预览）。 */
+  /** 获取当前回合已经生效的持仓耗神（用于 HUD/卡面，不是等待预览）。 */
   getCurrentHoldQiCost(): number {
     const currentSeason = this.getCurrentSeason();
     const currentLeverage = this.getLeverageMultiplier();
@@ -1988,7 +1988,7 @@ export class TurnManager {
     return this.scoreManager.calculateSellScore(currentScore, slot.buyScore, effectiveLeverage);
   }
 
-  /** 预览卖出实际气变化：释放占用气先封顶，即为净到账。 */
+  /** 预览卖出实际神识变化：释放锁定气先封顶，即为净到账。 */
   previewSellQiChange(slot: HandSlot): number {
     const currentQi = this.qiManager.getQi();
     return Math.min(this.qiManager.getMaxQi(), currentQi + slot.lockedQi) - currentQi;
@@ -2066,7 +2066,7 @@ export class TurnManager {
     const qiAfterAction = currentQi + actionQiChange;
     const scoreAfterAction = currentScore + actionScoreChange;
 
-    // 第 60 回合会在行动后直接结束；不构造虚假的下一回合持仓、回气或最终数值。
+    // 第 60 回合会在行动后直接结束；不构造虚假的下一回合持仓、回神或最终数值。
     if (this.currentRound >= TurnManager.TOTAL_ROUNDS) {
       return {
         action,

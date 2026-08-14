@@ -101,7 +101,7 @@ export function ActionBar() {
           )}
         </button>
 
-        {/* 调息（等待）：最后一回合 = 结束游戏，不产生结算/回气 */}
+        {/* 调息（等待）：最后一回合 = 结束游戏，不产生结算/回神 */}
         <button
           onClick={requestWaitPreview}
           className="py-2 max-md:py-1.5 rounded-lg text-sm font-bold bg-white border border-wood-mid text-wood-dark hover:bg-wood-light/20 hover:shadow-sm hover:-translate-y-0.5 active:scale-95 transition-all duration-150"

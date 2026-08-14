@@ -9,9 +9,9 @@ function signed(value: number) {
  * 行动确认弹窗（本回合/下回合双层结构，2026-08-06 恢复信息量）。
  *
  * 信息边界契约（docs/ui-information-boundary.md）"结算窗口双层结构"：
- * - 本回合账单层（上半）：上一结算的持仓炼化 +X/-Y、回气、锁定费、本次行动消耗，
+ * - 本回合账单层（上半）：上一结算的持仓炼化 +X/-Y、回神、锁定费、本次行动消耗，
  *   全部是确定值（来自 lastSettlement + 当前行动）。
- * - 下回合一览层（下半）：下回合推演——持仓炼化/耗神（假设不换季口径）、下回合回气、反噬候选，
+ * - 下回合一览层（下半）：下回合推演——持仓炼化/耗神（假设不换季口径）、下回合回神、反噬候选，
  *   固定标注"推演"；不触碰 isSeasonEnd，不泄露换季。
  */
 export function SettlementPreviewModal() {
@@ -68,7 +68,7 @@ export function SettlementPreviewModal() {
     projectedHold.length > 0 || preview.action.type === 'wait';
 
   // 调息预览：手牌结构无变化，本回合与下回合一览持仓明细语义重复——
-  // 推演层只显示总额与"与本回合一致"标注，隐藏重复明细；保留反噬预警与回气推演。
+  // 推演层只显示总额与"与本回合一致"标注，隐藏重复明细；保留反噬预警与回神推演。
   const isWaitUnchangedHoldings =
     preview.action.type === 'wait' &&
     factHoldItems.length > 0 &&
@@ -114,7 +114,7 @@ export function SettlementPreviewModal() {
               </div>
             ) : null}
 
-            {/* 回气（已入账） */}
+            {/* 回神（已入账） */}
             {(factBaseQiRecover > 0 || factWaitQiRecover > 0) && (
               <div className="mt-1 flex justify-between border-t border-green-600/15 pt-1">
                 <span>回神（{factWaitQiRecover > 0 ? '含上回合调息奖励' : '自然'}）</span>
@@ -278,7 +278,7 @@ export function SettlementPreviewModal() {
                 </div>
               )}
 
-              {/* 下回合回气推演 */}
+              {/* 下回合回神推演 */}
               <div className="mt-1 flex justify-between border-t border-blue-600/15 pt-1">
                 <span>下回合回神（推演）</span>
                 <span className="font-bold tabular-nums text-qi-full">

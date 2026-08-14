@@ -184,7 +184,7 @@ interface GameStore {
   selectedPublicCard: number;
   selectedHandCard: number;
   useLeverage: boolean;
-  /** 锁定中的公共牌 ID（锁定机制：占公共位 + 每张每回合 5 气） */
+  /** 锁定中的公共牌 ID（锁定机制：占公共位 + 每张每回合 5 神识） */
   lockedCardIds: number[];
   /** 行动尚未提交时的冻结选择；只在确认后调用核心 execute。 */
   pendingAction: SettlementPreviewAction | null;
@@ -202,7 +202,7 @@ interface GameStore {
   marginCallEvent: FxMarginCallEvent | null;
   /** 分数变化（可正可负） */
   scoreDelta: FxDeltaEvent | null;
-  /** 气量变化（可正可负） */
+  /** 神识变化（可正可负） */
   qiDelta: FxDeltaEvent | null;
   /** 回合推进 */
   roundEvent: FxRoundEvent | null;
@@ -303,9 +303,9 @@ interface GameStore {
     holdQiCost: number;
     lockedQiCost: number;
     midQi: number;
-    /** 扣气后气归零或为负。 */
+    /** 扣除神识后神识归零或为负。 */
     willQiDeplete: boolean;
-    /** 有杠杆仓位且气归零或为负，真实结算会强平。 */
+    /** 有杠杆仓位且神识归零或为负，真实结算会强平。 */
     willMarginCall: boolean;
     hasLeverage: boolean;
   };
@@ -643,7 +643,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // ── FX 事件 diff：委托给 fx-events 模块 ──
     // 空亡吞噬造成的季节跳变由空亡动画表达，抑制本次 seasonEvent（一次性，消费即清）；
-    // 覆盖 prev.season 为 nextSeason 使季节 diff 不产生事件，其余 diff（回合/气量等）不受影响。
+    // 覆盖 prev.season 为 nextSeason 使季节 diff 不产生事件，其余 diff（回合/神识等）不受影响。
     const suppressVoidSeason = _voidRoundSeasonSuppress;
     _voidRoundSeasonSuppress = false;
     const fxPatch = diffFxEvents(
@@ -802,8 +802,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ hasSave: false, _endedSessionId: null, verificationState: null });
       // 重置引擎（清空上一局的 roundLog/decisionLog/手牌/牌池等），再开新局。
       // 否则复用同一 TurnManager 实例时，新局会残留上一局的回合记录（行迹可见旧数据）。
-      // 注意：不能在重置后清空 FX 事件——首回合合法回气（+10）是正常事件，
-      // 清除会导致开局回气动画丢失；上一局的残留动画已在 reset() 中清空。
+      // 注意：不能在重置后清空 FX 事件——首回合合法回神（+10）是正常事件，
+      // 清除会导致开局回神动画丢失；上一局的残留动画已在 reset() 中清空。
       tm.reset();
       tm.startGame();
       get()._sync();
@@ -951,8 +951,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 清掉残留的空亡触发累积，避免跨局误弹合并 Toast
     _pendingVoidToasts = [];
     // 先把引擎重置后的关键值写回 store，再清空 FX 事件。
-    // 否则随后的 _sync 会把"重置前的旧季节/分数/气量 vs 重置后的初始值"的差异
-    // 误判为新 FX 事件，导致新一局开局误播上一局的换季/得分/回气动画。
+    // 否则随后的 _sync 会把"重置前的旧季节/分数/神识 vs 重置后的初始值"的差异
+    // 误判为新 FX 事件，导致新一局开局误播上一局的换季/得分/回神动画。
     set({
       season: tm.getCurrentSeason(),
       currentRound: tm.getCurrentRound(),
@@ -1071,7 +1071,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!ok) _telemetryController?.removeLastReplayAction();
     if (ok) {
       get()._sync();
-      // 最后一回合等待 = 直接结束游戏，不产生下回合回气
+      // 最后一回合等待 = 直接结束游戏，不产生下回合回神
       if (get().gameState === 'game_over') {
         _showActionToast(get, '一甲子终了');
       } else {
@@ -1326,7 +1326,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     };
 
     // 最后一回合：等待会直接结束游戏（advanceTurn → 61 > 60 → endGame），
-    // 不会发生下一回合结算或回气，预览必须返回当前气、零气耗。
+    // 不会发生下一回合结算或回神，预览必须返回当前神识、零耗神。
     if (get().currentRound >= tm.getTotalRounds()) {
       return {
         afterQi: get().qi, holdQiCost: 0, lockedQiCost: 0, midQi: get().qi,
@@ -1359,7 +1359,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const midQi = qi - holdQiCost - lockedQiCost;
     const willQiDeplete = midQi <= 0;
     const willMarginCall = willQiDeplete && hasLeverage;
-    // 强平候选数 > 0 时最终气取决于被随机强平的仓位（不确定值）；UI 在 willMarginCall 分支不展示该值。
+    // 强平候选数 > 0 时最终神识取决于被随机强平的仓位（不确定值）；UI 在 willMarginCall 分支不展示该值。
     const afterQi = willMarginCall
       ? midQi
       : Math.min(tm.getMaxQi(), midQi + tm.getBaseRecovery() + tm.getWaitBonus());

@@ -18,7 +18,7 @@ interface HandCardProps {
   isLeverage: boolean;
   /** 累计持有收益 */
   holdEarnings: number;
-  /** 当前回合每回合持有收益/气耗 */
+  /** 当前回合每回合持有收益/耗神 */
   holdEarning: number;
   holdQiCost: number;
   /** 卖出预览（仅选中时传入，未选中传 null） */

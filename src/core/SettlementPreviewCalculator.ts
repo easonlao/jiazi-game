@@ -2,13 +2,13 @@
  * 行动前/实际结算共用的持仓纯计算边界。
  *
  * 这里只接收可序列化的持仓快照和计算器函数，不读取或修改 TurnManager
- * 状态，因此预览与实际结算可以共享同一组逐项收益/气耗计算。
+ * 状态，因此预览与实际结算可以共享同一组逐项收益/耗神计算。
  */
 export interface HoldingCalculationInput {
   cardName: string;
   cardScore: number;
   useLeverage: boolean;
-  /** 土牌使用专属杠杆气耗系数，需要标记元素类型 */
+  /** 土牌使用专属杠杆耗神系数，需要标记元素类型 */
   isEarth?: boolean;
 }
 

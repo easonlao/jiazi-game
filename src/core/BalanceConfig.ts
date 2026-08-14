@@ -15,9 +15,9 @@ export interface BalanceConfig {
   // 神识
   maxQi: number;
   initialQi: number;
-  /** 每回合自然回气 */
+  /** 每回合自然回神 */
   baseRecovery: number;
-  /** 等待动作额外回气奖励 */
+  /** 等待动作额外回神奖励 */
   waitBonus: number;
   /** 买入基数（不随评分变化的部分） */
   baseBuyCost: number;
@@ -41,14 +41,14 @@ export interface BalanceConfig {
    * 换季重新传入第 1 回合后回到 1.0x。
    */
   leverageTable: LeverageTable;
-  /** 持仓气耗公式：base = max(holdQiMin, holdQiBase + holdQiScoreFactor * cardScore) */
+  /** 持仓耗神公式：base = max(holdQiMin, holdQiBase + holdQiScoreFactor * cardScore) */
   holdQiBase: number;
   holdQiScoreFactor: number;
   holdQiMin: number;
-  /** 杠杆每倍额外气耗（仅当倍率大于 1 时）：extra = leverage * leverageQiCostPerX */
+  /** 杠杆每倍额外耗神（仅当倍率大于 1 时）：extra = leverage * leverageQiCostPerX */
   leverageQiCostPerX: number;
   /**
-   * 土牌专属杠杆气耗系数：土牌无季节风险，可安全长持杠杆，成本需更高
+   * 土牌专属杠杆耗神系数：土牌无季节风险，可安全长持杠杆，成本需更高
    * （否则"买入土牌杠杆躺着不动"成为无脑最优）。非土牌用 leverageQiCostPerX。
    */
   earthLeverageQiCostPerX: number;
@@ -63,7 +63,7 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   baseRecovery: 10,
   waitBonus: 10,
   baseBuyCost: 11,
-  /** 评分×10 整数化后系数÷10 补偿：0.05 → 0.005（保持气经济不变） */
+  /** 评分×10 整数化后系数÷10 补偿：0.05 → 0.005（保持神识经济不变） */
   buyCostFactor: 0.005,
   lqc: 8,
   buyEntryFee: 2,
@@ -77,7 +77,7 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
     [12, 3.5],
   ],
   holdQiBase: 1.5,
-  /** 评分×10 整数化后系数÷10 补偿：0.4 → 0.04（保持气经济不变） */
+  /** 评分×10 整数化后系数÷10 补偿：0.4 → 0.04（保持神识经济不变） */
   holdQiScoreFactor: 0.04,
   holdQiMin: 0.5,
   leverageQiCostPerX: 2,

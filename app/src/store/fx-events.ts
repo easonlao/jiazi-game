@@ -185,7 +185,7 @@ export function diffFxEvents(prev: FxDiffPrev, next: FxDiffNext): FxPatch {
     patch.scoreDelta = { id: ++fxSeq, delta: next.score - prev.score };
   }
 
-  // 气量变化
+  // 神识变化
   if (next.qi !== prev.qi) {
     patch.qiDelta = { id: ++fxSeq, delta: next.qi - prev.qi };
   }

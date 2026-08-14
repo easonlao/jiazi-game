@@ -26,10 +26,10 @@ export class LeverageCalculator {
   }
 
   /**
-   * 计算持仓气耗（气整数化：基础与杠杆额外均向上取整）
+   * 计算持仓耗神（神识整数化：基础与杠杆额外均向上取整）
    *
-   * 基础气耗 = ceil(max(holdQiMin, holdQiBase + holdQiScoreFactor * cardScore))
-   * 杠杆额外气耗 = ceil(leverage × (isEarth ? earthLeverageQiCostPerX : leverageQiCostPerX))
+   * 基础耗神 = ceil(max(holdQiMin, holdQiBase + holdQiScoreFactor * cardScore))
+   * 杠杆额外耗神 = ceil(leverage × (isEarth ? earthLeverageQiCostPerX : leverageQiCostPerX))
    *
    * 设计意图：杠杆同时放大收益和持仓压力，让高杠杆位置有真实的持续风险。
    * 土牌无季节风险、可安全长持杠杆，用更高的专属系数补偿——否则"买入土牌杠杆躺着不动"

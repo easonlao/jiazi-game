@@ -74,7 +74,7 @@ export function HandCards() {
             const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
             // 仅在选中该手牌时显示卖出预览，未选中时不显示
             const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
-            // 持仓卡面展示当前回合已经生效的收益/气耗；"→下回合倍数"箭头用
+            // 持仓卡面展示当前回合已经生效的收益/耗神；"→下回合倍数"箭头用
             // 假设不换季的推演口径（getNextLeverageNoSeasonChange）——仅作提醒，
             // 不泄露换季（信息边界契约第三类口径）。
             const currentLeverage =
