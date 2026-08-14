@@ -1,72 +1,60 @@
 /**
- * 空亡跳转信息生成（buildVoidJourney）单元测试。
+ * 空亡倒数序列生成（buildVoidCountdown）单元测试。
  *
- * 覆盖：唯一转换段序列不循环、同季未跨季空数组、advanced=k、k 非有限回退 1、
- * 票 08 示例 spring→autumn 段序列正确、季节轮顺序与 SeasonCycle 一致。
+ * 2026-08-14 重构：引擎（TurnManager.processVoidRound）已给出 K 步推进的完整轨迹 path
+ * （每步 { season, roundInSeason }，长度 = k），本模块据此生成动画倒数序列：
+ * 每步「剩余 K 数（从 k 倒数）+ 当前位置（季节名 + 季内回合数）」。
+ * 旧 buildVoidJourney（季节轮播段序列）已删除——引擎给 path 后无需再推导跳转段。
  */
 import { describe, it, expect } from 'vitest';
-import { buildVoidJourney, VOID_SEASON_ORDER } from '../../app/src/lib/voidSeasonScroll';
+import { buildVoidCountdown } from '../../app/src/lib/voidSeasonScroll';
 
-describe('buildVoidJourney（空亡季节跳转信息）', () => {
-  it('票 08 示例 prev=spring → next=autumn：唯一转换段 [春→夏, 夏→秋]，advanced=k', () => {
-    const j = buildVoidJourney(2, 'spring', 'autumn');
-    expect(j).toEqual({
-      from: 'spring',
-      to: 'autumn',
-      advanced: 2,
-      segments: [
-        { from: 'spring', to: 'summer' },
-        { from: 'summer', to: 'autumn' },
-      ],
-    });
-  });
-
-  it('segments 不循环：K=12 时段序列仍只有真实跨段，不随 K 翻倍（换季且 K 大不再重复轮播）', () => {
-    const j = buildVoidJourney(12, 'spring', 'winter');
-    expect(j.advanced).toBe(12);
-    expect(j.segments).toEqual([
-      { from: 'spring', to: 'summer' },
-      { from: 'summer', to: 'autumn' },
-      { from: 'autumn', to: 'winter' },
+describe('buildVoidCountdown（空亡倒数序列，从引擎 path 生成）', () => {
+  it('从 path 生成倒数序列：每步 { season, roundInSeason, remaining }，长度 = path.length = k', () => {
+    const path = [
+      { season: 'summer', roundInSeason: 4 },
+      { season: 'summer', roundInSeason: 5 },
+      { season: 'summer', roundInSeason: 6 },
+      { season: 'autumn', roundInSeason: 1 },
+      { season: 'autumn', roundInSeason: 2 },
+    ];
+    const seq = buildVoidCountdown(path, 5);
+    expect(seq).toEqual([
+      { season: 'summer', roundInSeason: 4, remaining: 5 },
+      { season: 'summer', roundInSeason: 5, remaining: 4 },
+      { season: 'summer', roundInSeason: 6, remaining: 3 },
+      { season: 'autumn', roundInSeason: 1, remaining: 2 },
+      { season: 'autumn', roundInSeason: 2, remaining: 1 },
     ]);
   });
 
-  it('同季未跨季（prev=next=spring）：segments 为空数组（无段可滚，直接展示最终季）', () => {
-    const j = buildVoidJourney(5, 'spring', 'spring');
-    expect(j.advanced).toBe(5);
-    expect(j.segments).toEqual([]);
+  it('跨季切换季节名：season 字段随 path 每步变化（动画「当前位置」据此换季）', () => {
+    const seq = buildVoidCountdown([
+      { season: 'autumn', roundInSeason: 12 },
+      { season: 'winter', roundInSeason: 1 },
+      { season: 'winter', roundInSeason: 2 },
+    ], 3);
+    expect(seq.map((s) => s.season)).toEqual(['autumn', 'winter', 'winter']);
+    expect(seq[1]).toEqual({ season: 'winter', roundInSeason: 1, remaining: 2 });
   });
 
-  it('相邻季节（spring → summer）：单段', () => {
-    const j = buildVoidJourney(1, 'spring', 'summer');
-    expect(j.segments).toEqual([{ from: 'spring', to: 'summer' }]);
+  it('remaining 从 k 递减到 1（K 归 0 停留步由组件以剩余 0 显示最终位置）', () => {
+    const seq = buildVoidCountdown([
+      { season: 'spring', roundInSeason: 1 },
+      { season: 'spring', roundInSeason: 2 },
+      { season: 'spring', roundInSeason: 3 },
+    ], 3);
+    expect(seq.map((s) => s.remaining)).toEqual([3, 2, 1]);
   });
 
-  it('winter → spring：真实转换段只有 [冬→春]（跨年回绕，不循环展开）', () => {
-    const j = buildVoidJourney(4, 'winter', 'spring');
-    expect(j.segments).toEqual([{ from: 'winter', to: 'spring' }]);
+  it('k 为 NaN/±Infinity：remaining 回退 1，不抛错（P2-3 防御保留）', () => {
+    const path = [{ season: 'spring', roundInSeason: 2 }];
+    expect(buildVoidCountdown(path, Number.NaN)).toEqual([{ season: 'spring', roundInSeason: 2, remaining: 1 }]);
+    expect(buildVoidCountdown(path, Number.POSITIVE_INFINITY)[0]!.remaining).toBe(1);
+    expect(buildVoidCountdown(path, Number.NEGATIVE_INFINITY)[0]!.remaining).toBe(1);
   });
 
-  it('advanced 保留 k 原值（floor；0/负/非整数取整后至少 1，防御）', () => {
-    expect(buildVoidJourney(2.9, 'spring', 'summer').advanced).toBe(2);
-    expect(buildVoidJourney(2, 'spring', 'summer').advanced).toBe(2);
-    expect(buildVoidJourney(0, 'spring', 'summer').advanced).toBe(1);
-    expect(buildVoidJourney(-3, 'spring', 'summer').advanced).toBe(1);
-  });
-
-  it('k 为 NaN/±Infinity：advanced 回退 1，不抛错（P2-3 防御保留）', () => {
-    expect(buildVoidJourney(Number.NaN, 'spring', 'summer').advanced).toBe(1);
-    expect(buildVoidJourney(Number.POSITIVE_INFINITY, 'spring', 'summer').advanced).toBe(1);
-    expect(buildVoidJourney(Number.NEGATIVE_INFINITY, 'spring', 'summer').advanced).toBe(1);
-  });
-
-  it('季节名非法：防御兜底为春→夏段', () => {
-    const j = buildVoidJourney(2, 'nope', 'summer');
-    expect(j.segments).toEqual([{ from: 'spring', to: 'summer' }]);
-    expect(buildVoidJourney(2, 'nope', 'nope').segments).toEqual([{ from: 'spring', to: 'summer' }]);
-  });
-
-  it('季节轮顺序与 SeasonCycle 一致（spring→summer→autumn→winter 循环）', () => {
-    expect(VOID_SEASON_ORDER).toEqual(['spring', 'summer', 'autumn', 'winter']);
+  it('空 path：返回空序列（引擎保证 path 长度 = k；防御不抛错）', () => {
+    expect(buildVoidCountdown([], 3)).toEqual([]);
   });
 });

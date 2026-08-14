@@ -509,6 +509,8 @@ export function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get:
         k: info.k,
         prevSeason: info.prevSeason,
         nextSeason: info.nextSeason,
+        // 引擎已给 K 步完整轨迹（每步一个位置）：批 2 动画据此做逐回合倒数展示。
+        path: info.path,
       },
       // 空亡牌展示在真实公共牌池第 1 位（与真实公共牌并列，玩家理解「空亡是一张
       // 从公共牌池现出的牌」）；动画结束 endVoidRoundAnimation 时清除恢复真实牌池。

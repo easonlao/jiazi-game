@@ -253,7 +253,17 @@ describe('V5 空亡动画（批 2 票 08：P2-2 信号存活 / P2-4 gameState �
     tm.importSnapshot(makeVoidSnapshot({ state: 'player_action' }));
     injectTm(tm);
     // 模拟引擎刚 set 完的空亡事件（尚未被组件消费）；id=900 与真实触发（重置后从 1 起）严格区分
-    useGameStore.setState({ voidTriggerEvent: { id: 900, k: 5, prevSeason: 'spring', nextSeason: 'summer' } });
+    useGameStore.setState({ voidTriggerEvent: {
+      id: 900, k: 5, prevSeason: 'spring', nextSeason: 'summer',
+      // 引擎会带出 K 步完整轨迹（批 2 动画倒数数据源）；此处给一条合法形状的占位路径
+      path: [
+        { season: 'spring', roundInSeason: 3 },
+        { season: 'spring', roundInSeason: 4 },
+        { season: 'summer', roundInSeason: 1 },
+        { season: 'summer', roundInSeason: 2 },
+        { season: 'summer', roundInSeason: 3 },
+      ],
+    } });
 
     // localOnly 走普通开局分支（绕过云端）。若该 seed 首回合被吞噬，onVoidTrigger 会
     // 以 id=1 覆盖预置事件——断言 id===900 会失败，因此这里用首回合非空的 seed。

@@ -118,9 +118,10 @@ html, body, #root {
 }
 .season-word { animation: seasonWord 2.2s ease-out backwards; }
 
-/* ═══ 空亡时间吞噬：四阶段固定时间线（票 08，2026-08-14 用户拍板，暗色虚空主题） ═══
-   阶段 1 空亡牌落入公共牌池 0.9s → 阶段 2 从牌位吞噬扩散 0.7s → 阶段 3 跳转最终季 1.5s
-   → 阶段 4 收尾「现世已易」1s；总时长固定约 4.1s，不随 K 变化（K 只影响「前进 N」数字）。 */
+/* ═══ 空亡时间吞噬：K 步数字倒数时间线（2026-08-14 用户拍板：季节快进字幕 → 数字倒数） ═══
+   阶段 1 空亡牌落入公共牌池 0.9s → 阶段 2 从牌位吞噬扩散 0.7s → 阶段 3 K 步倒数
+   （每步 0.38s：剩余 K 大数字逐一扣减 + 下方当前位置逐回合递增）→ K 归 0 停留 0.6s
+   → 阶段 4 收尾「现世已易」1s；总时长随 K 线性增长（K=12 ≈ 7.8s，K=2 ≈ 4.0s）。 */
 
 /* 阶段 1：空亡牌从牌堆方向落入公共牌池第 1 位（顶部牌池场景，与真实牌区同布局）。 */
 @keyframes voidSlotDrop {
@@ -160,22 +161,29 @@ html, body, #root {
 }
 .void-swallow-text { animation: voidSwallowText 0.7s ease-out forwards; }
 
-/* 阶段 3 跳转：最终季从吞噬点中心放大浮现（承接阶段 2 的收缩），尾部淡出
-   与阶段 4 收尾语淡入衔接（动画总时长 1.5s = 阶段 3 时长，避免硬切）。 */
-@keyframes voidJumpWord {
-  0% { opacity: 0; transform: scale(0.25); filter: blur(8px); letter-spacing: 0.5em; }
-  30% { opacity: 1; transform: scale(1); filter: blur(0); letter-spacing: 0.16em; }
-  72% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1.06); filter: blur(4px); }
+/* 阶段 3 倒数：K 大数字每一步切换的跳动动画（时长由组件按 VOID_STEP_MS 内联，与步进同步；
+   key 随步变化重播）。数值从 K 逐一扣减到 0，让玩家看清「空亡加速了多少步」。 */
+@keyframes voidCountNum {
+  0% { opacity: 0; transform: translateY(16px) scale(0.8); filter: blur(4px); }
+  20% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
 }
-.void-jump-word { animation: voidJumpWord 1.5s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
-@keyframes voidJumpSub {
+.void-count-num { animation: voidCountNum 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+
+/* 阶段 3 倒数：当前位置（季节名 + 季内回合数）每步淡入上浮（跨季切换季节名随步更新）。 */
+@keyframes voidCountPos {
   0% { opacity: 0; transform: translateY(10px); }
-  20% { opacity: 1; transform: translateY(0); }
-  72% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(6px); }
+  25% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 1; }
 }
-.void-jump-sub { animation: voidJumpSub 1.5s ease-out backwards; }
+.void-count-pos { animation: voidCountPos 0.38s ease-out backwards; }
+
+/* K 归 0 停留：大数字微光脉冲（提示吞噬完成，停在最终季节和回合数）。 */
+@keyframes voidCountZero {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.72; transform: scale(0.96); }
+}
+.void-count-zero { animation: voidCountZero 0.6s ease-in-out infinite; }
 
 /* 收尾语「现世已易」：略慢于快进卡，淡入停驻后淡出（总 ~1s）。 */
 @keyframes voidFinaleWord {

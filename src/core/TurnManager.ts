@@ -51,6 +51,13 @@ export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_
  * V5 空亡触发信息（onVoidTrigger 回调载荷；供 UI Toast 提示 / 批 2 动画消费）。
  * 每张空亡牌掷 K 后调用一次；prevSeason/nextSeason 为吞噬前后季节。
  */
+export interface VoidStep {
+  /** 第 index 步推进后所在的季节（spring/summer/autumn/winter） */
+  season: string;
+  /** 第 index 步推进后的季内回合数（1 起） */
+  roundInSeason: number;
+}
+
 export interface VoidTriggerInfo {
   /** 本次吞噬的季节步数 K（缺省 uniform 2~12，可注入调整） */
   k: number;
@@ -58,6 +65,12 @@ export interface VoidTriggerInfo {
   prevSeason: string;
   /** 吞噬后的季节 */
   nextSeason: string;
+  /**
+   * K 步推进的完整轨迹（每步一个位置，长度 = k；含起点后每一步，终点 = nextSeason 当前季内回合）。
+   * 供批 2 动画做「剩余 K 逐回合倒数 + 当前位置逐回合递增」展示——引擎逐步 advance 采集，
+   * 与 advanceBy(k) 结果完全一致（不额外消耗随机数，不改变引擎推进的最终状态）。
+   */
+  path: VoidStep[];
 }
 
 /** 玩家操作类型（settle = 终局出清：系统强制平仓，非玩家主动操作，不计入行为统计） */
@@ -751,7 +764,20 @@ export class TurnManager {
       const idxBefore = this.seasonCycle.getCurrentSeasonIndex();
       const prevSeason = this.seasonCycle.getCurrentSeason();
       const k = this.random.int(this.voidKMin, this.voidKMax + 1);
-      this.seasonCycle.advanceBy(k);
+      // K 步逐步推进并采集完整轨迹（每步一个位置，长度 = k）：
+      // - 逐步 advance 与 advanceBy(k) 结果完全一致（advanceBy 内部就是 k 次 advance 的
+      //   while 循环，纯算术无分支），因此**不改变引擎推进的最终状态**；
+      // - 不额外消耗随机数：advance 不掷骰，换季时的下一季长度已由引擎确定性预生成
+      //   （懒生成修复后行为，构造生成首季 + advance 换季预生成），与 advanceBy 消耗完全一致；
+      // - path 只供批 2 动画做「剩余 K 逐回合倒数 + 当前位置逐回合递增」表达（2026-08-14 用户拍板）。
+      const path: VoidStep[] = [];
+      for (let step = 0; step < k; step++) {
+        this.seasonCycle.advance();
+        path.push({
+          season: this.seasonCycle.getCurrentSeason(),
+          roundInSeason: this.seasonCycle.getCurrentRoundInSeason(),
+        });
+      }
       const idxAfter = this.seasonCycle.getCurrentSeasonIndex();
       const nextSeason = this.seasonCycle.getCurrentSeason();
       this.voidTriggers++;
@@ -765,7 +791,7 @@ export class TurnManager {
         swallowedCount++;
       }
       // 每张空亡牌触发后立即通知（供 UI Toast 提示与批 2 动画消费）。
-      this.onVoidTrigger?.({ k, prevSeason, nextSeason });
+      this.onVoidTrigger?.({ k, prevSeason, nextSeason, path });
     }
     this.lastVoidSwallow = { count: voidCards.length, totalK, maxK, swallowed: swallowedCount };
     // 换季/季内滚动后刷新波动状态（V5 无波动，但保持与其他规则版本的语义一致）。

@@ -2,25 +2,28 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useGameStore, seasonDisplay } from '../store';
 import {
   createVoidAnimationPlayer,
+  VOID_STEP_MS,
+  VOID_HOLD_MS,
   type VoidAnimationPlayer,
 } from '../lib/voidAnimationPlayer';
-import { buildVoidJourney, type VoidJourney } from '../lib/voidSeasonScroll';
+import { buildVoidCountdown, type VoidCountdownStep } from '../lib/voidSeasonScroll';
 
 /**
- * V5 空亡触发动画·四阶段固定时间线（票 08，2026-08-14 用户拍板）。
+ * V5 空亡触发动画·K 步数字倒数时间线（票 08，2026-08-14 用户拍板重构）。
  *
- * 由 store 的 voidTriggerEvent（id 递增）驱动，空亡牌触发时播固定四阶段（总长 ~4.1s，
- * 不随 K 变化）：
+ * 由 store 的 voidTriggerEvent（id 递增）驱动，空亡牌触发时播「四阶段 + K 步倒数」：
  *   阶段 1「空亡现世」0.9s：暗色覆盖层中央渲染空亡牌卡面（☰ 空亡 + 时间吞噬 · 非交易品，
  *     与 CardVisual 空亡分支一致）+ 下方小字「空亡现世」；
  *   阶段 2「吞噬」0.7s：暗色环从中心向外扩散（voidSwallow），传达「时间被吞」；
- *   阶段 3「跳转」1.5s：大字号最终季节名（复用 VOID_SEASON_COLOR 季节色，如「至 · 冬」）
- *     + 「前进 N 个季节回合」（N = K，用户拍板：空亡动画中公布 K 数值）；
+ *   阶段 3「K 步倒数」K×0.38s：**剩余 K 大数字逐一扣减（12→11→…→1→0）** + 下方
+ *     **当前位置逐回合递增**（季节名 + 季内回合数，如 夏3→夏4→…→夏7→秋1→秋2…，
+ *     跨季自动切换季节名）——位置数据来自引擎给的全轨迹 path（每步一个位置）；
+ *   阶段 3.5「K 归 0 停留」0.6s：停在最终季节和回合数（剩余 0），让玩家看清落点；
  *   阶段 4「收尾」1s：「现世已易」+ 底部小字，淡出回到游戏。
- * 不播逐季字幕轮播（旧实现 K 张轮播在换季且 K 大时「秋去·冬来」连续重复，观感"一直弹"，
- * 且与 SeasonTransition 叠加）。
+ * 目的（用户反馈）：旧「季节快进字幕」轮播跨季时跳跃感强；数字倒数让玩家清晰看到
+ * 「空亡加速了多少步、从哪到哪」，消除跨季跳跃感。
  *
- * - K 值仅在动画阶段 3 展示（Toast/其他 UI 仍不显示 K，mechanics.md §9 变更记录）；
+ * - K 值在动画中展示（用户拍板：空亡动画公布 K；Toast/其他 UI 仍不显示 K）；
  * - 复用 SeasonTransition 的季节色语言，但用暗色虚空主题（与 CardVisual 空亡牌一致）；
  * - 与 SeasonTransition 的 pointer-events-none 不同：本覆盖层默认指针拦截，
  *   动画期间玩家操作全部被吞（吞噬回合不可行动，验收：动画期间不响应玩家操作）。
@@ -42,14 +45,19 @@ const VOID_SEASON_COLOR: Record<string, string> = {
   winter: '#7dd3fc',
 };
 
-/** 动画阶段：1 空亡现世 / 2 吞噬 / 3 跳转 / 4 收尾。 */
+/** 动画阶段：1 空亡现世 / 2 吞噬 / 3 K 步倒数（含归零停留）/ 4 收尾。 */
 type VoidPhase = 1 | 2 | 3 | 4;
 
 export function VoidTriggerAnimation() {
   const voidTriggerEvent = useGameStore((s) => s.voidTriggerEvent);
   const [visible, setVisible] = useState(false);
   const [phase, setPhase] = useState<VoidPhase>(1);
-  const [journey, setJourney] = useState<VoidJourney | null>(null);
+  /** 阶段 3 倒数序列：每步 { season, roundInSeason, remaining }（长度 = 引擎 path 长度 = K）。 */
+  const [countdown, setCountdown] = useState<VoidCountdownStep[]>([]);
+  /** 当前倒数步索引（null = 未开始）；每步递增，位置/剩余 K 随步更新。 */
+  const [stepIndex, setStepIndex] = useState<number | null>(null);
+  /** K 归 0 停留态：剩余 0 + 停在最终季节和回合数（onZero → onFinale 之间的短暂停留）。 */
+  const [zeroed, setZeroed] = useState(false);
 
   // 动画编排器单例（去重 + 定时器 + StrictMode 安全，逻辑可单测）
   const playerRef = useRef<VoidAnimationPlayer | null>(null);
@@ -63,15 +71,22 @@ export function VoidTriggerAnimation() {
         // 进入吞噬阶段：空亡牌自身播放溶解动画并从牌位扩散吞噬环（VoidPoolCard 内）
         useGameStore.setState({ voidSwallowing: true });
       },
-      onJump: () => {
+      onStep: (index) => {
+        // 阶段 3 倒数：显示第 index 步的位置（季节名 + 季内回合数）与剩余 K（k - index）
         setPhase(3);
-        // 吞噬完成：空亡牌从公共牌池移除（真实牌回位），进入跳转聚焦阶段
-        useGameStore.setState({ voidPoolSlot: null, voidSwallowing: false });
+        setStepIndex(index);
+        setZeroed(false);
+      },
+      onZero: () => {
+        // K 归 0：停在最终季节和回合数（短暂停留后收尾）
+        setZeroed(true);
       },
       onFinale: () => setPhase(4),
       onEnd: () => {
         setVisible(false);
         setPhase(1);
+        setStepIndex(null);
+        setZeroed(false);
         useGameStore.getState().endVoidRoundAnimation();
       },
     });
@@ -86,11 +101,14 @@ export function VoidTriggerAnimation() {
     const player = playerRef.current!;
     const started = player.start(voidTriggerEvent);
     if (!started) return undefined;
-    // 消费后缓存跳转信息（阶段 3 渲染最终季与「前进 N」用）
+    // 消费后缓存倒数序列（阶段 3 逐回合渲染「剩余 K + 当前位置」用）；
+    // 引擎已给 K 步完整轨迹 path，不再用季节轮播推导跳转段。
     if (voidTriggerEvent) {
-      setJourney(buildVoidJourney(voidTriggerEvent.k, voidTriggerEvent.prevSeason, voidTriggerEvent.nextSeason));
+      setCountdown(buildVoidCountdown(voidTriggerEvent.path, voidTriggerEvent.k));
     }
     setPhase(1);
+    setStepIndex(null);
+    setZeroed(false);
     setVisible(true);
     return () => player.cancel();
   }, [voidTriggerEvent]);
@@ -101,6 +119,14 @@ export function VoidTriggerAnimation() {
   }, []);
 
   if (!visible) return null;
+
+  // 阶段 3 渲染数据：剩余 K 与当前位置（归零停留时停在最终位置）。
+  // stepIndex 未开始（防御）时取序列首步，避免空指针。
+  const lastStep = countdown[countdown.length - 1];
+  const currentStep = zeroed
+    ? lastStep
+    : countdown[Math.min(Math.max(stepIndex ?? 0, 0), Math.max(countdown.length - 1, 0))];
+  const remainingK = zeroed ? 0 : (stepIndex !== null && currentStep ? currentStep.remaining : countdown.length);
 
   return (
     <div
@@ -130,20 +156,38 @@ export function VoidTriggerAnimation() {
         </div>
       )}
 
-      {/* 阶段 3/4：全屏居中容器（跳转最终季 + 收尾） */}
+      {/* 阶段 3/4：全屏居中容器（K 步倒数 + 收尾） */}
       <div className="absolute inset-0 flex items-center justify-center select-none">
         <div className="text-center px-6">
-          {/* 阶段 3：最终季节大字号 + 「前进 N 个季节回合」（N = K，用户拍板公布） */}
-          {phase === 3 && journey && (
+          {/* 阶段 3：剩余 K 大数字逐一扣减（12→11→…→1→0）+ 下方当前位置逐回合递增。
+              key 随步变化触发跳动动画重播（时长 = VOID_STEP_MS，与步进同步）。 */}
+          {phase === 3 && currentStep && (
             <div>
               <div
-                className="void-jump-word text-6xl font-bold font-serif tracking-[0.2em]"
-                style={{ color: VOID_SEASON_COLOR[journey.to] ?? '#e2e8f0' }}
+                key={`k-${zeroed ? 'zero' : stepIndex ?? 0}`}
+                className={`void-count-num text-8xl font-bold font-serif leading-none ${
+                  zeroed ? 'void-count-zero' : ''
+                }`}
+                style={{
+                  color: VOID_SEASON_COLOR[currentStep.season] ?? '#e2e8f0',
+                  animationDuration: `${zeroed ? VOID_HOLD_MS : VOID_STEP_MS}ms`,
+                }}
               >
-                至 · {seasonDisplay(journey.to)}
+                {remainingK}
               </div>
-              <div className="void-jump-sub mt-5 text-sm tracking-widest text-slate-300">
-                前进 {journey.advanced} 个季节回合
+              <div className="void-count-pos mt-4 text-xs tracking-[0.45em] text-slate-400">
+                {zeroed ? '吞噬完成 · 时光定格' : `剩余 ${remainingK} 步`}
+              </div>
+              {/* 当前位置：季节名（中文）+ 季内回合数，逐回合递增；跨季切换季节名 */}
+              <div
+                key={`pos-${zeroed ? 'zero' : stepIndex ?? 0}`}
+                className="void-count-pos mt-7 text-3xl font-semibold tracking-[0.25em]"
+                style={{
+                  color: VOID_SEASON_COLOR[currentStep.season] ?? '#e2e8f0',
+                  animationDuration: `${VOID_STEP_MS}ms`,
+                }}
+              >
+                {seasonDisplay(currentStep.season)} · {currentStep.roundInSeason}
               </div>
             </div>
           )}

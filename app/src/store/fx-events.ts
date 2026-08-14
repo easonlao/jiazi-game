@@ -1,4 +1,4 @@
-import type { SettlementDetail, Element } from '@core/index';
+import type { SettlementDetail, Element, VoidStep } from '@core/index';
 
 /** FX 事件类型：id 递增，组件监听 id 变化触发动画 */
 export interface FxSeasonEvent {
@@ -37,6 +37,12 @@ export interface FxVoidTriggerEvent {
   prevSeason: string;
   /** 吞噬后的季节 */
   nextSeason: string;
+  /**
+   * K 步推进的完整轨迹（长度 = k；每步 { season, roundInSeason }，终点 = nextSeason 当前季内回合）。
+   * 批 2 动画据此做「剩余 K 逐回合倒数 + 当前位置逐回合递增」——引擎逐步 advance 采集，
+   * 不消耗额外随机数、不改变引擎推进的最终状态。
+   */
+  path: VoidStep[];
 }
 
 /**

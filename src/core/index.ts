@@ -10,6 +10,7 @@ export type {
   DecisionScenario,
   DecisionEntry,
   VoidTriggerInfo,
+  VoidStep,
 } from './TurnManager';
 
 export { replayGame, ReplayValidationError, MAX_REPLAY_ACTIONS } from './ReplayRunner';

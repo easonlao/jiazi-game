@@ -12,8 +12,9 @@
  * 8. V5 计分 = V4 计分（同参数下 getCardScore 逐值一致、释灵 6、存档按 V4 形状持久化）。
  */
 import { describe, it, expect } from 'vitest';
-import { TurnManager } from '../../src/core/TurnManager';
+import { TurnManager, type VoidTriggerInfo } from '../../src/core/TurnManager';
 import { SeededRandomSource, type RandomSource } from '../../src/core/RandomSource';
+import { SeasonCycle } from '../../src/core/SeasonCycle';
 import { isVoidCard, VOID_CARD_ID_START } from '../../src/core/VoidCard';
 import { RULES_VERSION_VOID, RULES_VERSION_BALANCED_TRADE, type SupportedRulesVersion } from '../../src/core/GameSaveService';
 import { BAND_FACTOR } from '../../src/core/ScoreVolatility';
@@ -406,9 +407,11 @@ describe('V5 空亡参数注入（voidConfig，票 05 授权扩展）', () => {
 });
 
 describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / maxVoidK）', () => {
-  it('onVoidTrigger 回调：每张空亡牌掷 K 后调用，携带 k 与跳跃前后季节', async () => {
+  it('onVoidTrigger 回调：每张空亡牌掷 K 后调用，携带 k、跳跃前后季节与 K 步完整轨迹 path', async () => {
     // RNG 消耗：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（int(2,13)，0.3 → K=5），
     // 其后 returnCards 消耗 3 次（0.9 插回牌堆深处）。
+    // path 采集不消耗额外随机数：逐步 advance 与 advanceBy(k) 随机消耗完全一致，
+    // 因此第 64/65/66 次仍是 returnCards——脚本源索引不变（下一条用例继续验证定位）。
     const values = new Array<number>(69).fill(0.5);
     values[63] = 0.3; // K=5
     values[64] = 0.9;
@@ -427,11 +430,23 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
       season: { index: 0, roundInSeason: 3, lengths: [12, 12, 12, 12] },
     }));
 
-    const calls: { k: number; prevSeason: string; nextSeason: string }[] = [];
+    const calls: { k: number; prevSeason: string; nextSeason: string; path: { season: string; roundInSeason: number }[] }[] = [];
     tm.setOnVoidTrigger((info) => calls.push({ ...info }));
 
     tm.startGame();
-    expect(calls).toEqual([{ k: 5, prevSeason: 'spring', nextSeason: 'spring' }]);
+    expect(calls).toEqual([{
+      k: 5,
+      prevSeason: 'spring',
+      nextSeason: 'spring',
+      // 春 r3 + K=5：每步推进 1 回合，路径 = 春4…春8（长度 = k = 5，终点 = 当前季内回合）
+      path: [
+        { season: 'spring', roundInSeason: 4 },
+        { season: 'spring', roundInSeason: 5 },
+        { season: 'spring', roundInSeason: 6 },
+        { season: 'spring', roundInSeason: 7 },
+        { season: 'spring', roundInSeason: 8 },
+      ],
+    }]);
     // roundLog 空亡标记（票 09 TradeDashboard 数据源）：本回合被吞噬，季节时钟 +5 仍在春内（无整季吞掉）
     expect(tm.getRoundLog()[0].voidSwallow).toEqual({ count: 1, totalK: 5, maxK: 5, swallowed: 0 });
   });
@@ -491,14 +506,41 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
       pool: { deckIds: [VOID_CARD_ID_START, VOID_CARD_ID_START + 1, VOID_CARD_ID_START + 2, 2, 3, 4, 5, 6, 7], publicIds: [] },
     }));
 
-    const calls: { k: number; prevSeason: string; nextSeason: string }[] = [];
+    const calls: { k: number; prevSeason: string; nextSeason: string; path: { season: string; roundInSeason: number }[] }[] = [];
     tm.setOnVoidTrigger((info) => calls.push({ ...info }));
 
     tm.startGame();
     expect(calls).toEqual([
-      { k: 3, prevSeason: 'spring', nextSeason: 'spring' },
-      { k: 7, prevSeason: 'spring', nextSeason: 'summer' },
-      { k: 11, prevSeason: 'summer', nextSeason: 'summer' },
+      // 春 r3 + K=3 → 春6
+      { k: 3, prevSeason: 'spring', nextSeason: 'spring', path: [
+        { season: 'spring', roundInSeason: 4 },
+        { season: 'spring', roundInSeason: 5 },
+        { season: 'spring', roundInSeason: 6 },
+      ] },
+      // 春 r6 + K=7 → 越过春末 → 夏1（跨季路径：春7…春12,夏1）
+      { k: 7, prevSeason: 'spring', nextSeason: 'summer', path: [
+        { season: 'spring', roundInSeason: 7 },
+        { season: 'spring', roundInSeason: 8 },
+        { season: 'spring', roundInSeason: 9 },
+        { season: 'spring', roundInSeason: 10 },
+        { season: 'spring', roundInSeason: 11 },
+        { season: 'spring', roundInSeason: 12 },
+        { season: 'summer', roundInSeason: 1 },
+      ] },
+      // 夏 r1 + K=11 → 夏12（季长 12，不跨季）
+      { k: 11, prevSeason: 'summer', nextSeason: 'summer', path: [
+        { season: 'summer', roundInSeason: 2 },
+        { season: 'summer', roundInSeason: 3 },
+        { season: 'summer', roundInSeason: 4 },
+        { season: 'summer', roundInSeason: 5 },
+        { season: 'summer', roundInSeason: 6 },
+        { season: 'summer', roundInSeason: 7 },
+        { season: 'summer', roundInSeason: 8 },
+        { season: 'summer', roundInSeason: 9 },
+        { season: 'summer', roundInSeason: 10 },
+        { season: 'summer', roundInSeason: 11 },
+        { season: 'summer', roundInSeason: 12 },
+      ] },
     ]);
     expect(tm.getVoidStats()).toEqual({ triggers: 3, swallowedEvents: 0, maxVoidK: 11 });
     // 同回合 3 次触发的空亡回合标记：count=3、totalK=21、maxK=11、无整季吞掉
@@ -565,6 +607,94 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
     }
     expect(tm2.getState()).toBe('game_over');
     expect(tm2.getVoidStats().triggers).toBeGreaterThanOrEqual(originalStats.triggers);
+  });
+});
+
+describe('V5 空亡轨迹 path（批 2 动画数据源，2026-08-14 用户拍板：数字倒数）', () => {
+  it('path：长度 = k、每步推进 1 回合、跨季切换季节名、终点 = 引擎当前季内回合', async () => {
+    // 春 r9 + K=11（0.9 → int(2,13) = 11）：越过春末 → 夏 r8。
+    // RNG：initialize 62 次 → K(63) → returnCards ×3(64/65/66)——path 采集不消耗随机数。
+    const values = new Array<number>(69).fill(0.5);
+    values[63] = 0.9; // K=11
+    values[64] = 0.9;
+    values[65] = 0.9;
+    values[66] = 0.9;
+    const tm = new TurnManager(undefined, new ScriptedRandom(values), {
+      rulesVersion: RULES_VERSION_VOID,
+      volatilityRandom: new SeededRandomSource(999),
+    });
+    (globalThis as any).fetch = async () => ({
+      json: async () => JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8')),
+    });
+    await tm.initialize();
+    tm.importSnapshot(makeVoidSnapshot({
+      currentRound: 5,
+      season: { index: 0, roundInSeason: 9, lengths: [12, 12, 12, 12] },
+    }));
+
+    const infos: VoidTriggerInfo[] = [];
+    tm.setOnVoidTrigger((info) => infos.push(info));
+    tm.startGame();
+
+    expect(infos).toHaveLength(1);
+    const info = infos[0]!;
+    expect(info.k).toBe(11);
+    expect(info.prevSeason).toBe('spring');
+    expect(info.nextSeason).toBe('summer');
+    // 轨迹长度 = K
+    expect(info.path).toHaveLength(info.k);
+    // 终点 = 引擎吞噬后的当前季内回合（下一回合结算就落在该位置）
+    expect(info.path[info.path.length - 1]).toEqual({
+      season: tm.getCurrentSeason(),
+      roundInSeason: tm.getCurrentRoundInSeason(),
+    });
+    // 逐回合推进 1 步：每步位置严格 = 前一步 +1 回合（季末换季重置为下一季 r1）
+    for (let i = 1; i < info.path.length; i++) {
+      const prev = info.path[i - 1]!;
+      const cur = info.path[i]!;
+      if (cur.roundInSeason === 1) {
+        // 换季：前一步必须在季末（本夹具春长 12）
+        expect(prev.roundInSeason).toBe(12);
+        expect(cur.season).not.toBe(prev.season);
+      } else {
+        expect(cur.roundInSeason).toBe(prev.roundInSeason + 1);
+        expect(cur.season).toBe(prev.season);
+      }
+    }
+    // 跨季切换季节名：春末越过 → 夏 r1（动画「当前位置」在此处切换季节名）
+    expect(info.path).toContainEqual({ season: 'summer', roundInSeason: 1 });
+    // 精确断言完整轨迹（春 r9 + K=11 → 春10…春12、夏1…夏8）
+    const expected: { season: string; roundInSeason: number }[] = [];
+    for (let r = 10; r <= 12; r++) expected.push({ season: 'spring', roundInSeason: r });
+    for (let r = 1; r <= 8; r++) expected.push({ season: 'summer', roundInSeason: r });
+    expect(info.path).toEqual(expected);
+  });
+
+  it('逐步 advance 与 advanceBy(k) 终点一致（同起点同表；逐步推进不改变最终状态）', () => {
+    // 两个同起点、同长度表的 SeasonCycle：一个逐步 advance 采集 path，一个直接 advanceBy(k)。
+    // 懒生成模式下 skipGenerate=true + loadState 预置长度 → 两次推进均不消耗随机数，
+    // 纯算术循环结果必须完全一致（引擎 processVoidRound 的逐步推进即此语义）。
+    const makeCycle = () => {
+      const sc = new SeasonCycle(new SeededRandomSource(7), { lazy: true, skipGenerate: true });
+      sc.loadState(0, 3, [12, 12, 12, 12]);
+      return sc;
+    };
+    const path: { season: string; roundInSeason: number }[] = [];
+    const scA = makeCycle();
+    for (let i = 0; i < 11; i++) {
+      scA.advance();
+      path.push({ season: scA.getCurrentSeason(), roundInSeason: scA.getCurrentRoundInSeason() });
+    }
+    const scB = makeCycle();
+    scB.advanceBy(11);
+
+    // 直接 advanceBy 的终点 = 逐步推进 path 的终点（= 引擎最终状态）
+    expect({ season: scB.getCurrentSeason(), roundInSeason: scB.getCurrentRoundInSeason() })
+      .toEqual(path[path.length - 1]);
+    expect(path).toHaveLength(11);
+    expect(path[path.length - 1]).toEqual({ season: 'summer', roundInSeason: 2 });
+    // 与引擎 processVoidRound 的逐步推进语义一致：每一步后读取的位置即轨迹
+    expect(path[0]).toEqual({ season: 'spring', roundInSeason: 4 });
   });
 });
 
