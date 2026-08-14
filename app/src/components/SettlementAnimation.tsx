@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { YinYang, type Element } from '@core/index';
 import { useGameStore } from '../store';
 import { BUY_FLIGHT_MS, BUY_SEQUENCE_TOTAL_MS, prefersReducedMotion } from '../lib/buySettlementFx';
-import { elementBorder, elementScoreColor } from './CardVisual';
+import { elementScoreColor } from './CardVisual';
 
 interface Flight {
   id: string;
@@ -171,13 +171,13 @@ export function SettlementAnimation() {
           data-testid="buy-card-flight"
           aria-label={`纳灵 ${buyFlight.cardName}`}
         >
-          {/* 飞行卡面：与 CardVisual 同一套五行边框/底色、干支五行色、阴阳徽章，
-              让玩家看清「就是这张牌飞入丹田」，而不是一个方框飘过。 */}
-          <div
-            className={`relative flex h-full w-full flex-col overflow-hidden rounded-lg border-2 select-none min-w-0 ${elementBorder[buyFlight.mainElement]}`}
-          >
-            <div className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-0.5">
-              <span className="text-base max-md:text-[15px] leading-none font-bold truncate min-w-0">
+          {/* 飞行卡面：去掉边框与底色（用户反馈 2026-08-14 仍像"方框遮挡"），
+              只保留干支五行色文字 + 阴阳/燃/锁徽章，轻盈飞入丹田。
+              干支颜色沿用 CardVisual 的 elementScoreColor（未来换色自动跟随）；
+              无框无底靠浅阴影保证在米白界面上的可读性。 */}
+          <div className="relative flex h-full w-full flex-col items-center justify-center gap-1.5 select-none min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-3xl leading-none font-bold font-serif drop-shadow-sm">
                 <span className={elementScoreColor[buyFlight.tianGanElement]}>{buyFlight.tianGan}</span>
                 <span className={elementScoreColor[buyFlight.diZhiElement]}>{buyFlight.diZhi}</span>
               </span>
@@ -210,9 +210,7 @@ export function SettlementAnimation() {
                 )}
               </div>
             </div>
-            <div className="mt-auto flex items-center justify-center border-t border-wood-light/35 bg-white/35 px-2 py-1">
-              <span className="text-[10px] max-md:text-[9px] leading-tight text-ink-light">纳灵入丹田</span>
-            </div>
+            <span className="text-[10px] leading-tight text-ink-light/80 tracking-widest">纳灵入丹田</span>
           </div>
         </div>
       )}

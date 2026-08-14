@@ -257,11 +257,10 @@ html, body, #root {
 .buy-card-flight {
   position: fixed;
   z-index: 71;
-  width: 7.5rem;
-  height: 5.5rem;
+  width: 6rem;
   pointer-events: none;
-  margin-left: -3.75rem;
-  margin-top: -2.75rem;
+  /* 无框无底：仅内容（干支文字+徽章）飞行，容器贴近内容，居中锚点收窄 */
+  margin-left: -3rem;
   transform-origin: center;
   animation: buyCardFlight 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
