@@ -3,7 +3,7 @@
  *
  * 覆盖（mechanics.md §9 / 票 03 验收；一审 P1-① 定案 V5 计分 = V4 计分）：
  * 1. V5 牌堆 = 63 张（60 甲子 + 3 空亡）；V1-V4 牌堆仍 60 张；
- * 2. 双时钟吞噬：空亡回合游戏回合 +1、季节时钟 +K（K uniform 2~12）；
+ * 2. 双时钟吞噬：空亡回合游戏回合 +1、季节时钟 +K（K uniform 2~8）；
  * 3. 吞噬回合玩家不可行动（自动推进）、仅自然回复 +10（无调息加成）；
  * 4. 吞噬回合持仓结算一次且落在跳跃后的季节；反噬/强平照常判定；
  * 5. 空亡牌不可买入（executeBuy 与预览一致拒绝）；
@@ -141,7 +141,7 @@ describe('V5 牌堆组成', () => {
 });
 
 describe('V5 双时钟吞噬回合', () => {
-  it('空亡回合：游戏回合 +1、季节时钟 +K（K ∈ [2,12]）、玩家无需行动即自动推进', async () => {
+  it('空亡回合：游戏回合 +1、季节时钟 +K（K ∈ [2,8]）、玩家无需行动即自动推进', async () => {
     const tm = await makeTm(7, RULES_VERSION_VOID);
     forceVoidOnTop(tm);
     const before = clockPosition(tm);
@@ -152,7 +152,7 @@ describe('V5 双时钟吞噬回合', () => {
     expect(tm.getState()).toBe('player_action');
     const k = clockPosition(tm) - before;
     expect(k).toBeGreaterThanOrEqual(2);
-    expect(k).toBeLessThanOrEqual(12);
+    expect(k).toBeLessThanOrEqual(8);
 
     // 回合 1 的记录：action=null（无玩家行动），结算只含自然回复 10、无调息加成
     const voidEntry = tm.getRoundLog()[0];
@@ -163,10 +163,10 @@ describe('V5 双时钟吞噬回合', () => {
   });
 
   it('K 掷骰走注入的种子随机源：脚本源精确定位 K=5，不引入 Math.random', async () => {
-    // RNG 消耗：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（int(2,13)），
+    // RNG 消耗：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（int(2,9)），
     // 其后 returnCards 消耗 3 次（值取 0.9 保证插回牌堆深处，避免第 6 回合再抽到空亡）。
     const values = new Array<number>(69).fill(0.5);
-    values[63] = 0.3; // int(2,13): 2 + floor(0.3*11) = 5
+    values[63] = 0.5; // int(2,9): 2 + floor(0.5*7) = 5
     values[64] = 0.9;
     values[65] = 0.9;
     values[66] = 0.9;
@@ -192,7 +192,7 @@ describe('V5 双时钟吞噬回合', () => {
 
   it('空亡回合持仓结算落在跳跃后的季节，反噬/强平照常判定', async () => {
     const values = new Array<number>(69).fill(0.5);
-    values[63] = 0.3; // K=5
+    values[63] = 0.5; // K=5
     values[64] = 0.95; // 强平回牌
     values[65] = 0.95; // 公共牌回堆 ×3
     values[66] = 0.95;
@@ -320,7 +320,7 @@ describe('V5 确定性复现', () => {
 });
 
 describe('V5 空亡参数注入（voidConfig，票 05 授权扩展）', () => {
-  it('缺省 voidConfig：K ∈ [2,12] 且牌堆 63 张（定稿值不回归）', async () => {
+  it('缺省 voidConfig：K ∈ [2,8] 且牌堆 63 张（定稿值不回归）', async () => {
     const tm = await makeTm(7, RULES_VERSION_VOID);
     const pool = (tm as any).cardPoolManager as CardPoolManager;
     expect(pool.getDeck().length).toBe(63);
@@ -329,7 +329,7 @@ describe('V5 空亡参数注入（voidConfig，票 05 授权扩展）', () => {
     tm.startGame();
     const k = clockPosition(tm) - before;
     expect(k).toBeGreaterThanOrEqual(2);
-    expect(k).toBeLessThanOrEqual(12);
+    expect(k).toBeLessThanOrEqual(8);
     expect(tm.getVoidStats().triggers).toBe(1);
   });
 
@@ -408,12 +408,12 @@ describe('V5 空亡参数注入（voidConfig，票 05 授权扩展）', () => {
 
 describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / maxVoidK）', () => {
   it('onVoidTrigger 回调：每张空亡牌掷 K 后调用，携带 k、跳跃前后季节与 K 步完整轨迹 path', async () => {
-    // RNG 消耗：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（int(2,13)，0.3 → K=5），
+    // RNG 消耗：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（int(2,9)，0.5 → K=5），
     // 其后 returnCards 消耗 3 次（0.9 插回牌堆深处）。
     // path 采集不消耗额外随机数：逐步 advance 与 advanceBy(k) 随机消耗完全一致，
     // 因此第 64/65/66 次仍是 returnCards——脚本源索引不变（下一条用例继续验证定位）。
     const values = new Array<number>(69).fill(0.5);
-    values[63] = 0.3; // K=5
+    values[63] = 0.5; // K=5
     values[64] = 0.9;
     values[65] = 0.9;
     values[66] = 0.9;
@@ -430,13 +430,15 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
       season: { index: 0, roundInSeason: 3, lengths: [12, 12, 12, 12] },
     }));
 
-    const calls: { k: number; prevSeason: string; nextSeason: string; path: { season: string; roundInSeason: number }[] }[] = [];
+    const calls: { k: number; prevSeason: string; prevRoundInSeason: number; nextSeason: string; path: { season: string; roundInSeason: number }[] }[] = [];
     tm.setOnVoidTrigger((info) => calls.push({ ...info }));
 
     tm.startGame();
     expect(calls).toEqual([{
       k: 5,
       prevSeason: 'spring',
+      // 触发前季内回合数 = 吞噬批起点（春 r3）：倒数起点帧据此显示「当前回合」位置（票 01）
+      prevRoundInSeason: 3,
       nextSeason: 'spring',
       // 春 r3 + K=5：每步推进 1 回合，路径 = 春4…春8（长度 = k = 5，终点 = 当前季内回合）
       path: [
@@ -486,12 +488,12 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
   });
 
   it('maxVoidK 统计：多张空亡牌同回合触发取单次最大 K', async () => {
-    // 3 张空亡牌置牌堆顶，同回合各掷一次 K：0.1→3 / 0.5→7 / 0.9→11。
+    // 3 张空亡牌置牌堆顶，同回合各掷一次 K：0.2→3 / 0.8→7 / 0.9→8。
     // RNG 消耗：initialize 62 次 → K×3（62/63/64）→ returnCards ×3（65/66/67）。
     const values = new Array<number>(69).fill(0.9);
-    values[63] = 0.1; // K=3：春 r3 → 春 r6
-    values[64] = 0.5; // K=7：春 r6 → 夏 r1
-    values[65] = 0.9; // K=11：夏 r1 → 夏 r12（季长 12，不跨季）
+    values[63] = 0.2; // K=3：春 r3 → 春 r6
+    values[64] = 0.8; // K=7：春 r6 → 夏 r1（跨季）
+    values[65] = 0.9; // K=8：夏 r1 → 夏 r9（季长 12，不跨季）
     const tm = new TurnManager(undefined, new ScriptedRandom(values), {
       rulesVersion: RULES_VERSION_VOID,
       volatilityRandom: new SeededRandomSource(999),
@@ -506,19 +508,19 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
       pool: { deckIds: [VOID_CARD_ID_START, VOID_CARD_ID_START + 1, VOID_CARD_ID_START + 2, 2, 3, 4, 5, 6, 7], publicIds: [] },
     }));
 
-    const calls: { k: number; prevSeason: string; nextSeason: string; path: { season: string; roundInSeason: number }[] }[] = [];
+    const calls: { k: number; prevSeason: string; prevRoundInSeason: number; nextSeason: string; path: { season: string; roundInSeason: number }[] }[] = [];
     tm.setOnVoidTrigger((info) => calls.push({ ...info }));
 
     tm.startGame();
     expect(calls).toEqual([
-      // 春 r3 + K=3 → 春6
-      { k: 3, prevSeason: 'spring', nextSeason: 'spring', path: [
+      // 春 r3 + K=3 → 春6；第一张 prevRoundInSeason = 吞噬批起点（春 r3）
+      { k: 3, prevSeason: 'spring', prevRoundInSeason: 3, nextSeason: 'spring', path: [
         { season: 'spring', roundInSeason: 4 },
         { season: 'spring', roundInSeason: 5 },
         { season: 'spring', roundInSeason: 6 },
       ] },
-      // 春 r6 + K=7 → 越过春末 → 夏1（跨季路径：春7…春12,夏1）
-      { k: 7, prevSeason: 'spring', nextSeason: 'summer', path: [
+      // 春 r6 + K=7 → 越过春末 → 夏1（跨季路径：春7…春12,夏1）；prev = 前一张 path 终点（春 r6）
+      { k: 7, prevSeason: 'spring', prevRoundInSeason: 6, nextSeason: 'summer', path: [
         { season: 'spring', roundInSeason: 7 },
         { season: 'spring', roundInSeason: 8 },
         { season: 'spring', roundInSeason: 9 },
@@ -527,8 +529,8 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
         { season: 'spring', roundInSeason: 12 },
         { season: 'summer', roundInSeason: 1 },
       ] },
-      // 夏 r1 + K=11 → 夏12（季长 12，不跨季）
-      { k: 11, prevSeason: 'summer', nextSeason: 'summer', path: [
+      // 夏 r1 + K=8 → 夏9（季长 12，不跨季）；prev = 前一张 path 终点（夏 r1）
+      { k: 8, prevSeason: 'summer', prevRoundInSeason: 1, nextSeason: 'summer', path: [
         { season: 'summer', roundInSeason: 2 },
         { season: 'summer', roundInSeason: 3 },
         { season: 'summer', roundInSeason: 4 },
@@ -537,14 +539,20 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
         { season: 'summer', roundInSeason: 7 },
         { season: 'summer', roundInSeason: 8 },
         { season: 'summer', roundInSeason: 9 },
-        { season: 'summer', roundInSeason: 10 },
-        { season: 'summer', roundInSeason: 11 },
-        { season: 'summer', roundInSeason: 12 },
       ] },
     ]);
-    expect(tm.getVoidStats()).toEqual({ triggers: 3, swallowedEvents: 0, maxVoidK: 11 });
-    // 同回合 3 次触发的空亡回合标记：count=3、totalK=21、maxK=11、无整季吞掉
-    expect(tm.getRoundLog()[0].voidSwallow).toEqual({ count: 3, totalK: 21, maxK: 11, swallowed: 0 });
+    // 票 01：逐张回调且各自 prevRoundInSeason 正确——第一张 = 吞噬批起点，
+    // 后续张 prev = 前一张 path 终点（各张独立掷 K、独立 path）
+    expect(calls).toHaveLength(3);
+    expect(calls[0]!.prevRoundInSeason).toBe(3); // 批起点：春 r3
+    for (let i = 1; i < calls.length; i++) {
+      const prevEnd = calls[i - 1]!.path[calls[i - 1]!.path.length - 1]!;
+      expect(calls[i]!.prevSeason).toBe(prevEnd.season);
+      expect(calls[i]!.prevRoundInSeason).toBe(prevEnd.roundInSeason);
+    }
+    expect(tm.getVoidStats()).toEqual({ triggers: 3, swallowedEvents: 0, maxVoidK: 8 });
+    // 同回合 3 次触发的空亡回合标记：count=3、totalK=18、maxK=8、无整季吞掉
+    expect(tm.getRoundLog()[0].voidSwallow).toEqual({ count: 3, totalK: 18, maxK: 8, swallowed: 0 });
   });
 
   it('V1-V4（base）路径不进入 void_round、统计恒 0', async () => {
@@ -612,10 +620,10 @@ describe('V5 批 1 引擎增强（票 09/10/11：onVoidTrigger / void_round / ma
 
 describe('V5 空亡轨迹 path（批 2 动画数据源，2026-08-14 用户拍板：数字倒数）', () => {
   it('path：长度 = k、每步推进 1 回合、跨季切换季节名、终点 = 引擎当前季内回合', async () => {
-    // 春 r9 + K=11（0.9 → int(2,13) = 11）：越过春末 → 夏 r8。
+    // 春 r9 + K=8（0.9 → int(2,9) = 8）：越过春末 → 夏 r5。
     // RNG：initialize 62 次 → K(63) → returnCards ×3(64/65/66)——path 采集不消耗随机数。
     const values = new Array<number>(69).fill(0.5);
-    values[63] = 0.9; // K=11
+    values[63] = 0.9; // K=8
     values[64] = 0.9;
     values[65] = 0.9;
     values[66] = 0.9;
@@ -638,7 +646,7 @@ describe('V5 空亡轨迹 path（批 2 动画数据源，2026-08-14 用户拍板
 
     expect(infos).toHaveLength(1);
     const info = infos[0]!;
-    expect(info.k).toBe(11);
+    expect(info.k).toBe(8);
     expect(info.prevSeason).toBe('spring');
     expect(info.nextSeason).toBe('summer');
     // 轨迹长度 = K
@@ -663,10 +671,10 @@ describe('V5 空亡轨迹 path（批 2 动画数据源，2026-08-14 用户拍板
     }
     // 跨季切换季节名：春末越过 → 夏 r1（动画「当前位置」在此处切换季节名）
     expect(info.path).toContainEqual({ season: 'summer', roundInSeason: 1 });
-    // 精确断言完整轨迹（春 r9 + K=11 → 春10…春12、夏1…夏8）
+    // 精确断言完整轨迹（春 r9 + K=8 → 春10…春12、夏1…夏5）
     const expected: { season: string; roundInSeason: number }[] = [];
     for (let r = 10; r <= 12; r++) expected.push({ season: 'spring', roundInSeason: r });
-    for (let r = 1; r <= 8; r++) expected.push({ season: 'summer', roundInSeason: r });
+    for (let r = 1; r <= 5; r++) expected.push({ season: 'summer', roundInSeason: r });
     expect(info.path).toEqual(expected);
   });
 

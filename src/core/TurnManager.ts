@@ -59,10 +59,16 @@ export interface VoidStep {
 }
 
 export interface VoidTriggerInfo {
-  /** 本次吞噬的季节步数 K（缺省 uniform 2~12，可注入调整） */
+  /** 本次吞噬的季节步数 K（缺省 uniform 2~8，可注入调整） */
   k: number;
   /** 吞噬前的季节（spring/summer/autumn/winter） */
   prevSeason: string;
+  /**
+   * 吞噬前的季内回合数（1 起，与 prevSeason 配套）。
+   * 批 2 动画倒数序列据此插入「起点帧」——倒数大数字从 K 开始、位置从该张触发前
+   * （当前回合）开始，不再从已走 1 步后的 path[0] 开始（起点跳跃修复）。
+   */
+  prevRoundInSeason: number;
   /** 吞噬后的季节 */
   nextSeason: string;
   /**
@@ -335,11 +341,11 @@ export class TurnManager {
   static readonly LOCK_COST_PER_CARD = LockManager.LOCK_COST_PER_CARD;
   /** 锁定张数上限：展示牌数 - 1（锁满则公共位全占，每回合 0 张新牌，游戏僵死） */
   static readonly MAX_LOCKED_CARDS = LockManager.MAX_LOCKED_CARDS;
-  /** V5 空亡时间吞噬：K ~ uniform[2, 12]（含端点）定稿默认值，走注入的种子随机源。 */
+  /** V5 空亡时间吞噬：K ~ uniform[2, 8]（含端点）定稿默认值，走注入的种子随机源。 */
   static readonly VOID_K_MIN = 2;
-  static readonly VOID_K_MAX = 12;
+  static readonly VOID_K_MAX = 8;
 
-  /** 实际生效的空亡参数（options.voidConfig 覆盖，缺省 = 定稿值：3 张 / K 2~12）。 */
+  /** 实际生效的空亡参数（options.voidConfig 覆盖，缺省 = 定稿值：3 张 / K 2~8）。 */
   private readonly voidCardCount: number;
   private readonly voidKMin: number;
   private readonly voidKMax: number;
@@ -390,7 +396,7 @@ export class TurnManager {
       /** 交易规则的计分参数；v1/v2 使用旧默认值。 */
       scoreRules?: Partial<ScoreRules>;
       /**
-       * V5 空亡参数（可选注入；缺省 = 定稿值：张数 3 / K 2~12）。
+       * V5 空亡参数（可选注入；缺省 = 定稿值：张数 3 / K 2~8）。
        * 仅 rulesVersion=5 时生效；V1-V4 路径完全不读取，行为逐字节不变。
        */
       voidConfig?: {
@@ -398,7 +404,7 @@ export class TurnManager {
         voidCardCount?: number;
         /** 空亡 K 掷骰下限（缺省 2）。 */
         voidKMin?: number;
-        /** 空亡 K 掷骰上限（缺省 12）。 */
+        /** 空亡 K 掷骰上限（缺省 8）。 */
         voidKMax?: number;
       };
     },
@@ -429,7 +435,7 @@ export class TurnManager {
       ...defaultScoreRules,
       ...options?.scoreRules,
     };
-    // 空亡参数：可选注入（voidConfig），缺省 = 定稿值（3 张 / K 2~12）。
+    // 空亡参数：可选注入（voidConfig），缺省 = 定稿值（3 张 / K 2~8）。
     // 必须在 CardDataBank 构造之前解析（后者按张数生成空亡牌）。
     // 仅 rulesVersion=5 生效；V1-V4 不读取。K 边界做归一化防止非法范围。
     this.voidKMin = Math.min(
@@ -742,7 +748,7 @@ export class TurnManager {
   /**
    * V5 空亡吞噬回合：空亡牌已抽入公共牌区，立即触发。
    * 流程（mechanics.md §9）：
-   * 1. 季节时钟前进 K（每张抽中的空亡牌独立掷 K，K ~ uniform[2,12]，走种子随机源）；
+   * 1. 季节时钟前进 K（每张抽中的空亡牌独立掷 K，K ~ uniform[2,8]，走种子随机源）；
    * 2. 游戏回合只走 1（advanceAfterVoid），该回合玩家不可行动；
    * 3. 持仓照常结算一次，结算落在跳跃后的季节；反噬/强平照常判定；
    * 4. 仅自然回复 +10 神识（无调息 +10 加成）；
@@ -756,13 +762,14 @@ export class TurnManager {
     this.onStateChange?.('void_round');
 
     // 1. 季节时钟吞噬：K 掷骰走注入的种子随机源（服务端重放可复现）。
-    //    K 范围 = voidConfig.voidKMin/voidKMax（缺省 2~12）；观测统计只增不改行为。
+    //    K 范围 = voidConfig.voidKMin/voidKMax（缺省 2~8）；观测统计只增不改行为。
     let totalK = 0;
     let maxK = 0;
     let swallowedCount = 0;
     for (const _voidCard of voidCards) {
       const idxBefore = this.seasonCycle.getCurrentSeasonIndex();
       const prevSeason = this.seasonCycle.getCurrentSeason();
+      const prevRoundInSeason = this.seasonCycle.getCurrentRoundInSeason();
       const k = this.random.int(this.voidKMin, this.voidKMax + 1);
       // K 步逐步推进并采集完整轨迹（每步一个位置，长度 = k）：
       // - 逐步 advance 与 advanceBy(k) 结果完全一致（advanceBy 内部就是 k 次 advance 的
@@ -791,7 +798,10 @@ export class TurnManager {
         swallowedCount++;
       }
       // 每张空亡牌触发后立即通知（供 UI Toast 提示与批 2 动画消费）。
-      this.onVoidTrigger?.({ k, prevSeason, nextSeason, path });
+      // prevRoundInSeason 与该张 prevSeason 配套（触发前季内回合数）——批 2 动画
+      // 倒数序列的起点帧数据源；多张连触时第一张的 prevSeason/prevRoundInSeason
+      // 即吞噬批起点（后续张 prevSeason = 前一张 path 终点）。
+      this.onVoidTrigger?.({ k, prevSeason, prevRoundInSeason, nextSeason, path });
     }
     this.lastVoidSwallow = { count: voidCards.length, totalK, maxK, swallowed: swallowedCount };
     // 换季/季内滚动后刷新波动状态（V5 无波动，但保持与其他规则版本的语义一致）。

@@ -57,4 +57,42 @@ describe('buildVoidCountdown（空亡倒数序列，从引擎 path 生成）', (
   it('空 path：返回空序列（引擎保证 path 长度 = k；防御不抛错）', () => {
     expect(buildVoidCountdown([], 3)).toEqual([]);
   });
+
+  it('票 01：插入起点帧（剩余 K + 触发前位置），随后每步递增、剩余递减到 0', () => {
+    const path = [
+      { season: 'summer', roundInSeason: 4 },
+      { season: 'summer', roundInSeason: 5 },
+    ];
+    const seq = buildVoidCountdown(path, 2, 'summer', 3);
+    expect(seq).toEqual([
+      { season: 'summer', roundInSeason: 3, remaining: 2 }, // 起点帧：触发前位置（当前回合）
+      { season: 'summer', roundInSeason: 4, remaining: 1 },
+      { season: 'summer', roundInSeason: 5, remaining: 0 },
+    ]);
+    // 长度 = k + 1（起点帧 + path 的 k 步）
+    expect(seq).toHaveLength(path.length + 1);
+  });
+
+  it('票 01：跨季起点帧 + 剩余递减到 0（位置从当前回合开始，逐步跨季切换季节名）', () => {
+    const path = [
+      { season: 'summer', roundInSeason: 7 },
+      { season: 'autumn', roundInSeason: 1 },
+    ];
+    const seq = buildVoidCountdown(path, 2, 'summer', 6);
+    expect(seq.map((s) => s.remaining)).toEqual([2, 1, 0]);
+    expect(seq[0]).toEqual({ season: 'summer', roundInSeason: 6, remaining: 2 });
+    expect(seq[1]).toEqual({ season: 'summer', roundInSeason: 7, remaining: 1 });
+    expect(seq[2]).toEqual({ season: 'autumn', roundInSeason: 1, remaining: 0 });
+  });
+
+  it('票 01：无 prevSeason/prevRoundInSeason 时省略起点帧（防御路径，保持旧语义递减到 1）', () => {
+    const seq = buildVoidCountdown([
+      { season: 'spring', roundInSeason: 1 },
+      { season: 'spring', roundInSeason: 2 },
+    ], 2);
+    expect(seq).toEqual([
+      { season: 'spring', roundInSeason: 1, remaining: 2 },
+      { season: 'spring', roundInSeason: 2, remaining: 1 },
+    ]);
+  });
 });

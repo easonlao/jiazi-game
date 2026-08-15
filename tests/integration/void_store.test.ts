@@ -122,15 +122,19 @@ describe('V5 空亡 Toast 不被 action toast 覆盖（P1-1）', () => {
   });
 
   it('玩家行动路径：等待推进触发空亡吞噬，空亡 toast 为最后一次写入（不被「调息」覆盖）', async () => {
-    // 脚本随机源：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（0.9 → K=11，春 r4 → 夏 r3），
+    // 脚本随机源：initialize 洗 63 张牌 = 62 次 int → 第 63 次为 K 掷骰（0.9 → K=8，春 r6 → 夏 r2），
     // 其后 returnCards 消耗 3 次（0.9 插回牌堆深处，避免下回合再抽到空亡）。
     const values = new Array<number>(66).fill(0.5);
-    values[62] = 0.9; // K=11
+    values[62] = 0.9; // K=8
     values[63] = 0.9;
     values[64] = 0.9;
     values[65] = 0.9;
     const tm = await makeVoidTm(7, new ScriptedRandom(values));
-    tm.importSnapshot(makeVoidSnapshot({ state: 'player_action' }));
+    // 春 r6 起（K 上限 8 时跨季进夏的最近起点）
+    tm.importSnapshot(makeVoidSnapshot({
+      state: 'player_action',
+      season: { index: 0, roundInSeason: 6, lengths: [12, 12, 12, 12] },
+    }));
     injectTm(tm);
     expect(useGameStore.getState().gameState).toBe('player_action');
 
@@ -154,8 +158,8 @@ describe('V5 空亡 Toast 不被 action toast 覆盖（P1-1）', () => {
     injectTm(tm);
 
     useGameStore.getState().executeWait();
-    // 合并文案：空亡触发！连续吞噬 3 次（春→夏、夏→秋、秋→冬）——次数可见，无 K 数值（信息边界）
-    expect(useGameStore.getState().toast).toMatch(/^空亡触发！连续吞噬 3 次（[春夏秋冬]→[春夏秋冬]、[春夏秋冬]→[春夏秋冬]、[春夏秋冬]→[春夏秋冬]）$/);
+    // 合并文案：空亡触发！3 张空亡连触（春→春、春→夏、夏→秋）——张数可见，无 K 数值（信息边界）
+    expect(useGameStore.getState().toast).toMatch(/^空亡触发！3 张空亡连触（[春夏秋冬]→[春夏秋冬]、[春夏秋冬]→[春夏秋冬]、[春夏秋冬]→[春夏秋冬]）$/);
     expect(useGameStore.getState().toast).not.toContain('调息');
     expect(useGameStore.getState().toast).not.toContain('个季节'); // 无 K 总和
     expect(useGameStore.getState().toast).not.toContain('空亡触发！时间被吞噬'); // 只合并成一条，无重复单条
@@ -234,12 +238,12 @@ describe('V5 空亡牌不可买入（P2-3）', () => {
   });
 });
 
-describe('V5 空亡动画（批 2 票 08：P2-2 信号存活 / P2-4 gameState 覆盖）', () => {
+describe('V5 空亡动画（批 2 票 08：P2-2 信号存活 / P2-4 gameState 覆盖；票 01 队列契约）', () => {
   beforeEach(() => {
     console.log = () => {};
     console.warn = () => {};
-    useGameStore.setState({ toast: null, voidTriggerEvent: null, _voidAnimationTrueState: null });
-    // 锁死 voidTriggerEvent 自增序列：真实触发会从 id=1 开始，与预置的 id=900 严格区分
+    useGameStore.setState({ toast: null, voidTriggerQueue: [], _voidAnimationTrueState: null });
+    // 锁死 voidTriggerQueue 自增序列：真实触发会从 id=1 开始，与预置的 id=900 严格区分
     _resetVoidTriggerSeq();
   });
 
@@ -248,13 +252,13 @@ describe('V5 空亡动画（批 2 票 08：P2-2 信号存活 / P2-4 gameState �
     console.warn = origWarn;
   });
 
-  it('startGame 不再同 tick 清空 voidTriggerEvent（P2-2：开局首回合吞噬也能播动画）', async () => {
+  it('startGame 不再同 tick 清空 voidTriggerQueue（P2-2：开局首回合吞噬也能播动画）', async () => {
     const tm = await makeVoidTm(3);
     tm.importSnapshot(makeVoidSnapshot({ state: 'player_action' }));
     injectTm(tm);
-    // 模拟引擎刚 set 完的空亡事件（尚未被组件消费）；id=900 与真实触发（重置后从 1 起）严格区分
-    useGameStore.setState({ voidTriggerEvent: {
-      id: 900, k: 5, prevSeason: 'spring', nextSeason: 'summer',
+    // 模拟引擎刚 push 完的空亡事件队列（尚未被组件消费）；id=900 与真实触发（重置后从 1 起）严格区分
+    useGameStore.setState({ voidTriggerQueue: [{
+      id: 900, k: 5, prevSeason: 'spring', prevRoundInSeason: 2, nextSeason: 'summer',
       // 引擎会带出 K 步完整轨迹（批 2 动画倒数数据源）；此处给一条合法形状的占位路径
       path: [
         { season: 'spring', roundInSeason: 3 },
@@ -263,14 +267,46 @@ describe('V5 空亡动画（批 2 票 08：P2-2 信号存活 / P2-4 gameState �
         { season: 'summer', roundInSeason: 2 },
         { season: 'summer', roundInSeason: 3 },
       ],
-    } });
+    }] });
 
     // localOnly 走普通开局分支（绕过云端）。若该 seed 首回合被吞噬，onVoidTrigger 会
-    // 以 id=1 覆盖预置事件——断言 id===900 会失败，因此这里用首回合非空的 seed。
+    // 以 id=1 追加事件——断言 id===900 会失败，因此这里用首回合非空的 seed。
     await useGameStore.getState().startGame(true);
-    expect(useGameStore.getState().voidTriggerEvent).not.toBeNull();
-    // 严格断言：事件原样存活（id 未被改写、未被清空），锁死「startGame 不清空」回归点
-    expect(useGameStore.getState().voidTriggerEvent!.id).toBe(900);
+    expect(useGameStore.getState().voidTriggerQueue.length).toBeGreaterThan(0);
+    // 严格断言：预置事件原样存活（id 未被改写、未被清空），锁死「startGame 不清空」回归点
+    expect(useGameStore.getState().voidTriggerQueue[0]!.id).toBe(900);
+  });
+
+  it('票 01：同回合多张空亡连触逐张 push 入 voidTriggerQueue（不覆盖，各张独立 path 与 prevRoundInSeason）', async () => {
+    // 3 张空亡牌置牌堆顶，同回合连续触发 3 次（复用 P1-1 合并 Toast 夹具；各张 K=8）
+    const values = new Array<number>(68).fill(0.9);
+    const tm = await makeVoidTm(9, new ScriptedRandom(values));
+    tm.importSnapshot(makeVoidSnapshot({
+      state: 'player_action',
+      season: { index: 0, roundInSeason: 3, lengths: [12, 12, 12, 12] },
+      pool: { deckIds: [VOID_CARD_ID_START, VOID_CARD_ID_START + 1, VOID_CARD_ID_START + 2, 2, 3, 4, 5, 6, 7], publicIds: [] },
+    }));
+    injectTm(tm);
+
+    useGameStore.getState().executeWait();
+    const queue = useGameStore.getState().voidTriggerQueue;
+    // 逐张 push 不覆盖：回调次数 = 张数，各张事件独立
+    expect(queue).toHaveLength(3);
+    expect(queue.map((e) => e.id)).toEqual([1, 2, 3]);
+    // 第一张 prev = 吞噬批起点（春 r4——等待动作先推进 1 回合，季内回合 3 → 4）
+    expect(queue[0]!.prevSeason).toBe('spring');
+    expect(queue[0]!.prevRoundInSeason).toBe(4);
+    // 后续张 prev = 前一张 path 终点（各张独立掷 K、独立 path，动画按序接播）
+    for (let i = 1; i < queue.length; i++) {
+      const prevEnd = queue[i - 1]!.path[queue[i - 1]!.path.length - 1]!;
+      expect(queue[i]!.prevSeason).toBe(prevEnd.season);
+      expect(queue[i]!.prevRoundInSeason).toBe(prevEnd.roundInSeason);
+    }
+    // 各张 path 独立（长度 = 各自 K），且含起点帧数据源 prevRoundInSeason
+    queue.forEach((e) => {
+      expect(e.path).toHaveLength(e.k);
+      expect(e.prevRoundInSeason).toBeGreaterThan(0);
+    });
   });
 
   it('begin/endVoidRoundAnimation：动画期间覆盖 void_round，结束后恢复 player_action（P2-4）', async () => {
@@ -339,14 +375,17 @@ describe('V5 空亡动画（批 2 票 08：P2-2 信号存活 / P2-4 gameState �
   });
 
   it('空亡回合不产生 seasonEvent（季节跳变由空亡动画表达，不叠加 SeasonTransition）', async () => {
-    // 脚本随机源：同 P1-1 首用例（K=11，春 r4 → 夏 r3）
+    // 脚本随机源：同 P1-1 首用例（K=8，春 r6 → 夏 r2）
     const values = new Array<number>(66).fill(0.5);
-    values[62] = 0.9; // K=11
+    values[62] = 0.9; // K=8
     values[63] = 0.9;
     values[64] = 0.9;
     values[65] = 0.9;
     const tm = await makeVoidTm(7, new ScriptedRandom(values));
-    tm.importSnapshot(makeVoidSnapshot({ state: 'player_action' }));
+    tm.importSnapshot(makeVoidSnapshot({
+      state: 'player_action',
+      season: { index: 0, roundInSeason: 6, lengths: [12, 12, 12, 12] },
+    }));
     injectTm(tm);
     useGameStore.setState({ seasonEvent: null });
 
@@ -360,12 +399,15 @@ describe('V5 空亡动画（批 2 票 08：P2-2 信号存活 / P2-4 gameState �
 
   it('空亡回合抑制一次性：后续普通换季的 _sync 照常生成 seasonEvent', async () => {
     const values = new Array<number>(66).fill(0.5);
-    values[62] = 0.9;
+    values[62] = 0.9; // K=8
     values[63] = 0.9;
     values[64] = 0.9;
     values[65] = 0.9;
     const tm = await makeVoidTm(7, new ScriptedRandom(values));
-    tm.importSnapshot(makeVoidSnapshot({ state: 'player_action' }));
+    tm.importSnapshot(makeVoidSnapshot({
+      state: 'player_action',
+      season: { index: 0, roundInSeason: 6, lengths: [12, 12, 12, 12] },
+    }));
     injectTm(tm);
     useGameStore.setState({ seasonEvent: null });
 
@@ -400,7 +442,7 @@ describe('V5 空亡动画（批 2 票 08：P2-2 信号存活 / P2-4 gameState �
     useGameStore.setState({ seasonEvent: null });
 
     useGameStore.getState().executeWait();
-    expect(useGameStore.getState().toast).toMatch(/^空亡触发！连续吞噬 3 次/);
+    expect(useGameStore.getState().toast).toMatch(/^空亡触发！3 张空亡连触/);
     // 三次触发合并的最终季节跳变同样由空亡动画表达
     expect(useGameStore.getState().seasonEvent).toBeNull();
   });

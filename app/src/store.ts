@@ -71,8 +71,8 @@ let _pendingAutoUnlockToast: string | null = null;
 
 /**
  * 空亡触发 Toast 累积（票 09 / P1-1）：同一同步吞噬回合内多张空亡牌连续触发时，
- * 合并为一条 Toast 展示——单张牌是「空亡触发！时间吞噬 K 个季节（春→秋）」，
- * 多张合并为连续吞噬 N 次。
+ * 合并为一条 Toast 展示——单张牌是「空亡触发！时间被吞噬（春→秋）」（无 K 数值），
+ * 多张合并为「N 张空亡连触」（张数可见，不含 K 数值）。口径与看板一致（步数/张数）。
  *
  * flush 时机（P1-1 修复）：引擎在行动内部同步完成吞噬时，onStateChange/onGameEnd
  * 先于 store action 的 _showActionToast 触发；若在那里 flush，空亡 toast 会被同 tick
@@ -93,14 +93,14 @@ let _voidRoundSeasonSuppress = false;
 /**
  * 消费并清空空亡触发累积，合并为一条 Toast（无累积时 no-op）。
  * 信息边界（mechanics.md §9 ⑥）：不公布 K 数值，仅事件动画——Toast 只报
- * 「时间被吞噬 + 跳跃季节」，不含 K 数字；多张连续触发时合并为一次（次数可见，
+ * 「时间被吞噬 + 跳跃季节」，不含 K 数字；多张连续触发时合并为一次（张数可见，
  * 但不含 K 总和，防止玩家从 Toast 反推 K 分布）。
  */
 function flushPendingVoidToasts(get: () => GameStore): void {
   if (_pendingVoidToasts.length === 0) return;
   const msg = _pendingVoidToasts.length === 1
     ? `空亡触发！时间被吞噬（${seasonDisplay(_pendingVoidToasts[0]!.prevSeason)}→${seasonDisplay(_pendingVoidToasts[0]!.nextSeason)}）`
-    : `空亡触发！连续吞噬 ${_pendingVoidToasts.length} 次（${_pendingVoidToasts
+    : `空亡触发！${_pendingVoidToasts.length} 张空亡连触（${_pendingVoidToasts
         .map((t) => `${seasonDisplay(t.prevSeason)}→${seasonDisplay(t.nextSeason)}`)
         .join('、')}）`;
   _pendingVoidToasts = [];
@@ -208,8 +208,13 @@ interface GameStore {
   roundEvent: FxRoundEvent | null;
   /** 已确认纳灵：在新回合播放公共灵气入丹田动画（跨回合买入结算） */
   buySettlementEvent: FxBuySettlementEvent | null;
-  /** V5 空亡触发（批 2 动画信号；id 递增，每张空亡牌触发置一次） */
-  voidTriggerEvent: FxVoidTriggerEvent | null;
+  /**
+   * V5 空亡触发事件队列（批 2 动画信号；id 递增，每张空亡牌触发 push 一次不覆盖）。
+   * 同一吞噬回合多张空亡连触时逐张入队，动画按触发顺序逐张完整播放；全部播完
+   * （组件消费 + 最终 onEnd 清空）才恢复游戏状态。
+   * ⚠️ P2-2 教训：事件必须存活到组件消费，不得在同步调用栈内清空。
+   */
+  voidTriggerQueue: FxVoidTriggerEvent[];
   /**
    * 批 2（票 08）空亡动画期间被覆盖前的真实引擎状态（player_action/game_over）。
    * 动画开始（beginVoidRoundAnimation）记录、结束（endVoidRoundAnimation）恢复；
@@ -498,20 +503,22 @@ export function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get:
     get().showToast(_pendingAutoUnlockToast);
   });
   // V5 空亡触发：每张空亡牌掷 K 后调用。Toast 走累积合并（同回合多张连触发），
-  // 并置 voidTriggerEvent（id 递增）供批 2 动画消费。
+  // 动画事件逐张 push 入 voidTriggerQueue（id 递增，不覆盖）供批 2 动画队列消费。
   tm.setOnVoidTrigger((info) => {
     // 本次季节跳变由空亡动画表达，抑制随后的 seasonEvent（SeasonTransition 叠加消除）
     _voidRoundSeasonSuppress = true;
     _pendingVoidToasts.push({ k: info.k, prevSeason: info.prevSeason, nextSeason: info.nextSeason });
+    // 事件载荷：引擎已给 K 步完整轨迹 + 触发前季内回合数（倒数起点帧数据源）。
+    // 逐张 push（同 tick 多张连触各自独立，后触发不覆盖先触发——票 01 队列契约）。
     set((s) => ({
-      voidTriggerEvent: {
+      voidTriggerQueue: [...s.voidTriggerQueue, {
         id: nextVoidTriggerId(),
         k: info.k,
         prevSeason: info.prevSeason,
+        prevRoundInSeason: info.prevRoundInSeason,
         nextSeason: info.nextSeason,
-        // 引擎已给 K 步完整轨迹（每步一个位置）：批 2 动画据此做逐回合倒数展示。
         path: info.path,
-      },
+      }],
       // 空亡牌展示在真实公共牌池第 1 位（与真实公共牌并列，玩家理解「空亡是一张
       // 从公共牌池现出的牌」）；动画结束 endVoidRoundAnimation 时清除恢复真实牌池。
       voidPoolSlot: 0,
@@ -581,7 +588,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   qiDelta: null,
   roundEvent: null,
   buySettlementEvent: null,
-  voidTriggerEvent: null,
+  voidTriggerQueue: [],
   _voidAnimationTrueState: null,
   voidPoolSlot: null,
   voidSwallowing: false,
@@ -788,9 +795,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
           pendingAction: null,
           settlementPreview: null,
           buySettlementEvent: null,
-          // 注意：此处不再清空 voidTriggerEvent（P2-2）——开局首回合被空亡吞噬时，
-          // onVoidTrigger 在本同步调用栈内 set 的事件必须存活到组件消费，否则动画播不出。
-          // 跨局残留由 reset() 清空 + 组件 lastEventId 去重兜底。
+          // 注意：此处不再清空 voidTriggerQueue（P2-2）——开局首回合被空亡吞噬时，
+          // onVoidTrigger 在本同步调用栈内 push 的事件必须存活到组件消费，否则动画播不出。
+          // 跨局残留由 reset() 清空 + 组件 player 按 id 去重兜底。
         });
         // P1-1：首回合可能被空亡吞噬（startGame 内同步完成），开局后统一 flush 空亡 toast
         flushPendingVoidToasts(get);
@@ -810,7 +817,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({
         selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
         pendingAction: null, settlementPreview: null, buySettlementEvent: null,
-        // 同 verified 分支：不清空 voidTriggerEvent（P2-2），让开局空亡信号存活到组件。
+        // 同 verified 分支：不清空 voidTriggerQueue（P2-2），让开局空亡信号存活到组件。
       });
       if (localOnly && telemetryState?.consent?.granted) {
         get().showToast('已开始本地对局，本局不上云端榜');
@@ -846,7 +853,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         marginCallCount: tm.getMarginCallCount(),
       });
       get()._sync();
-      set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, buySettlementEvent: null, voidTriggerEvent: null, _voidAnimationTrueState: null, hasSave: false });
+      set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, buySettlementEvent: null, voidTriggerQueue: [], _voidAnimationTrueState: null, hasSave: false });
       // 存档没有携带服务端 seed 与完整动作链，续局只能作为本地局继续。
       // 明确终止旧页面会话且不创建伪云端会话，避免终局误导玩家会自动上榜。
       _telemetryController?.abandonSession('reset');
@@ -979,7 +986,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       qiDelta: null,
       roundEvent: null,
       buySettlementEvent: null,
-      voidTriggerEvent: null,
+      voidTriggerQueue: [],
       // 动画若在重置前未结束，清除覆盖锚点，避免重置后被残留动画恢复成旧局状态
       _voidAnimationTrueState: null,
       // 空亡牌展示槽位同步清除，公共牌池回到真实状态

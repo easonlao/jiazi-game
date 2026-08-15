@@ -21,13 +21,15 @@ export interface FxRoundEvent {
 }
 
 /**
- * V5 空亡触发事件（批 2 动画信号，票 09 预留）：每张空亡牌触发分配一个 id 递增事件。
- * 组件监听 id 变化即可驱动「时间吞噬」动画，天然支持同回合多张连续触发。
+ * V5 空亡触发事件（批 2 动画信号）：每张空亡牌触发分配一个 id 递增事件。
+ * 组件监听事件队列即可驱动「时间吞噬」动画，天然支持同回合多张连续触发。
  *
- * ⚠️ 单槽契约（P2-2 定稿）：store 的 voidTriggerEvent 是单值槽，同一同步吞噬回合内
- * 多张空亡牌连续触发时，后者覆盖前者，最终只保留**最后一张牌**的事件——动画按最后一张
- * 的 K 播放；同回合总吞噬量（次数 / 季节步数）由合并 Toast（「连续吞噬 N 次」）补足。
- * 消费方（VoidTriggerAnimation）不得假设能拿到同 tick 的全部触发。
+ * ⚠️ 队列契约（票 01 定稿，取代 P2-2 单槽）：store 的 voidTriggerQueue 是事件队列，
+ * 同一同步吞噬回合内多张空亡牌连续触发时**逐张 push 不覆盖**——动画按触发顺序逐张
+ * 完整播放（现世→吞噬→掷骰→K 步倒数→收尾），全部播完才恢复游戏状态。
+ * 消费方（VoidTriggerAnimation）从队列头部逐张消费；队列清空前 voidPoolSlot/
+ * voidSwallowing 保持，动画不得假设能拿到同 tick 的全部触发（跨 tick 触发也支持，
+ * 因为队列只增、消费由 id 去重）。
  */
 export interface FxVoidTriggerEvent {
   id: number;
@@ -35,6 +37,8 @@ export interface FxVoidTriggerEvent {
   k: number;
   /** 吞噬前的季节 */
   prevSeason: string;
+  /** 吞噬前的季内回合数（1 起，与 prevSeason 配套；倒数序列「起点帧」数据源） */
+  prevRoundInSeason: number;
   /** 吞噬后的季节 */
   nextSeason: string;
   /**

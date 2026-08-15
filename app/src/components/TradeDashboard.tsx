@@ -373,10 +373,13 @@ function RoundCard({ entry }: { entry: RoundLogEntry }) {
           <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-slate-700 text-slate-300 shrink-0">
             ☰ 空亡
           </span>
-          <span className="text-xs font-bold font-serif">时间吞噬 {entry.voidSwallow.totalK} 个季节</span>
+          <span className="text-xs font-bold font-serif">
+            {entry.voidSwallow.count === 1
+              ? `吞噬 ${entry.voidSwallow.totalK} 步`
+              : `${entry.voidSwallow.count} 张空亡连触 · 共吞噬 ${entry.voidSwallow.totalK} 步`}
+          </span>
           <span className="ml-auto text-[10px] text-slate-300 tabular-nums">
-            {entry.voidSwallow.count} 次触发
-            {entry.voidSwallow.count > 1 && ` · 最大 K=${entry.voidSwallow.maxK}`}
+            {entry.voidSwallow.count > 1 && `单次最多 ${entry.voidSwallow.maxK} 步`}
           </span>
         </div>
       )}

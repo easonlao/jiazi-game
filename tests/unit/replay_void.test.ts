@@ -126,7 +126,7 @@ describe('V5 重放规则快照（VOID_REPLAY_RULES）', () => {
     // 空亡字段
     expect(VOID_REPLAY_RULES.voidCardCount).toBe(3);
     expect(VOID_REPLAY_RULES.voidKMin).toBe(2);
-    expect(VOID_REPLAY_RULES.voidKMax).toBe(12);
+    expect(VOID_REPLAY_RULES.voidKMax).toBe(8);
     expect(VOID_REPLAY_RULES.lazySeason).toBe(true);
   });
 
@@ -141,7 +141,7 @@ describe('V5 重放规则快照（VOID_REPLAY_RULES）', () => {
     const cloned = cloneReplayRulesSnapshot(VOID_REPLAY_RULES);
     expect(cloned).toEqual(VOID_REPLAY_RULES);
     expect(cloned.voidCardCount).toBe(3);
-    expect(cloned.voidKMax).toBe(12);
+    expect(cloned.voidKMax).toBe(8);
     expect(cloned.lazySeason).toBe(true);
   });
 });

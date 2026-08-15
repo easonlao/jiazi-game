@@ -118,10 +118,12 @@ html, body, #root {
 }
 .season-word { animation: seasonWord 2.2s ease-out backwards; }
 
-/* ═══ 空亡时间吞噬：K 步数字倒数时间线（2026-08-14 用户拍板：季节快进字幕 → 数字倒数） ═══
-   阶段 1 空亡牌落入公共牌池 0.9s → 阶段 2 从牌位吞噬扩散 0.7s → 阶段 3 K 步倒数
-   （每步 0.38s：剩余 K 大数字逐一扣减 + 下方当前位置逐回合递增）→ K 归 0 停留 0.6s
-   → 阶段 4 收尾「现世已易」1s；总时长随 K 线性增长（K=12 ≈ 7.8s，K=2 ≈ 4.0s）。 */
+/* ═══ 空亡时间吞噬：掷骰 + K 步数字倒数 + 队列连播（2026-08-14 数字倒数 / 2026-08-15
+   v2 掷骰 + 光点汇入，票 01）═══
+   阶段 1 空亡牌落入公共牌池 0.9s → 阶段 2 从牌位吞噬扩散 0.7s → 掷骰 1.2s
+   （大数字轮转减速停在 K）→ 阶段 3 K 步倒数（每帧 0.38s：剩余 K 大数字逐一扣减 +
+   下方当前位置逐回合递增，每减 1 一个光点飞向季节位置汇入）→ K 归 0 停留 0.6s
+   → 阶段 4 收尾「现世已易」1s；总时长随 K 线性增长（K=8 ≈ 7.4s，K=2 ≈ 5.2s）。 */
 
 /* 阶段 1：空亡牌从牌堆方向落入公共牌池第 1 位（顶部牌池场景，与真实牌区同布局）。 */
 @keyframes voidSlotDrop {
@@ -170,20 +172,51 @@ html, body, #root {
 }
 .void-count-num { animation: voidCountNum 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
-/* 阶段 3 倒数：当前位置（季节名 + 季内回合数）每步淡入上浮（跨季切换季节名随步更新）。 */
-@keyframes voidCountPos {
-  0% { opacity: 0; transform: translateY(10px); }
-  25% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 1; }
-}
-.void-count-pos { animation: voidCountPos 0.38s ease-out backwards; }
-
 /* K 归 0 停留：大数字微光脉冲（提示吞噬完成，停在最终季节和回合数）。 */
 @keyframes voidCountZero {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.72; transform: scale(0.96); }
 }
 .void-count-zero { animation: voidCountZero 0.6s ease-in-out infinite; }
+
+/* ═══ 票 01（空亡动画队列重构）新增阶段 ═══
+   掷骰阶段（2026-08-15 用户追加 v2）：大数字飞速轮转（2~8 展示层随机）→ 减速停在 K。
+   数字每次切换重播闪现（时长由组件按轮转间隔内联，视觉即「飞速跳动」）。
+   2026-08-15 用户反馈「与倒数动画太类似」：掷骰改用**抖动 + 模糊残影**（左右抖动、
+   模糊渐进清晰、随机色闪烁）——未定感；倒数保持稳定上浮（确定性），两者视觉分明。 */
+@keyframes voidDiceIn {
+  0% { opacity: 0.25; transform: translateX(-7px) scale(0.9); filter: blur(4px); }
+  30% { opacity: 1; transform: translateX(6px) scale(1.04); filter: blur(2px); }
+  55% { transform: translateX(-5px) scale(0.96); filter: blur(1px); }
+  80% { transform: translateX(4px) scale(1.01); filter: blur(0.5px); }
+  100% { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); }
+}
+.void-dice-num { animation: voidDiceIn 0.14s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+
+/* 倒数阶段·光点汇入（2026-08-15 用户反馈 v2 修复）：每减 1（K→K-1）一个光点
+   **从数字区垂直飞入位置行并汇入**——光点渲染在位置行容器内部（relative），
+   起点 = 位置行上方（translateY(-90px)，约大数字底部区域），落点 = 位置行自身中心
+   （translateY(0)），天然精确对齐，不再硬编码飞行距离。位置行文字本身**不闪**：
+   静态随帧更新，光点负责动感（数字跳动 + 光球飞入，位置稳定）。 */
+@keyframes voidDotFly {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-90px) scale(0.5); }
+  16% { opacity: 1; transform: translateX(-50%) translateY(-64px) scale(1); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(0) scale(0.8); }
+}
+.void-count-dot {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  margin-bottom: 0.7rem; /* 位置行上方间距（从数字方向飞入的起点） */
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 8px 2px currentColor, 0 0 18px 5px color-mix(in srgb, currentColor 50%, transparent);
+  animation: voidDotFly 0.38s cubic-bezier(0.33, 1, 0.68, 1) both;
+  pointer-events: none;
+}
 
 /* 收尾语「现世已易」：略慢于快进卡，淡入停驻后淡出（总 ~1s）。 */
 @keyframes voidFinaleWord {

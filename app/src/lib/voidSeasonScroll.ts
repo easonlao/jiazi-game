@@ -23,16 +23,43 @@ export interface VoidCountdownStep {
 }
 
 /**
- * 从引擎 path 生成动画倒数序列（长度 = path.length = k）。
- * @param path K 步推进的完整轨迹（引擎给出，每步一个位置）
+ * 从引擎 path 生成动画倒数序列。
+ *
+ * 票 01（空亡动画队列重构）：在 path 前插入**起点帧**
+ * `{ season: prevSeason, roundInSeason: prevRoundInSeason, remaining: k }`——
+ * 倒数大数字从 K 开始、位置从该张触发前（当前回合）开始，随后每步推进 1 回合、
+ * 剩余 K 递减到 0。序列长度 = k + 1（起点帧 + path 的 k 步；旧实现只从 path[0]
+ * （已走 1 步后）开始，玩家看到起点跳跃）。
+ *
+ * @param path K 步推进的完整轨迹（引擎给出，每步一个位置，长度 = k）
  * @param k 本次吞噬的季节步数 K（NaN/Infinity 回退 1；正常与 path.length 一致）
+ * @param prevSeason 该张吞噬前的季节（起点帧位置；缺省则省略起点帧，仅用于无 prev 数据的防御）
+ * @param prevRoundInSeason 该张吞噬前的季内回合数（与 prevSeason 配套）
  */
-export function buildVoidCountdown(path: VoidStep[], k: number): VoidCountdownStep[] {
+export function buildVoidCountdown(
+  path: VoidStep[],
+  k: number,
+  prevSeason?: string,
+  prevRoundInSeason?: number,
+): VoidCountdownStep[] {
   // 防御非有限数值（沿用旧 buildVoidJourney 的 advanced 回退语义）
   const steps = Number.isFinite(k) ? Math.max(1, Math.floor(k)) : 1;
-  return (path ?? []).map((p, index) => ({
-    season: p.season,
-    roundInSeason: p.roundInSeason,
-    remaining: Math.max(1, steps - index),
-  }));
+  const hasStartFrame = prevSeason !== undefined && prevRoundInSeason !== undefined;
+  const frames: VoidCountdownStep[] = [];
+  // 起点帧：倒数大数字从 k 开始、位置从触发前（当前回合）开始（票 01 起点跳跃修复）
+  if (hasStartFrame) {
+    frames.push({ season: prevSeason, roundInSeason: prevRoundInSeason, remaining: steps });
+  }
+  // path 每步：位置逐回合递增、剩余 K 逐 1 递减（有起点帧时递减到 0；防御无起点帧时
+  // 保持旧语义递减到 1，K 归 0 停留步由组件以剩余 0 显示最终位置）
+  (path ?? []).forEach((p, index) => {
+    frames.push({
+      season: p.season,
+      roundInSeason: p.roundInSeason,
+      remaining: hasStartFrame
+        ? Math.max(0, steps - (index + 1))
+        : Math.max(1, steps - index),
+    });
+  });
+  return frames;
 }

@@ -85,7 +85,7 @@ export const VOID_REPLAY_RULES: VoidReplayRulesSnapshot = {
   scoreRules: { ...BALANCED_TRADE_SCORE_RULES },
   voidCardCount: VOID_CARD_COUNT,
   voidKMin: 2,
-  voidKMax: 12,
+  voidKMax: 8,
   lazySeason: true,
 };
 
