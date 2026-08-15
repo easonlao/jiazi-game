@@ -55,7 +55,7 @@ export default function App() {
     <div className="flex items-center justify-center w-full h-full bg-stone-800">
       <div
         data-game-shell
-        className="relative w-full h-full max-w-[428px] bg-parchment overflow-y-auto overflow-x-hidden flex flex-col font-sans shadow-2xl md:rounded-2xl md:my-6 md:h-[calc(100%-3rem)] md:max-h-[920px] max-md:pb-[88px]"
+        className="relative w-full h-full max-w-[428px] bg-parchment overflow-y-auto overflow-x-hidden flex flex-col font-sans shadow-2xl md:rounded-2xl md:my-6 md:h-[calc(100%-3rem)] md:max-h-[920px]"
       >
         {isLoading ? (
           <StartScreen

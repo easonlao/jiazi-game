@@ -42,7 +42,7 @@ export function ActionBar() {
   const affordBuy = buyCost >= 0 && buyCost <= qi;
 
   return (
-    <div className="z-10 flex flex-col gap-1 px-4 py-1.5 max-md:py-1 bg-[#faf6ee] border-t border-wood-light md:sticky md:bottom-0 max-md:fixed max-md:left-0 max-md:right-0 max-md:bottom-0 max-md:z-30 max-md:max-w-[428px] max-md:mx-auto">
+    <div className="z-10 flex flex-col gap-1 px-4 py-1.5 max-md:py-1 bg-[#faf6ee] border-t border-wood-light sticky bottom-0 max-md:z-30">
       {/* 最后一回合提示：核心禁止纳灵，需明确告知 */}
       {isFinalRound && (
         <div className="text-[11px] text-qi-critical bg-qi-critical/10 px-2 py-1 rounded">

@@ -130,7 +130,9 @@ export function SettlementAnimation() {
     if (prefersReducedMotion()) return;
 
     // 本轮是确认纳灵后的新回合：让位给买入动画（卡牌飞行 + 纳灵耗神），再播炼化光点。
-    const buyPending = buySettlementEvent?.round === currentRound && !prefersReducedMotion();
+    // 用 getState 直读而非依赖 buySettlementEvent：买入飞行结束时（900ms）会清空该事件，
+    // 若把它放进依赖数组，effect 重跑会把光点延迟重置为 0，抢镜且让光点窗口过早关闭。
+    const buyPending = useGameStore.getState().buySettlementEvent?.round === currentRound && !prefersReducedMotion();
     const startDelay = buyPending ? BUY_SEQUENCE_TOTAL_MS : 0;
 
     let cancelled = false;
@@ -181,7 +183,7 @@ export function SettlementAnimation() {
       window.clearTimeout(frame);
       window.clearTimeout(clearTimer);
     };
-  }, [roundEvent, lastSettlement, currentRound, totalRounds, buySettlementEvent]);
+  }, [roundEvent, lastSettlement, currentRound, totalRounds]);
 
   if (flights.length === 0 && !buyFlight) return null;
 
