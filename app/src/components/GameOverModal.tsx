@@ -113,7 +113,7 @@ export function GameOverModal() {
             <div className="flex justify-between text-[11px] text-ink-light tabular-nums">
               <span>空亡触发 <span className="font-bold text-ink">{voidStats.triggers}</span> 次</span>
               <span>整季吞掉 <span className="font-bold text-ink">{voidStats.swallowedEvents}</span> 次</span>
-              <span>最长吞噬 <span className="font-bold text-ink">K={voidStats.maxVoidK}</span></span>
+              <span>最长吞噬 <span className="font-bold text-ink">{voidStats.maxVoidK}</span> 步</span>
             </div>
           </div>
         )}
