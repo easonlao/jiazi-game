@@ -63,8 +63,9 @@ test.describe('Supabase 匿名身份与遥测', () => {
       const endBtn = page.getByRole('button', { name: '结束游戏' });
       if (await endBtn.isVisible({ timeout: 1_000 }).catch(() => false)) break;
       const waitButton = page.getByRole('button', { name: /调息/ });
-      // 空亡动画期间（~4.1s）无操作按钮，等待其恢复
-      await expect(waitButton).toBeVisible({ timeout: 15_000 });
+      // 空亡动画期间无操作按钮，等待其恢复——单张 K=8 约 7.4s，多张连播队列（V6 翻转后
+      // 实测局出现两张连触）可超 15s，放宽到 60s 覆盖最坏 3 张队列
+      await expect(waitButton).toBeVisible({ timeout: 60_000 });
       await waitButton.click();
       const confirmButton = page.getByRole('button', { name: '确认结束本回合' });
       await expect(confirmButton).toBeVisible({ timeout: 10_000 });
