@@ -6,9 +6,9 @@ test.describe('Supabase 匿名身份与遥测', () => {
     '需要设置 E2E_SUPABASE=1，并提供 app/.env.local 后运行真实云端验收',
   );
 
-  test('V5 新局等待服务端 seed，并在完整 60 回合后校验入榜（2026-08-14 生产默认翻转）', async ({ page }) => {
+  test('V6 新局等待服务端 seed，并在完整 60 回合后校验入榜（2026-08-16 生产默认翻转为 V6 地支波动）', async ({ page }) => {
     test.setTimeout(240_000);
-    await page.goto('/?rules=v5');
+    await page.goto('/?rules=v6');
 
     await expect(page.getByRole('button', { name: '同意并生成玩家 ID' })).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: '同意并生成玩家 ID' }).click();
@@ -53,11 +53,11 @@ test.describe('Supabase 匿名身份与遥测', () => {
       (response) => response.url().includes('/rest/v1/game_events') && response.request().method() === 'POST',
     );
     await page.getByRole('button', { name: '确认结束本回合' }).click();
-    // V5：若本回合恰好抽入空亡，空亡 Toast 覆盖纳灵 Toast（P1-1 语义空亡最后写入）
+    // V5/V6：若本回合恰好抽入空亡，空亡 Toast 覆盖纳灵 Toast（P1-1 语义空亡最后写入）
     await expect(page.getByText(/纳灵成功|空亡触发/).first()).toBeVisible({ timeout: 10_000 });
     expect((await actionUploadResponse).ok()).toBe(true);
 
-    // 推进到终局：V5 空亡吞噬会额外推进游戏回合（空亡回合玩家不可行动、回合 +1），
+    // 推进到终局：V6（含空亡）吞噬会额外推进游戏回合（空亡回合玩家不可行动、回合 +1），
     // 固定点击次数不可靠——循环调息直到「结束游戏」按钮出现（第 60 回合终局）。
     for (;;) {
       const endBtn = page.getByRole('button', { name: '结束游戏' });
@@ -94,7 +94,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(result).toMatchObject({
       verified: true,
       leaderboard_submitted: true,
-      rules_version: '5',
+      rules_version: '6',
     });
 
     // 响应丢失后的重复提交必须幂等成功；若首次榜单插入曾失败，服务端会在这里补插。
@@ -111,7 +111,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(await retryResponse.json()).toMatchObject({
       verified: true,
       leaderboard_submitted: true,
-      rules_version: '5',
+      rules_version: '6',
     });
 
     const gameOverModal = page.locator('.modal-backdrop').filter({ hasText: '最终修为' });

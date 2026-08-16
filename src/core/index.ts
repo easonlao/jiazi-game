@@ -22,12 +22,13 @@ export {
   TRADE_REPLAY_RULES,
   BALANCED_TRADE_REPLAY_RULES,
   VOID_REPLAY_RULES,
+  BRANCH_ROLL_REPLAY_RULES,
   SUPPORTED_REPLAY_RULES,
   getReplayRulesByVersion,
   CURRENT_REPLAY_RULES,
   cloneReplayRulesSnapshot,
 } from './ReplayRules';
-export type { ReplayRulesSnapshot, VoidReplayRulesSnapshot } from './ReplayRules';
+export type { ReplayRulesSnapshot, VoidReplayRulesSnapshot, VoidReplayFields, BranchRollReplayRulesSnapshot, BranchRollReplayConfig } from './ReplayRules';
 
 export { SeasonCycle, LAZY_SEASON_LENGTH_DISTRIBUTION } from './SeasonCycle';
 export type { Season, SeasonCycleOptions } from './SeasonCycle';
@@ -79,8 +80,19 @@ export {
   RULES_VERSION_TRADE,
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_VOID,
+  RULES_VERSION_BRANCH_ROLL,
 } from './GameSaveService';
 export type { GameSnapshot, GameSaveLoadError, SupportedRulesVersion, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
+
+export {
+  BRANCH_ROLL_DI_ZHI,
+  BRANCH_ROLL_DELTA,
+  BRANCH_ROLL_NON_EARTH_BASE_COEF,
+  BRANCH_ROLL_EARTH_COEF,
+  createBranchRollState,
+  isValidBranchRollState,
+} from './BranchRoll';
+export type { BranchRollState } from './BranchRoll';
 
 export { LeaderboardService } from './LeaderboardService';
 export type { LeaderboardEntry } from './LeaderboardService';

@@ -98,7 +98,7 @@ export class JiaziCard {
   }
 
   /**
-   * 获取最终季节评分。
+   * 获取最终季节评分（×10 整数分制，-35~+35）。
    *
    * 土牌（方案E）：天干保底 + 藏干波动——天干部分保留绝对水平（稳定收益），
    * 藏干部分中心化保留波动（优势季节分化），让土牌有"择时加杠杆"的操作选择。
@@ -107,6 +107,18 @@ export class JiaziCard {
    * 评分基线/系数从 BalanceConfig 传入；不传时使用默认配置，保证 UI 与核心一致。
    */
   getSeasonScore(season: string, config: ScoreConfig = DEFAULT_SCORE_CONFIG): number {
+    return Math.round(this.getSeasonScorePreRound(season, config));
+  }
+
+  /**
+   * 获取最终季节评分前的原始分值（×10 分制、未取整），供 V6 地支波动在取整前注入：
+   * `score = round(X + roll_coef × (u_S − mean_u))`（docs/mechanics.md §10）。
+   *
+   * 与 getSeasonScore 共享同一计算路径（getHiddenStems / scoreHiddenStemsInSeason /
+   * getRawSeasonScore 内部数据），仅差最后一步 round——保证 V6 与校准基准同口径
+   * （round(X + roll_t) 只取整一次），V1-V5 路径经 getSeasonScore 输出逐字节不变。
+   */
+  getSeasonScorePreRound(season: string, config: ScoreConfig = DEFAULT_SCORE_CONFIG): number {
     if (!this.isSeason(season)) return 0;
     const seasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
     const seasonElementMap: Record<Season, Element> = {
@@ -127,7 +139,7 @@ export class JiaziCard {
       const branchScore = this.scoreHiddenStemsInSeason(seasonElement);
       const branchScores = seasons.map((s) => this.scoreHiddenStemsInSeason(seasonElementMap[s]));
       const branchMean = branchScores.reduce((sum, value) => sum + value, 0) / branchScores.length;
-      return this.roundScore10(stemScore * 0.5 + (branchScore - branchMean) * 0.5);
+      return (stemScore * 0.5 + (branchScore - branchMean) * 0.5) * 10;
     }
 
     // 非土牌：原均值中心化逻辑
@@ -136,7 +148,7 @@ export class JiaziCard {
     const factor = this.yinYang === YinYang.YANG
       ? config.yangPolarityFactor
       : config.yinPolarityFactor;
-    return this.roundScore10(factor * (this.getRawSeasonScore(season) - rawMean));
+    return factor * (this.getRawSeasonScore(season) - rawMean) * 10;
   }
 
   private isSeason(season: string): season is Season {
@@ -287,10 +299,5 @@ export class JiaziCard {
   /** raw 内部计算：保留 2 位小数精度 */
   private roundRawScore(score: number): number {
     return Math.round(score * 100) / 100;
-  }
-
-  /** 最终评分输出：×10 取整（整数分制，-35~+35，观感/心算友好） */
-  private roundScore10(score: number): number {
-    return Math.round(score * 10);
   }
 }

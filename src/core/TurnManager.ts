@@ -23,6 +23,7 @@ import {
   isTradeRulesVersion,
   RULES_BASE,
   RULES_VERSION_BALANCED_TRADE,
+  RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_VOLATILE,
   RULES_VERSION_TRADE,
   RULES_VERSION_VOID,
@@ -30,6 +31,14 @@ import {
   type GameSaveLoadError,
   type SupportedRulesVersion,
 } from './GameSaveService.ts';
+import {
+  BRANCH_ROLL_DI_ZHI,
+  BRANCH_ROLL_EARTH_COEF,
+  BRANCH_ROLL_NON_EARTH_BASE_COEF,
+  createBranchRollState,
+  isValidBranchRollState,
+  type BranchRollState,
+} from './BranchRoll.ts';
 import { isVoidCard, VoidCard, VOID_CARD_COUNT } from './VoidCard.ts';
 import type { StorageProvider } from './StorageProvider.ts';
 import { LockManager, type LockResult } from './LockManager.ts';
@@ -294,8 +303,12 @@ export class TurnManager {
   private readonly balanceConfig: BalanceConfig;
   private readonly random: RandomSource;
   private readonly volatilityRandom: RandomSource;
+  /** V6 地支波动独立随机源（同 volatilityRandom 模式）：不消耗主随机流。 */
+  private readonly branchRollRandom: RandomSource;
   private readonly scoreVolatilityConfig: ScoreVolatilityConfig;
   private scoreVolatilityState: ScoreVolatilitySnapshot | null;
+  /** V6 地支波动状态（仅 rulesVersion=6 创建；V5 及以下恒 null，不消耗随机数）。 */
+  private branchRollState: BranchRollState | null = null;
   private readonly initialRulesVersion: SupportedRulesVersion;
   private readonly initialScoreRules: ScoreRules;
   /**
@@ -391,6 +404,11 @@ export class TurnManager {
       storage?: StorageProvider;
       volatility?: Partial<ScoreVolatilityConfig>;
       volatilityRandom?: RandomSource;
+      /**
+       * V6 地支波动独立随机源（同 volatilityRandom 模式，默认回退 randomSource）。
+       * 仅 rulesVersion=6 读取；V5 及以下不创建不消耗（路径逐字节不变）。
+       */
+      branchRollRandom?: RandomSource;
        /** 新局规则语义；未指定且启用波动时保持现有 v2。 */
       rulesVersion?: SupportedRulesVersion;
       /** 交易规则的计分参数；v1/v2 使用旧默认值。 */
@@ -414,6 +432,7 @@ export class TurnManager {
     this.balanceConfig = balanceConfig;
     this.random = randomSource;
     this.volatilityRandom = options?.volatilityRandom ?? randomSource;
+    this.branchRollRandom = options?.branchRollRandom ?? randomSource;
     this.scoreVolatilityConfig = {
       ...DEFAULT_SCORE_VOLATILITY_CONFIG,
       ...options?.volatility,
@@ -427,8 +446,10 @@ export class TurnManager {
       ?? (this.scoreVolatilityConfig.enabled ? RULES_VERSION_VOLATILE : RULES_BASE);
     const defaultScoreRules = this.rulesVersion === RULES_VERSION_TRADE
       ? TRADE_SCORE_RULES
-      : (this.rulesVersion === RULES_VERSION_BALANCED_TRADE || this.rulesVersion === RULES_VERSION_VOID)
-        ? BALANCED_TRADE_SCORE_RULES // V5 继承 V4 计分（一审 P1-① 定案）
+      : (this.rulesVersion === RULES_VERSION_BALANCED_TRADE
+          || this.rulesVersion === RULES_VERSION_VOID
+          || this.rulesVersion === RULES_VERSION_BRANCH_ROLL)
+        ? BALANCED_TRADE_SCORE_RULES // V5 继承 V4 计分（一审 P1-① 定案）；V6 继承 V5 计分 + 地支 roll 一层
         : DEFAULT_SCORE_RULES;
     this.initialRulesVersion = this.rulesVersion;
     this.initialScoreRules = {
@@ -448,13 +469,19 @@ export class TurnManager {
     );
     this.voidCardCount = Math.max(0, Math.floor(options?.voidConfig?.voidCardCount ?? VOID_CARD_COUNT));
     this.cardDataBank = new CardDataBank(this.voidCardCount);
-    // V5 空亡规则：SeasonCycle 走懒生成（换季时从种子随机源抽下一季长度）。
+    // V5/V6 空亡规则：SeasonCycle 走懒生成（换季时从种子随机源抽下一季长度）。
     this.seasonCycle = new SeasonCycle(
       randomSource,
-      this.rulesVersion === RULES_VERSION_VOID
+      this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL
         ? { lazy: true, skipGenerate: options?.skipSeasonGenerate ?? false }
         : (options?.skipSeasonGenerate ?? false),
     );
+    // V6 地支波动：构造即生成首季 roll（仿 V5 懒生成季长"构造即生成"，使随机消耗时机
+    // 由引擎推进决定而非外部首次访问——防客户端 UI 局与服务端纯引擎重放随机流分叉）。
+    // 仅 rulesVersion=6 创建；V5 及以下不消耗 branchRollRandom（路径逐字节不变）。
+    this.branchRollState = this.rulesVersion === RULES_VERSION_BRANCH_ROLL
+      ? createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex())
+      : null;
     this.qiManager = new QiManager(undefined, balanceConfig);
     this.scoreManager = new ScoreManager(this.initialScoreRules);
     this.leverageCalculator = new LeverageCalculator(balanceConfig);
@@ -506,9 +533,17 @@ export class TurnManager {
     return this.rulesVersion === RULES_VERSION_VOLATILE || isTradeRulesVersion(this.rulesVersion);
   }
 
-  /** V5 空亡规则门控：仅 rulesVersion=5 时激活双时钟吞噬/懒生成/63 张牌堆。 */
+  /**
+   * 空亡机制门控：V5/V6 激活双时钟吞噬/懒生成/63 张牌堆。
+   * V6（地支波动）继承 V5 空亡机制（mechanics.md §10：V6 = V5 + 地支 roll 一层）。
+   */
   private isVoidRulesVersion(): boolean {
-    return this.rulesVersion === RULES_VERSION_VOID;
+    return this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL;
+  }
+
+  /** V6 地支波动门控：仅 rulesVersion=6 时激活；V5 及以下路径逐字节不变。 */
+  private isBranchRollRulesVersion(): boolean {
+    return this.rulesVersion === RULES_VERSION_BRANCH_ROLL;
   }
 
   getCardScore(card: JiaziCard, season: string): number {
@@ -516,14 +551,25 @@ export class TurnManager {
     // 门控以"当前生效规则版本"为准（读档后=存档声明），而非构造函数开关；
      // 只有当前已知的波动规则版本才叠加偏移。未知未来规则版本不按波动解释，
      // 由读档门控拒绝；这里的精确版本判断避免未来规则被错误套用当前公式。
-    if (!this.isVolatilityRulesVersion() || !this.scoreVolatilityState) return baseScore;
+    if (!this.isVolatilityRulesVersion() || !this.scoreVolatilityState) {
+      // 无波动路径（base 规则 / 旧档 / 未接线波动的规则局）：V6 地支波动在
+      // 取整前分值上注入 roll（与校准基准 round(X + roll_t) 同口径）；其余版本
+      // 直接返回基础评分（逐字节不变）。
+      if (this.isBranchRollRulesVersion() && this.branchRollState) {
+        const delta = this.getBranchRollDelta(card);
+        if (delta === 0 || season !== this.seasonCycle.getCurrentSeason()) return baseScore;
+        return Math.round(card.getSeasonScorePreRound(season, this.balanceConfig) + delta);
+      }
+      return baseScore;
+    }
 
     // 实验阶段只把波动叠加到当前季评分；未来季节仍返回基础评分，避免把
-    // 当前短期状态伪装成未来已知信息。
+    // 当前短期状态伪装成未来已知信息。V6 地支 roll 同样只作用当前季。
     if (season !== this.seasonCycle.getCurrentSeason()) return baseScore;
 
     // 按当前生效模型分支：conflict_banded 按牌级幅度 + 地支共享方向；
     // uniform（兼容默认）按地支整数偏移。
+    let score: number;
     if ((this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform') === 'conflict_banded') {
       const direction = this.scoreVolatilityState.directionByDiZhi?.[card.diZhi] ?? 0;
       const scale = this.scoreVolatilityState.scale ?? this.activeVolatilityConfig.scale ?? DEFAULT_SCORE_VOLATILITY_CONFIG.scale ?? 2;
@@ -531,9 +577,76 @@ export class TurnManager {
         ?? this.activeVolatilityConfig.bandFactors
         ?? {};
       const amplitude = cardAmplitude(card, scale, baseScore, bandFactors);
-      return Math.round(baseScore + direction * amplitude);
+      score = Math.round(baseScore + direction * amplitude);
+    } else {
+      score = baseScore + (this.scoreVolatilityState.deltaByDiZhi[card.diZhi] ?? 0);
     }
-    return baseScore + (this.scoreVolatilityState.deltaByDiZhi[card.diZhi] ?? 0);
+    // V6：波动叠加后追加地支 roll（base + 波动 + roll 顺序；V5 及以下恒等返回）。
+    return this.applyBranchRoll(score, card, season);
+  }
+
+  /**
+   * V6 地支 roll 注入项：roll_coef × (u_S − mean_u)（docs/mechanics.md §10）。
+   * - 非土：roll_coef = 3 × 阴阳因子（阳 1.1 / 阴 0.9），藏干权重 0.3 已并入（0.3×10=3）；
+   * - 土牌（方案 E）：roll_coef = 5 × 0.5（减半），藏干权重 0.5 已并入再减半。
+   * u_S − mean_u = 该地支当季藏干响应偏移与四季均值差（BranchRollState 携带）。
+   */
+  private getBranchRollDelta(card: JiaziCard): number {
+    if (!this.branchRollState) return 0;
+    const uS = this.branchRollState.rollByDiZhi[card.diZhi] ?? 0;
+    const meanU = this.branchRollState.meanByDiZhi[card.diZhi] ?? 0;
+    const shift = uS - meanU;
+    if (shift === 0) return 0;
+    const coef = card.tianGanElement === Element.EARTH
+      ? BRANCH_ROLL_EARTH_COEF
+      : BRANCH_ROLL_NON_EARTH_BASE_COEF * (card.yinYang === YinYang.YANG
+          ? this.balanceConfig.yangPolarityFactor
+          : this.balanceConfig.yinPolarityFactor);
+    return coef * shift;
+  }
+
+  /**
+   * V6 地支 roll 叠加（对已含波动的最终分值）：季内恒定、换季重掷；只作用当前季。
+   * V5 及以下（非 branch roll 规则版本 / 无状态）恒等返回，路径逐字节不变。
+   */
+  private applyBranchRoll(score: number, card: JiaziCard, season: string): number {
+    if (!this.isBranchRollRulesVersion() || !this.branchRollState) return score;
+    // 未来季节不注入：该季的 roll 尚未生成（换季时才掷），泄露即为作弊信息。
+    if (season !== this.seasonCycle.getCurrentSeason()) return score;
+    const delta = this.getBranchRollDelta(card);
+    if (delta === 0) return score;
+    return Math.round(score + delta);
+  }
+
+  /**
+   * V6 地支波动状态快照（返回拷贝供读取）。非 V6 / 未激活返回 null。
+   * 供 UI 地支偏移条（票 03）与校准探针使用；换季重掷后经 store 同步自然刷新。
+   */
+  getBranchRollState(): BranchRollState | null {
+    if (!this.branchRollState) return null;
+    return {
+      rulesVersion: this.branchRollState.rulesVersion,
+      rollByDiZhi: { ...this.branchRollState.rollByDiZhi },
+      meanByDiZhi: { ...this.branchRollState.meanByDiZhi },
+    };
+  }
+
+  /**
+   * V6 地支偏移条显示值（票 03）：12 地支的效果值 = 该族阳干非土卡的实际注入分差
+   * （= 非土基数 × 阳干阴阳因子 × 偏移差，四舍五入；同族阳干非土卡注入相同——
+   * 同地支共享偏移差）。土天干卡注入（2.5×偏移差）不在条上体现（卡面分已含）。
+   * 口径与 getBranchRollDelta 的非土阳干分支一致；非 V6 返回 null。
+   */
+  getBranchRollDisplayDeltas(): Record<string, number> | null {
+    if (!this.isBranchRollRulesVersion() || !this.branchRollState) return null;
+    const yangFactor = this.balanceConfig.yangPolarityFactor;
+    const result: Record<string, number> = {};
+    for (const diZhi of BRANCH_ROLL_DI_ZHI) {
+      const uS = this.branchRollState.rollByDiZhi[diZhi] ?? 0;
+      const meanU = this.branchRollState.meanByDiZhi[diZhi] ?? 0;
+      result[diZhi] = Math.round(BRANCH_ROLL_NON_EARTH_BASE_COEF * yangFactor * (uS - meanU));
+    }
+    return result;
   }
 
   /** 当前实际生效的规则版本；读档后以存档声明为准。 */
@@ -779,7 +892,10 @@ export class TurnManager {
       // - path 只供批 2 动画做「剩余 K 逐回合倒数 + 当前位置逐回合递增」表达（2026-08-14 用户拍板）。
       const path: VoidStep[] = [];
       for (let step = 0; step < k; step++) {
-        this.seasonCycle.advance();
+        const crossedSeason = this.seasonCycle.advance();
+        // V6 空亡跨季：季节时钟每跨一季即重掷地支波动（与服务端重放随机消耗序列一致，
+        // 与 advanceTurn 换季点同口径——季内恒定、每跨一季重掷）。
+        if (crossedSeason) this.refreshBranchRoll();
         path.push({
           season: this.seasonCycle.getCurrentSeason(),
           roundInSeason: this.seasonCycle.getCurrentRoundInSeason(),
@@ -804,7 +920,9 @@ export class TurnManager {
       this.onVoidTrigger?.({ k, prevSeason, prevRoundInSeason, nextSeason, path });
     }
     this.lastVoidSwallow = { count: voidCards.length, totalK, maxK, swallowed: swallowedCount };
-    // 换季/季内滚动后刷新波动状态（V5 无波动，但保持与其他规则版本的语义一致）。
+    // 空亡吞噬批次结束后统一刷新波动状态（V5/V6 均有 conflict_banded 波动；
+    // 空亡路径的波动刷新时机与 branchRoll 重掷的相对顺序与普通换季不同，
+    // 但两端走同一引擎代码路径，重放确定性不受影响——reviewer P3-3 注释修正 2026-08-16）。
     this.refreshScoreVolatility();
 
     // 2. 结算落点 = 跳跃后的季节（持仓结算、反噬/强平照常判定）。
@@ -1255,6 +1373,8 @@ export class TurnManager {
     const seasonChanged = this.seasonCycle.advance();
     if (seasonChanged) {
       this.refreshScoreVolatility();
+      // V6 换季重掷：与 refreshScoreVolatility 同点（V5 及以下恒空转，不消耗随机数）。
+      this.refreshBranchRoll();
       console.log(`[TurnManager] 季节切换: ${this.seasonCycle.getCurrentSeason()}`);
     } else if (this.scoreVolatilityState) {
       this.scoreVolatilityState.remainingRounds--;
@@ -1390,6 +1510,8 @@ export class TurnManager {
       scoreRules: isTradeRulesVersion(this.rulesVersion)
         ? this.scoreManager.getRules()
         : undefined,
+      // V6 地支波动状态：仅 rulesVersion=6 时写入；V5 及以下为 undefined（协议不变形）。
+      branchRoll: this.getBranchRollState() ?? undefined,
     };
   }
 
@@ -1441,9 +1563,20 @@ export class TurnManager {
     if (isTradeRulesVersion(declaredRules)) {
       this.validateScoreRules(data.scoreRules);
     }
+    // V6 地支波动门控（在任何状态改动之前）：rulesVersion=6 档必须携带完整合法的
+    // branchRoll 快照，否则明确拒绝——缺失/非法会让读档后的评分注入漂移。
+    // 非 6 版本忽略该字段（V5 及以下路径逐字节不变）。
+    if (declaredRules === RULES_VERSION_BRANCH_ROLL && !data.branchRoll) {
+      throw new Error('rulesVersion=6 存档缺少 branchRoll，拒绝读档');
+    }
+    if (declaredRules === RULES_VERSION_BRANCH_ROLL && !isValidBranchRollState(data.branchRoll)) {
+      throw new Error('rulesVersion=6 存档的 branchRoll 快照非法，拒绝读档');
+    }
     this.rulesVersion = declaredRules;
-    // V5 空亡规则：SeasonCycle 懒生成模式跟随存档声明（base 构造读 V5 档也要懒生成）。
-    this.seasonCycle.setLazy(declaredRules === RULES_VERSION_VOID);
+    // V5/V6 空亡规则：SeasonCycle 懒生成模式跟随存档声明（base 构造读 V5/V6 档也要懒生成）。
+    this.seasonCycle.setLazy(
+      declaredRules === RULES_VERSION_VOID || declaredRules === RULES_VERSION_BRANCH_ROLL,
+    );
     this.scoreManager.setRules(
       isTradeRulesVersion(declaredRules) ? data.scoreRules! : DEFAULT_SCORE_RULES,
     );
@@ -1511,6 +1644,17 @@ export class TurnManager {
       this.activeVolatilityConfig = { ...this.scoreVolatilityConfig, enabled: false, model: 'uniform' };
       this.scoreVolatilityState = null;
     }
+
+    // 3.6 地支波动还原：仅 rulesVersion=6 且存档携带合法 branchRoll 时还原；
+    //    其余一律置 null——V5 及以下不创建不消耗 roll 随机数，换季/空亡跨季
+    //    也不会被 refreshBranchRoll 错误重建（门控按当前生效规则版本）。
+    this.branchRollState = declaredRules === RULES_VERSION_BRANCH_ROLL && isValidBranchRollState(data.branchRoll)
+      ? {
+          rulesVersion: RULES_VERSION_BRANCH_ROLL,
+          rollByDiZhi: { ...data.branchRoll!.rollByDiZhi },
+          meanByDiZhi: { ...data.branchRoll!.meanByDiZhi },
+        }
+      : null;
 
     // 4. 还原手牌
     const restoredHand = data.hand.map((slotData) => {
@@ -2204,12 +2348,18 @@ export class TurnManager {
     // 重置只用于"开新局"，规则归属不继承上一局读档的声明。
     this.activeVolatilityConfig = this.scoreVolatilityConfig;
     this.rulesVersion = this.initialRulesVersion;
-    // 懒生成跟随规则版本：读档切到 V5 后 reset 开新局，需先还原季节模式再重排。
-    this.seasonCycle.setLazy(this.initialRulesVersion === RULES_VERSION_VOID);
+    // 懒生成跟随规则版本：读档切到 V5/V6 后 reset 开新局，需先还原季节模式再重排。
+    this.seasonCycle.setLazy(
+      this.initialRulesVersion === RULES_VERSION_VOID || this.initialRulesVersion === RULES_VERSION_BRANCH_ROLL,
+    );
     this.seasonCycle.reset();
     this.scoreManager.setRules(this.initialScoreRules);
     this.scoreVolatilityState = this.isVolatilityRulesVersion()
       ? createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig)
+      : null;
+    // V6 开新局：按构造默认规则重掷首季 roll（V5 及以下置 null，不消耗 roll 随机数）。
+    this.branchRollState = this.initialRulesVersion === RULES_VERSION_BRANCH_ROLL
+      ? createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex())
       : null;
     this.qiManager.reset();
     this.scoreManager.reset();
@@ -2248,5 +2398,15 @@ export class TurnManager {
       this.volatilityRandom,
       { ...this.activeVolatilityConfig, enabled: true },
     );
+  }
+
+  /**
+   * V6 地支波动重掷（换季 / 空亡跨季 / 构造首季 / reset 新局）。
+   * 门控以当前生效规则版本为准：仅 rulesVersion=6 时重掷；
+   * V5 及以下恒空转——不创建、不消耗 branchRollRandom 随机数（路径逐字节不变）。
+   */
+  private refreshBranchRoll(): void {
+    if (!this.isBranchRollRulesVersion()) return;
+    this.branchRollState = createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex());
   }
 }

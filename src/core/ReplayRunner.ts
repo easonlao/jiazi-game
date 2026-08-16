@@ -120,6 +120,8 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
     volatility: request.volatility,
     scoreRules: request.scoreRules,
     volatilityRandom: random,
+    // V6 地支波动：与服务端重放透传同一 seeded 源（客户端局 = 服务端重放同 roll）。
+    branchRollRandom: random,
   });
 
   try {

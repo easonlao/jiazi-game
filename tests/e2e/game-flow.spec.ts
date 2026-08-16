@@ -463,3 +463,40 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByText('游戏结束', { exact: true })).not.toBeVisible();
   });
 });
+
+/** 拒绝遥测后「开始游戏」直接走本地模式（shouldAwaitVerifiedStart=false），
+ *  不请求云端——V6 局因此可用本地开局验证（云端门控拒 rules_version≠5 属票 05 范围）。 */
+async function startLocalFromConsentScreen(page: import('@playwright/test').Page) {
+  // 同意页只出现一次（consent 决定持久化在 localStorage）——同测试内二次开局直接跳到开始按钮；
+  // click 自带等待与 actionability，未出现时超时捕获跳过
+  const declineBtn = page.getByRole('button', { name: /暂不记录数据/ });
+  try {
+    await declineBtn.click({ timeout: 8_000 });
+  } catch {
+    // 同意页已通过
+  }
+  const startBtn = page.getByRole('button', { name: '开始游戏', exact: true });
+  await expect(startBtn).toBeVisible({ timeout: 10_000 });
+  await startBtn.click();
+  await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 10_000 });
+}
+
+test.describe('V6 地支偏移条（票 03）', () => {
+  test('V6 本地开局渲染 12 地支偏移条；V5 局不渲染', async ({ page }) => {
+    // V6：拒绝遥测 → 本地开局（用 URL rules 构造的 V6 引擎）
+    await page.goto('/?rules=v6');
+    await startLocalFromConsentScreen(page);
+
+    const bar = page.getByTestId('branch-roll-bar');
+    await expect(bar).toBeVisible({ timeout: 5_000 });
+    // 12 地支全常驻（位置稳定），每格 = 地支名 + 数值
+    await expect(bar.locator('> div')).toHaveCount(12);
+    await expect(bar).toContainText('子');
+    await expect(bar).toContainText('亥');
+
+    // V5 对照：整条不渲染（V5 零回归）
+    await page.goto('/?rules=v5');
+    await startLocalFromConsentScreen(page);
+    await expect(page.getByTestId('branch-roll-bar')).toHaveCount(0);
+  });
+});

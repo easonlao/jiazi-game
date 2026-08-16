@@ -14,6 +14,7 @@ import type { StorageProvider } from './StorageProvider.ts';
 import type { RoundLogEntry } from './TurnManager.ts';
 import type { ScoreVolatilitySnapshot } from './ScoreVolatility.ts';
 import type { ScoreRules } from './ScoreManager.ts';
+import type { BranchRollState } from './BranchRoll.ts';
 
 /** 读档失败分类原因：GameSaveService.load 最近一次失败的原因（成功或尚未 load 时为 null）。 */
 export type GameSaveLoadError =
@@ -61,8 +62,16 @@ export const RULES_VERSION_BALANCED_TRADE = 4;
  */
 export const RULES_VERSION_VOID = 5;
 
+/**
+ * 地支波动规则（V6）：V5 之上加地支波动一层——每季开始时给 12 个地支的藏干响应
+ * 各 roll 一次偏移（δ=2 均匀），季内恒定、换季重掷（含空亡 K 步跨季），注入评分
+ * 公式地支藏干分支项。语义门控见 docs/mechanics.md §10（2026-08-15 定稿）。
+ * 仅在 rulesVersion=6 时激活；V5 及以下路径逐字节不变。生产默认翻转待票 05。
+ */
+export const RULES_VERSION_BRANCH_ROLL = 6;
+
 /** 新局默认规则版本；旧存档仍按自身 rulesVersion 继续运行。 */
-export const CURRENT_RULES_VERSION = RULES_VERSION_VOID;
+export const CURRENT_RULES_VERSION = RULES_VERSION_BRANCH_ROLL;
 
 /** 当前代码可解释的规则版本集合；存档层与引擎层共用，避免两处规则门控漂移。 */
 export type SupportedRulesVersion =
@@ -70,26 +79,30 @@ export type SupportedRulesVersion =
   | typeof RULES_VERSION_VOLATILE
   | typeof RULES_VERSION_TRADE
   | typeof RULES_VERSION_BALANCED_TRADE
-  | typeof RULES_VERSION_VOID;
+  | typeof RULES_VERSION_VOID
+  | typeof RULES_VERSION_BRANCH_ROLL;
 
 export function isSupportedRulesVersion(version: unknown): version is SupportedRulesVersion {
   return version === RULES_BASE ||
     version === RULES_VERSION_VOLATILE ||
     version === RULES_VERSION_TRADE ||
     version === RULES_VERSION_BALANCED_TRADE ||
-    version === RULES_VERSION_VOID;
+    version === RULES_VERSION_VOID ||
+    version === RULES_VERSION_BRANCH_ROLL;
 }
 
 /**
- * 交易规则家族（V3/V4/V5）：携带"持仓收益 + 释灵倍率 + conflict_banded 季内波动"计分语义。
- * V5（空亡）继承 V4 计分——设计定案（一审 P1-①）：V4 计分 + 空亡机制。
+ * 交易规则家族（V3/V4/V5/V6）：携带"持仓收益 + 释灵倍率 + conflict_banded 季内波动"计分语义。
+ * V5（空亡）继承 V4 计分——设计定案（一审 P1-①）；V6（地支波动）继承 V5 计分
+ * 并在其上追加地支 roll 一层（mechanics.md §10）。
  */
 export function isTradeRulesVersion(
   version: unknown,
-): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE | typeof RULES_VERSION_VOID {
+): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE | typeof RULES_VERSION_VOID | typeof RULES_VERSION_BRANCH_ROLL {
   return version === RULES_VERSION_TRADE ||
     version === RULES_VERSION_BALANCED_TRADE ||
-    version === RULES_VERSION_VOID;
+    version === RULES_VERSION_VOID ||
+    version === RULES_VERSION_BRANCH_ROLL;
 }
 
 /** 可序列化的手牌槽位快照。 */
@@ -148,6 +161,12 @@ export interface GameSnapshot {
   scoreVolatility?: ScoreVolatilitySnapshot;
   /** 交易规则的计分参数；v1/v2 不写入，保持旧档形状与语义。 */
   scoreRules?: ScoreRules;
+  /**
+   * V6 地支波动状态（rulesVersion=6 时必写，读档门控见 importSnapshot）。
+   * 老存档无此字段；非 6 版本读档忽略该字段（V5 及以下路径逐字节不变）。
+   * schemaVersion 保持 1（与 V5 空亡增量同模式）。
+   */
+  branchRoll?: BranchRollState;
 }
 
 const SAVE_KEY = 'jiazi_game_save';

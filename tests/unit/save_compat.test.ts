@@ -14,10 +14,12 @@ import {
   CURRENT_SCHEMA_VERSION,
   RULES_BASE,
   RULES_VERSION_BALANCED_TRADE,
+  RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_TRADE,
   RULES_VERSION_VOLATILE,
 } from '../../src/core/GameSaveService';
 import { BAND_FACTOR } from '../../src/core/ScoreVolatility';
+import { createBranchRollState } from '../../src/core/BranchRoll';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { GameSnapshot } from '../../src/core/GameSaveService';
@@ -95,6 +97,26 @@ async function makeTradeTm(seed = 42, volSeed = 7) {
       bandFactors: { ...BAND_FACTOR, conflict: 6 },
     },
     volatilityRandom: new SeededRandomSource(volSeed),
+  });
+  await tm.initialize();
+  return tm;
+}
+
+/** 构造 V6 生产方式实验局（V4 计分 + 空亡 + 地支波动）：用于验证 V6 存档协议。 */
+async function makeBranchRollTm(seed = 42, rollSeed = 7) {
+  const cardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => cardData }));
+  const tm = new TurnManager(undefined, new SeededRandomSource(seed), {
+    rulesVersion: RULES_VERSION_BRANCH_ROLL,
+    scoreRules: { holdBonus: 1.2, sellMultiplier: 6 },
+    volatility: {
+      enabled: true,
+      model: 'conflict_banded',
+      scale: 4,
+      bandFactors: { ...BAND_FACTOR, conflict: 3 },
+    },
+    volatilityRandom: new SeededRandomSource(seed + 1),
+    branchRollRandom: new SeededRandomSource(rollSeed),
   });
   await tm.initialize();
   return tm;
@@ -480,5 +502,51 @@ describe('GameSaveService 坏档防护（load 路径）', () => {
     const ok = svc.load(() => {});
     expect(ok).toBe(false);
     expect(store['jiazi_game_save']).toBeDefined();
+  });
+});
+
+describe('V6 地支波动存档（rulesVersion=6 / branchRoll，schemaVersion 保持 1）', () => {
+  it('V6 档完整往返：base 构造读 V6 档还原 roll 状态与评分（声明版本优先）', async () => {
+    const src = await makeBranchRollTm();
+    src.startGame();
+    expect(src.executeBuy(0, false)).toBe(true);
+    const snapshot = src.exportSnapshot();
+    expect(snapshot.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(snapshot.rulesVersion).toBe(RULES_VERSION_BRANCH_ROLL);
+    expect(snapshot.branchRoll).toEqual(src.getBranchRollState());
+
+    // base 构造读 V6 档：规则版本随存档声明还原（含分支波动 roll 状态）
+    const tm = await makeTm();
+    expect(() => tm.importSnapshot(snapshot)).not.toThrow();
+    expect(tm.getRulesVersion()).toBe(RULES_VERSION_BRANCH_ROLL);
+    expect(tm.getBranchRollState()).toEqual(src.getBranchRollState());
+    const season = src.getCurrentSeason();
+    for (const card of src.getPublicCards()) {
+      expect(tm.getCardScore(card, season)).toBe(src.getCardScore(card, season));
+    }
+    // 再导出：写时归属 V6，branchRoll 随档保留
+    expect(tm.exportSnapshot().rulesVersion).toBe(RULES_VERSION_BRANCH_ROLL);
+    expect(tm.exportSnapshot().branchRoll).toEqual(src.getBranchRollState());
+  });
+
+  it('V6 档缺 branchRoll：拒绝读档（版本门控，不静默降级）', async () => {
+    const src = await makeBranchRollTm();
+    src.startGame();
+    const snapshot = src.exportSnapshot();
+    delete (snapshot as any).branchRoll;
+
+    const tm = await makeTm();
+    expect(() => tm.importSnapshot(snapshot)).toThrowError(/branchRoll/);
+  });
+
+  it('非 6 档携带 branchRoll 字段：读档忽略、再导出不携带（协议不变形）', async () => {
+    const tm = await makeTm();
+    const oldSave = makeValidSnapshot();
+    (oldSave as any).branchRoll = createBranchRollState(new SeededRandomSource(7), 0);
+
+    expect(() => tm.importSnapshot(oldSave)).not.toThrow();
+    expect(tm.getBranchRollState()).toBeNull();
+    expect((tm.exportSnapshot() as any).branchRoll).toBeUndefined();
+    expect(tm.exportSnapshot().rulesVersion).toBe(RULES_BASE);
   });
 });

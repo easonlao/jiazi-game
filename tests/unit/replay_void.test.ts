@@ -16,11 +16,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   BALANCED_TRADE_REPLAY_RULES,
+  BRANCH_ROLL_REPLAY_RULES,
   cloneReplayRulesSnapshot,
   CURRENT_REPLAY_RULES,
   getReplayRulesByVersion,
   replayGame,
   RULES_VERSION_VOID,
+  RULES_VERSION_BRANCH_ROLL,
   SeededRandomSource,
   SUPPORTED_REPLAY_RULES,
   TurnManager,
@@ -213,15 +215,16 @@ describe('V5 重放确定性（同种子）', () => {
 });
 
 describe('函数层 V5 路径（共享核心；Edge Function 无法在 vitest 中导入 Deno/esm.sh 模块）', () => {
-  it('版本门控：V4/V5 接受，未注册版本（含 V1-V3、NaN）拒绝', () => {
+  it('版本门控：V4/V5/V6 接受，未注册版本（含 V1-V3、NaN）拒绝', () => {
     expect(getReplayRulesByVersion(4)).toBe(BALANCED_TRADE_REPLAY_RULES);
     expect(getReplayRulesByVersion(5)).toBe(VOID_REPLAY_RULES);
+    expect(getReplayRulesByVersion(6)).toBe(BRANCH_ROLL_REPLAY_RULES);
     expect(getReplayRulesByVersion(3)).toBeUndefined();
     expect(getReplayRulesByVersion(2)).toBeUndefined();
     expect(getReplayRulesByVersion(NaN)).toBeUndefined();
-    expect(SUPPORTED_REPLAY_RULES.map((rules) => rules.rulesVersion)).toEqual([4, 5]);
-    // 2026-08-14 用户拍板：生产默认翻转为 V5（空亡），V4 仅保留历史解释
-    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_VOID);
+    expect(SUPPORTED_REPLAY_RULES.map((rules) => rules.rulesVersion)).toEqual([4, 5, 6]);
+    // 2026-08-16 用户拍板：生产默认翻转为 V6（地支波动 = V5 + roll），V4/V5 仅保留历史解释。
+    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_BRANCH_ROLL);
     expect(SUPPORTED_REPLAY_RULES[0]).toBe(BALANCED_TRADE_REPLAY_RULES);
   });
 

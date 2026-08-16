@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore, seasonDisplay } from '../store';
+import { BRANCH_ROLL_DI_ZHI } from '@core/index';
 
 const roundAnimStyle = {
   animation: 'roundPop 0.4s ease-out',
@@ -25,6 +26,8 @@ export function TopPanel() {
   const roundInSeason = useGameStore((s) => s.roundInSeason);
   const score = useGameStore((s) => s.score);
   const scoreDelta = useGameStore((s) => s.scoreDelta);
+  // V6 地支偏移条（票 03）：12 地支效果值；非 V6 为 null → 整条不渲染（V5 零回归）
+  const branchRollDeltas = useGameStore((s) => s.branchRollDeltas);
   const seasonTheme = SEASON_THEME[season] ?? SEASON_THEME.spring;
   const openDashboard = useGameStore((s) => s.openDashboard);
   const gameState = useGameStore((s) => s.gameState);
@@ -44,7 +47,8 @@ export function TopPanel() {
   }, [scoreDelta]);
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2 max-md:py-1.5 bg-[#faf6ee] border-b border-wood-light">
+    <div className="flex flex-col bg-[#faf6ee] border-b border-wood-light">
+      <div className="flex items-center justify-between gap-3 px-4 py-2 max-md:py-1.5">
       <div className="min-w-0">
         <h1 className={`text-lg font-bold font-serif ${seasonTheme.text}`}>
         {/* key 变化触发切换动画，提示回合推进 */}
@@ -91,6 +95,32 @@ export function TopPanel() {
           </span>
         ))}
       </div>
+      </div>
+      {/* V6 地支偏移条：12 地支横排常驻（位置稳定防换季闪跳）；效果值 = 该族阳干非土卡
+          实际注入分差（与卡面分同语言）；偏旺暖色/偏弱冷色/0 灰（Q2-A/Q3-A/Q5-A 拍板）。 */}
+      {branchRollDeltas && (
+        <div
+          className="grid grid-cols-12 gap-0.5 px-3 pb-1 pt-0.5 text-center border-t border-wood-light/50"
+          aria-label="本季地支偏移"
+          data-testid="branch-roll-bar"
+        >
+          {BRANCH_ROLL_DI_ZHI.map((dz) => {
+            const v = branchRollDeltas[dz] ?? 0;
+            return (
+              <div key={dz}>
+                <div className="text-[10px] leading-none text-ink-light/80 font-serif">{dz}</div>
+                <div
+                  className={`text-[10px] font-bold leading-tight tabular-nums ${
+                    v > 0 ? 'text-red-600' : v < 0 ? 'text-sky-600' : 'text-gray-400'
+                  }`}
+                >
+                  {v > 0 ? `+${v}` : v}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
   type DecisionEntry,
   isVoidCard,
   BALANCED_TRADE_REPLAY_RULES,
+  BRANCH_ROLL_REPLAY_RULES,
   CURRENT_REPLAY_RULES,
   VOID_REPLAY_RULES,
   CURRENT_RULES_VERSION,
@@ -146,6 +147,8 @@ interface GameStore {
   season: string;
   roundInSeason: number;
   seasonLength: number;
+  /** V6 地支偏移条显示值（12 地支效果值）；非 V6 为 null（票 03）。 */
+  branchRollDeltas: Record<string, number> | null;
   qi: number;
   score: number;
   deckSize: number;
@@ -535,6 +538,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   season: 'spring',
   roundInSeason: 1,
   seasonLength: 12,
+  branchRollDeltas: null,
   qi: 80,
   score: 0,
   deckSize: 0,
@@ -621,6 +625,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       season: nextSeason,
       roundInSeason: tm.getCurrentRoundInSeason(),
       seasonLength: tm.getCurrentSeasonLength(),
+      branchRollDeltas: tm.getBranchRollDisplayDeltas(),
       qi: nextQi,
       score: nextScore,
       deckSize: tm.getDeckSize(),
@@ -690,9 +695,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ? BALANCED_TRADE_REPLAY_RULES
         : urlRules === 'v5'
           ? VOID_REPLAY_RULES
-          : import.meta.env.VITE_RULES_VERSION === '5'
-            ? VOID_REPLAY_RULES
-            : CURRENT_REPLAY_RULES;
+          : urlRules === 'v6'
+            ? BRANCH_ROLL_REPLAY_RULES
+            : import.meta.env.VITE_RULES_VERSION === '5'
+              ? VOID_REPLAY_RULES
+              : CURRENT_REPLAY_RULES;
       const tm = new TurnManager(undefined, undefined, {
         storage: localStorageProvider,
         rulesVersion: previewRules.rulesVersion,
