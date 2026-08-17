@@ -186,6 +186,7 @@ function PublicCardItem({
   const holdEarning = previewHoldEarning(index);
   const holdQiCost = previewHoldQiCost(index);
   const volatilityDelta = turnManager?.getCardVolatilityDelta(card) ?? undefined;
+  const volatilityTrend = turnManager?.getCardVolatilityTrend(card) ?? undefined;
 
   return (
     <PublicCard
@@ -199,6 +200,7 @@ function PublicCardItem({
       holdEarning={holdEarning}
       holdQiCost={holdQiCost}
       volatilityDelta={volatilityDelta}
+      volatilityTrend={volatilityTrend}
       locked={locked}
       onToggleLock={onToggleLock}
     />

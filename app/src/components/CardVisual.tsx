@@ -1,5 +1,6 @@
 import { type JiaziCard, Element, YinYang } from '@core/JiaziCard';
 import { isVoidCard } from '@core/VoidCard';
+import type { VolatilityTrend } from '@core/ScoreVolatility';
 
 const elementBorder: Record<Element, string> = {
   [Element.WOOD]: 'border-emerald-400 bg-emerald-50/50',
@@ -38,6 +39,8 @@ interface CardVisualProps {
   scoreBadge?: React.ReactNode;
   /** 实验模式下当前相对基础评分的实际波动值；只用于公共牌。 */
   volatilityDelta?: number;
+  /** 趋势窗口方向（rising/falling/steady）；只用于公共牌。 */
+  volatilityTrend?: VolatilityTrend;
   /** 底部信息区域，由 PublicCard/HandCard 各自填充 */
   children?: React.ReactNode;
 }
@@ -46,7 +49,7 @@ interface CardVisualProps {
  * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、评分与实际波动提示。
  * 公共牌和手牌的评分口径通过 scoreMode 区分，底部持有信息仍由 children 注入。
  */
-export function CardVisual({ card, score, nextScore, scoreMode = 'market', buyScore, selected, highlight, onClick, badges, scoreBadge, volatilityDelta, children }: CardVisualProps) {
+export function CardVisual({ card, score, nextScore, scoreMode = 'market', buyScore, selected, highlight, onClick, badges, scoreBadge, volatilityDelta, volatilityTrend, children }: CardVisualProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
   const baseBorder = elementBorder[card.mainElement];
   const positionView = scoreMode === 'position' && buyScore !== undefined;
@@ -61,6 +64,13 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
             ? 'text-qi-critical'
             : 'text-ink-light',
       };
+  const trendMeta = volatilityTrend === undefined || volatilityTrend === null
+    ? null
+    : volatilityTrend === 'rising'
+      ? { symbol: '↑', className: 'text-emerald-600', title: '趋势上升' }
+      : volatilityTrend === 'falling'
+        ? { symbol: '↓', className: 'text-red-500', title: '趋势下降' }
+        : { symbol: '—', className: 'text-ink-light/50', title: '趋势平稳' };
 
   // V5 空亡牌专属视觉（票 07）：暗色虚空风格，一眼区分于五行元素牌。
   // 纯事件牌——不显示评分（恒为 0）、不显示耗神/炼化/炼耗等持有信息（不可买入），
@@ -177,6 +187,15 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
                   className={`text-[10px] max-md:text-[9px] font-bold leading-none whitespace-nowrap ${volatilityDeltaMeta.className}`}
                 >
                   ({volatilityDeltaMeta.text})
+                </span>
+              )}
+              {volatilityActive && trendMeta && (
+                <span
+                  data-volatility-trend
+                  title={trendMeta.title}
+                  className={`text-[11px] max-md:text-[10px] font-bold leading-none ${trendMeta.className}`}
+                >
+                  {trendMeta.symbol}
                 </span>
               )}
               {scoreBadge}
