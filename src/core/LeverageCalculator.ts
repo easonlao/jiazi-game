@@ -36,10 +36,17 @@ export class LeverageCalculator {
    * 成为无脑最优（2026-08-02 蒙特卡洛：土牌专属系数 2→5 后，土牌杠杆 290→129，策略空间打开）。
    * 向上取整保证神识为整数（2026-08-03 验证：ceil 对平衡零影响——神识是"足够"的资源）。
    */
-  calculateHoldQiCost(cardScore: number, leverage: number, isEarth: boolean = false): number {
+  calculateHoldQiCost(
+    cardScore: number,
+    leverage: number,
+    isEarth: boolean = false,
+    concentrationCount: number = 0,
+    concentrationPremiumFactor: number = 0,
+  ): number {
+    const concentrationPremium = concentrationPremiumFactor * Math.max(0, concentrationCount - 1);
     const baseCost = Math.ceil(Math.max(
       this.cfg.holdQiMin,
-      this.cfg.holdQiBase + this.cfg.holdQiScoreFactor * cardScore
+      this.cfg.holdQiBase + this.cfg.holdQiScoreFactor * cardScore + concentrationPremium
     ));
     if (leverage <= 1) return baseCost;
     const perX = isEarth ? this.cfg.earthLeverageQiCostPerX : this.cfg.leverageQiCostPerX;

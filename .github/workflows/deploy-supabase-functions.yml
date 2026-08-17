@@ -74,7 +74,7 @@ jobs:
       - name: Install Chromium for production verification
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Verify V6 session through leaderboard submission
+      - name: Verify V7 session through leaderboard submission
         env:
           E2E_SUPABASE: '1'
           E2E_TARGET: preview

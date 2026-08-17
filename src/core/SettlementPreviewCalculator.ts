@@ -10,6 +10,10 @@ export interface HoldingCalculationInput {
   useLeverage: boolean;
   /** 土牌使用专属杠杆耗神系数，需要标记元素类型 */
   isEarth?: boolean;
+  /** 同元素集中度：丹田位中与该卡 mainElement 相同的卡牌数（含自身） */
+  concentrationCount?: number;
+  /** 同元素集中度溢价系数 */
+  concentrationPremiumFactor?: number;
 }
 
 export interface HoldingCalculationItem {
@@ -27,7 +31,7 @@ export interface HoldingCalculationResult {
 
 export interface HoldingCalculationFunctions {
   calculateHoldEarnings: (cardScore: number, leverage: number) => number;
-  calculateHoldQiCost: (cardScore: number, leverage: number, isEarth?: boolean) => number;
+  calculateHoldQiCost: (cardScore: number, leverage: number, isEarth?: boolean, concentrationCount?: number, concentrationPremiumFactor?: number) => number;
 }
 
 /**
@@ -44,7 +48,7 @@ export function calculateHoldingSettlement(
     return {
       cardName: holding.cardName,
       earning: calculators.calculateHoldEarnings(holding.cardScore, leverage),
-      qiCost: calculators.calculateHoldQiCost(holding.cardScore, leverage, holding.isEarth),
+      qiCost: calculators.calculateHoldQiCost(holding.cardScore, leverage, holding.isEarth, holding.concentrationCount, holding.concentrationPremiumFactor),
       leverage,
     };
   });

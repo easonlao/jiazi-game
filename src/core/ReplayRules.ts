@@ -2,6 +2,7 @@ import {
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_TRADE,
+  RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOID,
   type SupportedRulesVersion,
 } from './GameSaveService.ts';
@@ -136,6 +137,31 @@ export const BRANCH_ROLL_REPLAY_RULES: BranchRollReplayRulesSnapshot = {
 };
 
 /**
+ * V7 趋势窗口波动规则快照（rulesVersion=7）：V6 计分 + trend_window 波动模型 + 集中度溢价。
+ *
+ * 在 V6（BRANCH_ROLL_REPLAY_RULES）基础上仅增量附加 trendWindow 与 concentrationPremiumFactor
+ * 字段：volatility.model 切换为 'trend_window'，concentrationPremiumFactor = 1（启用）。
+ * 继承 BranchRollReplayRulesSnapshot 的全部字段（含 branchRoll），但 rulesVersion 覆盖为 7。
+ */
+export interface TrendWindowReplayRulesSnapshot extends Omit<BranchRollReplayRulesSnapshot, 'rulesVersion'> {
+  rulesVersion: typeof RULES_VERSION_TREND_WINDOW;
+  trendWindow: { enabled: true };
+  concentrationPremiumFactor: number;
+}
+
+/** V7 趋势窗口波动规则快照冻结值；生产默认。 */
+export const TREND_WINDOW_REPLAY_RULES: TrendWindowReplayRulesSnapshot = {
+  ...BRANCH_ROLL_REPLAY_RULES,
+  rulesVersion: RULES_VERSION_TREND_WINDOW,
+  volatility: {
+    ...BRANCH_ROLL_REPLAY_RULES.volatility,
+    model: 'trend_window',
+  },
+  trendWindow: { enabled: true },
+  concentrationPremiumFactor: 1,
+};
+
+/**
  * 服务端可创建/校验的新会话规则版本注册表（按版本号升序）。
  *
  * 2026-08-14 用户拍板：生产默认翻转为 V5（空亡）——排行榜清理 V4 旧数据后，
@@ -146,6 +172,7 @@ export const SUPPORTED_REPLAY_RULES: readonly ReplayRulesSnapshot[] = [
   BALANCED_TRADE_REPLAY_RULES,
   VOID_REPLAY_RULES,
   BRANCH_ROLL_REPLAY_RULES,
+  TREND_WINDOW_REPLAY_RULES,
 ];
 
 /** 按规则版本号取冻结快照；未注册版本返回 undefined（函数层据此拒绝 409/422）。 */
@@ -153,8 +180,8 @@ export function getReplayRulesByVersion(version: number): ReplayRulesSnapshot | 
   return SUPPORTED_REPLAY_RULES.find((rules) => rules.rulesVersion === version);
 }
 
-/** 新局与服务端新会话使用的当前规则快照（2026-08-14 用户拍板：V5 空亡为生产默认）。 */
-export const CURRENT_REPLAY_RULES = BRANCH_ROLL_REPLAY_RULES;
+/** 新局与服务端新会话使用的当前规则快照（2026-08-17 翻转：V7 trend_window 为生产默认）。 */
+export const CURRENT_REPLAY_RULES = TREND_WINDOW_REPLAY_RULES;
 
 export function cloneReplayRulesSnapshot<T extends ReplayRulesSnapshot = ReplayRulesSnapshot>(
   source: T = CURRENT_REPLAY_RULES as unknown as T,
@@ -168,6 +195,17 @@ export function cloneReplayRulesSnapshot<T extends ReplayRulesSnapshot = ReplayR
       throw new Error(
         `branch_roll_rules_mismatch: frozen snapshot must have delta=${BRANCH_ROLL_DELTA} and enabled=true`,
       );
+    }
+  }
+  // V7 冻结快照契约：trendWindow.enabled 必须为 true，concentrationPremiumFactor 必须为 1。
+  if (source.rulesVersion === RULES_VERSION_TREND_WINDOW) {
+    const tw = (source as unknown as TrendWindowReplayRulesSnapshot).trendWindow;
+    const cpf = (source as unknown as TrendWindowReplayRulesSnapshot).concentrationPremiumFactor;
+    if (!tw || tw.enabled !== true) {
+      throw new Error('trend_window_rules_mismatch: frozen snapshot must have trendWindow.enabled=true');
+    }
+    if (cpf !== 1) {
+      throw new Error(`trend_window_rules_mismatch: frozen snapshot must have concentrationPremiumFactor=1, got ${cpf}`);
     }
   }
   return {

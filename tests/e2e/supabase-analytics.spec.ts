@@ -6,9 +6,9 @@ test.describe('Supabase 匿名身份与遥测', () => {
     '需要设置 E2E_SUPABASE=1，并提供 app/.env.local 后运行真实云端验收',
   );
 
-  test('V6 新局等待服务端 seed，并在完整 60 回合后校验入榜（2026-08-16 生产默认翻转为 V6 地支波动）', async ({ page }) => {
+  test('V7 新局等待服务端 seed，并在完整 60 回合后校验入榜（2026-08-17 生产默认翻转为 V7 trend_window）', async ({ page }) => {
     test.setTimeout(240_000);
-    await page.goto('/?rules=v6');
+    await page.goto('/?rules=v7');
 
     await expect(page.getByRole('button', { name: '同意并生成玩家 ID' })).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: '同意并生成玩家 ID' }).click();
@@ -95,7 +95,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(result).toMatchObject({
       verified: true,
       leaderboard_submitted: true,
-      rules_version: '6',
+      rules_version: '7',
     });
 
     // 响应丢失后的重复提交必须幂等成功；若首次榜单插入曾失败，服务端会在这里补插。
@@ -112,7 +112,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(await retryResponse.json()).toMatchObject({
       verified: true,
       leaderboard_submitted: true,
-      rules_version: '6',
+      rules_version: '7',
     });
 
     const gameOverModal = page.locator('.modal-backdrop').filter({ hasText: '最终修为' });

@@ -8,7 +8,7 @@ import { Element, YinYang } from './JiaziCard.ts';
  * - conflict_banded（候选模型）：按卡牌天干/地支五行冲突分档推导牌级幅度，
  *   地支族共享方向（-1/-0.5/0/0.5/1），持续 1-3 回合后重掷。
  */
-export type VolatilityModel = 'uniform' | 'conflict_banded';
+export type VolatilityModel = 'uniform' | 'conflict_banded' | 'trend_window';
 
 /** 卡牌波动档位（从现有天干/地支五行关系推导，不读分数、不新增第二套牌型数据）。 */
 export type RelationBand = 'stable' | 'mixed' | 'conflict' | 'earth';
@@ -78,6 +78,8 @@ export interface ScoreVolatilitySnapshot {
   directionByDiZhi?: Record<string, number>;
   /** v3 交易规则冻结的牌区幅度；旧 v2 存档没有此字段。 */
   bandFactors?: Partial<Record<RelationBand, number>>;
+  /** trend_window 模型：每张牌独立的趋势状态（方向、剩余回合、窗口长度）。 */
+  trendWindowByCardId?: Record<number, { direction: 1 | -1 | 0; remainingRounds: number; windowLength: number }>;
 }
 
 const DI_ZHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
@@ -167,7 +169,78 @@ export function cardAmplitude(
   return scale * bandFactor * polarity * lowScoreFactor;
 }
 
+// ─── trend_window 模型常量与辅助函数 ───────────────────────────────
+
+/** 窗口长度候选值（2/3/4 回合）。 */
+export const TREND_WINDOW_WEIGHTS = [2, 3, 4] as const;
+
+/** 窗口长度对应概率 [25%, 50%, 25%]。 */
+export const TREND_WINDOW_PROBABILITIES = [0.25, 0.50, 0.25] as const;
+
+/** 平方向时注入的极小 delta（方向=0 时使用）。 */
+export const TREND_FLAT_DELTA = 0.1;
+
+/** 等概率抽取趋势方向：涨+1 / 跌-1 / 平0，各 1/3。 */
+export function pickTrendDirection(random: RandomSource): 1 | -1 | 0 {
+  const roll = random.int(0, 3);
+  if (roll === 0) return 1;
+  if (roll === 1) return -1;
+  return 0;
+}
+
+/** 按加权分布抽取窗口长度：2(25%) / 3(50%) / 4(25%)。 */
+export function pickWindowLength(random: RandomSource): number {
+  const roll = random.next();
+  if (roll < TREND_WINDOW_PROBABILITIES[0]) return TREND_WINDOW_WEIGHTS[0];
+  if (roll < TREND_WINDOW_PROBABILITIES[0] + TREND_WINDOW_PROBABILITIES[1]) return TREND_WINDOW_WEIGHTS[1];
+  return TREND_WINDOW_WEIGHTS[2];
+}
+
+/**
+ * 窗口末尾幅度衰减因子。
+ * - remainingRounds > 2: 1.0（全幅）
+ * - remainingRounds = 2: 0.5（半幅）
+ * - remainingRounds = 1: 0.25（四分之一）
+ */
+export function getTrendDecayFactor(remainingRounds: number): number {
+  if (remainingRounds > 2) return 1.0;
+  if (remainingRounds === 2) return 0.5;
+  return 0.25;
+}
+
+/**
+ * 计算趋势偏移量。
+ * 方向非零时 = direction * amplitude * decayFactor；
+ * 方向为零（平）时 = TREND_FLAT_DELTA。
+ */
+export function computeTrendDelta(direction: 1 | -1 | 0, amplitude: number, decayFactor: number): number {
+  if (direction === 0) return TREND_FLAT_DELTA;
+  return direction * amplitude * decayFactor;
+}
+
+/**
+ * 为所有牌生成初始趋势窗口状态（构造 / 换季 / 倒计时归零时调用）。
+ * 每张牌独立抽取方向与窗口长度。
+ */
+export function createTrendWindowState(
+  random: RandomSource,
+  cardIds: number[],
+): ScoreVolatilitySnapshot {
+  const trendWindowByCardId: Record<number, { direction: 1 | -1 | 0; remainingRounds: number; windowLength: number }> = {};
+  for (const id of cardIds) {
+    const direction = pickTrendDirection(random);
+    const windowLength = pickWindowLength(random);
+    trendWindowByCardId[id] = { direction, remainingRounds: windowLength, windowLength };
+  }
+  return {
+    model: 'trend_window',
+    remainingRounds: 0, // 不使用全局 remainingRounds；每张牌独立窗口
+    deltaByDiZhi: {},
+    trendWindowByCardId,
+  };
+}
+
 /** 判断一个波动模型值是否被当前代码支持（缺省/undefined 不算未知，属旧格式）。 */
 export function isSupportedVolatilityModel(model: unknown): model is VolatilityModel {
-  return model === 'uniform' || model === 'conflict_banded';
+  return model === 'uniform' || model === 'conflict_banded' || model === 'trend_window';
 }

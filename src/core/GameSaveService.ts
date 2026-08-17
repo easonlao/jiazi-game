@@ -70,8 +70,15 @@ export const RULES_VERSION_VOID = 5;
  */
 export const RULES_VERSION_BRANCH_ROLL = 6;
 
+/**
+ * 趋势窗口波动规则（V7）：V6 之上加 trend_window 波动模型 + 集中度溢价。
+ * 语义门控见 docs/mechanics.md §11。仅在 rulesVersion=7 时激活；
+ * V6 及以下路径逐字节不变。生产默认翻转为 V7。
+ */
+export const RULES_VERSION_TREND_WINDOW = 7 as const;
+
 /** 新局默认规则版本；旧存档仍按自身 rulesVersion 继续运行。 */
-export const CURRENT_RULES_VERSION = RULES_VERSION_BRANCH_ROLL;
+export const CURRENT_RULES_VERSION = RULES_VERSION_TREND_WINDOW;
 
 /** 当前代码可解释的规则版本集合；存档层与引擎层共用，避免两处规则门控漂移。 */
 export type SupportedRulesVersion =
@@ -80,7 +87,8 @@ export type SupportedRulesVersion =
   | typeof RULES_VERSION_TRADE
   | typeof RULES_VERSION_BALANCED_TRADE
   | typeof RULES_VERSION_VOID
-  | typeof RULES_VERSION_BRANCH_ROLL;
+  | typeof RULES_VERSION_BRANCH_ROLL
+  | typeof RULES_VERSION_TREND_WINDOW;
 
 export function isSupportedRulesVersion(version: unknown): version is SupportedRulesVersion {
   return version === RULES_BASE ||
@@ -88,7 +96,8 @@ export function isSupportedRulesVersion(version: unknown): version is SupportedR
     version === RULES_VERSION_TRADE ||
     version === RULES_VERSION_BALANCED_TRADE ||
     version === RULES_VERSION_VOID ||
-    version === RULES_VERSION_BRANCH_ROLL;
+    version === RULES_VERSION_BRANCH_ROLL ||
+    version === RULES_VERSION_TREND_WINDOW;
 }
 
 /**
@@ -98,11 +107,12 @@ export function isSupportedRulesVersion(version: unknown): version is SupportedR
  */
 export function isTradeRulesVersion(
   version: unknown,
-): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE | typeof RULES_VERSION_VOID | typeof RULES_VERSION_BRANCH_ROLL {
+): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE | typeof RULES_VERSION_VOID | typeof RULES_VERSION_BRANCH_ROLL | typeof RULES_VERSION_TREND_WINDOW {
   return version === RULES_VERSION_TRADE ||
     version === RULES_VERSION_BALANCED_TRADE ||
     version === RULES_VERSION_VOID ||
-    version === RULES_VERSION_BRANCH_ROLL;
+    version === RULES_VERSION_BRANCH_ROLL ||
+    version === RULES_VERSION_TREND_WINDOW;
 }
 
 /** 可序列化的手牌槽位快照。 */

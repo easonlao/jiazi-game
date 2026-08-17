@@ -24,6 +24,7 @@ import {
   RULES_BASE,
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_BRANCH_ROLL,
+  RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOLATILE,
   RULES_VERSION_TRADE,
   RULES_VERSION_VOID,
@@ -46,6 +47,11 @@ import { MarginCallEngine } from './MarginCallEngine.ts';
 import {
   cardAmplitude,
   createScoreVolatilityState,
+  createTrendWindowState,
+  pickTrendDirection,
+  pickWindowLength,
+  getTrendDecayFactor,
+  computeTrendDelta,
   DEFAULT_SCORE_VOLATILITY_CONFIG,
   isSupportedVolatilityModel,
   type ScoreVolatilityConfig,
@@ -448,8 +454,9 @@ export class TurnManager {
       ? TRADE_SCORE_RULES
       : (this.rulesVersion === RULES_VERSION_BALANCED_TRADE
           || this.rulesVersion === RULES_VERSION_VOID
-          || this.rulesVersion === RULES_VERSION_BRANCH_ROLL)
-        ? BALANCED_TRADE_SCORE_RULES // V5 继承 V4 计分（一审 P1-① 定案）；V6 继承 V5 计分 + 地支 roll 一层
+          || this.rulesVersion === RULES_VERSION_BRANCH_ROLL
+          || this.rulesVersion === RULES_VERSION_TREND_WINDOW)
+        ? BALANCED_TRADE_SCORE_RULES // V5 继承 V4 计分（一审 P1-① 定案）；V6/V7 继承 V5 计分 + 地支 roll 一层
         : DEFAULT_SCORE_RULES;
     this.initialRulesVersion = this.rulesVersion;
     this.initialScoreRules = {
@@ -472,14 +479,14 @@ export class TurnManager {
     // V5/V6 空亡规则：SeasonCycle 走懒生成（换季时从种子随机源抽下一季长度）。
     this.seasonCycle = new SeasonCycle(
       randomSource,
-      this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL
+      this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL || this.rulesVersion === RULES_VERSION_TREND_WINDOW
         ? { lazy: true, skipGenerate: options?.skipSeasonGenerate ?? false }
         : (options?.skipSeasonGenerate ?? false),
     );
-    // V6 地支波动：构造即生成首季 roll（仿 V5 懒生成季长"构造即生成"，使随机消耗时机
+    // V6/V7 地支波动：构造即生成首季 roll（仿 V5 懒生成季长"构造即生成"，使随机消耗时机
     // 由引擎推进决定而非外部首次访问——防客户端 UI 局与服务端纯引擎重放随机流分叉）。
-    // 仅 rulesVersion=6 创建；V5 及以下不消耗 branchRollRandom（路径逐字节不变）。
-    this.branchRollState = this.rulesVersion === RULES_VERSION_BRANCH_ROLL
+    // 仅 rulesVersion=6/7 创建；V5 及以下不消耗 branchRollRandom（路径逐字节不变）。
+    this.branchRollState = this.rulesVersion === RULES_VERSION_BRANCH_ROLL || this.rulesVersion === RULES_VERSION_TREND_WINDOW
       ? createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex())
       : null;
     this.qiManager = new QiManager(undefined, balanceConfig);
@@ -534,16 +541,23 @@ export class TurnManager {
   }
 
   /**
-   * 空亡机制门控：V5/V6 激活双时钟吞噬/懒生成/63 张牌堆。
+   * 空亡机制门控：V5/V6/V7 激活双时钟吞噬/懒生成/63 张牌堆。
    * V6（地支波动）继承 V5 空亡机制（mechanics.md §10：V6 = V5 + 地支 roll 一层）。
+   * V7（趋势窗口）继承 V6 空亡机制（mechanics.md §11：V7 = V6 + trend_window 波动）。
    */
   private isVoidRulesVersion(): boolean {
-    return this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL;
+    return this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL || this.rulesVersion === RULES_VERSION_TREND_WINDOW;
   }
 
-  /** V6 地支波动门控：仅 rulesVersion=6 时激活；V5 及以下路径逐字节不变。 */
+  /** V6/V7 地支波动门控：rulesVersion=6/7 时激活；V5 及以下路径逐字节不变。 */
   private isBranchRollRulesVersion(): boolean {
-    return this.rulesVersion === RULES_VERSION_BRANCH_ROLL;
+    return this.rulesVersion === RULES_VERSION_BRANCH_ROLL || this.rulesVersion === RULES_VERSION_TREND_WINDOW;
+  }
+
+  /** trend_window 波动模型门控：活跃波动配置 model === 'trend_window' 且波动已启用。 */
+  private isTrendWindowRulesVersion(): boolean {
+    return this.isVolatilityRulesVersion()
+      && (this.activeVolatilityConfig.model ?? 'uniform') === 'trend_window';
   }
 
   getCardScore(card: JiaziCard, season: string): number {
@@ -567,10 +581,33 @@ export class TurnManager {
     // 当前短期状态伪装成未来已知信息。V6 地支 roll 同样只作用当前季。
     if (season !== this.seasonCycle.getCurrentSeason()) return baseScore;
 
-    // 按当前生效模型分支：conflict_banded 按牌级幅度 + 地支共享方向；
-    // uniform（兼容默认）按地支整数偏移。
+    // 按当前生效模型分支：trend_window 按牌级独立趋势窗口；
+    // conflict_banded 按牌级幅度 + 地支共享方向；uniform（兼容默认）按地支整数偏移。
     let score: number;
-    if ((this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform') === 'conflict_banded') {
+    const effectiveModel = this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform';
+    if (effectiveModel === 'trend_window' && this.scoreVolatilityState.trendWindowByCardId) {
+      // trend_window：每张牌独立趋势方向 + 窗口长度 + 衰减
+      const cardTrend = this.scoreVolatilityState.trendWindowByCardId[card.id];
+      if (!cardTrend) {
+        // 懒初始化：该牌尚未生成趋势状态（旧档缺字段或新增牌）
+        const direction = pickTrendDirection(this.volatilityRandom);
+        const windowLength = pickWindowLength(this.volatilityRandom);
+        this.scoreVolatilityState.trendWindowByCardId[card.id] = {
+          direction,
+          remainingRounds: windowLength,
+          windowLength,
+        };
+      }
+      const trend = this.scoreVolatilityState.trendWindowByCardId[card.id];
+      const scale = this.activeVolatilityConfig.scale ?? DEFAULT_SCORE_VOLATILITY_CONFIG.scale ?? 2;
+      const bandFactors = this.scoreVolatilityState.bandFactors
+        ?? this.activeVolatilityConfig.bandFactors
+        ?? {};
+      const amplitude = cardAmplitude(card, scale, baseScore, bandFactors);
+      const decayFactor = getTrendDecayFactor(trend.remainingRounds);
+      const delta = computeTrendDelta(trend.direction, amplitude, decayFactor);
+      score = Math.round(baseScore + delta);
+    } else if (effectiveModel === 'conflict_banded') {
       const direction = this.scoreVolatilityState.directionByDiZhi?.[card.diZhi] ?? 0;
       const scale = this.scoreVolatilityState.scale ?? this.activeVolatilityConfig.scale ?? DEFAULT_SCORE_VOLATILITY_CONFIG.scale ?? 2;
       const bandFactors = this.scoreVolatilityState.bandFactors
@@ -676,7 +713,17 @@ export class TurnManager {
       remainingRounds: this.scoreVolatilityState.remainingRounds,
       deltaByDiZhi: { ...this.scoreVolatilityState.deltaByDiZhi },
     };
-    if ((this.scoreVolatilityState.model ?? 'uniform') !== 'conflict_banded') return base;
+    const model = this.scoreVolatilityState.model ?? 'uniform';
+    if (model === 'trend_window') {
+      return {
+        ...base,
+        model: 'trend_window',
+        ...(this.scoreVolatilityState.trendWindowByCardId
+          ? { trendWindowByCardId: { ...this.scoreVolatilityState.trendWindowByCardId } }
+          : {}),
+      };
+    }
+    if (model !== 'conflict_banded') return base;
     const bandFactors = this.scoreVolatilityState.bandFactors ?? this.activeVolatilityConfig.bandFactors;
     return {
       ...base,
@@ -701,6 +748,13 @@ export class TurnManager {
     if (!this.isVolatilityRulesVersion() || !this.scoreVolatilityState) return null;
 
     const model = this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform';
+    if (model === 'trend_window') {
+      const trend = this.scoreVolatilityState.trendWindowByCardId?.[card.id];
+      if (!trend) return null;
+      if (trend.direction > 0) return 'rising';
+      if (trend.direction < 0) return 'falling';
+      return 'steady';
+    }
     const direction = model === 'conflict_banded'
       ? this.scoreVolatilityState.directionByDiZhi?.[card.diZhi] ?? 0
       : this.scoreVolatilityState.deltaByDiZhi[card.diZhi] ?? 0;
@@ -738,6 +792,12 @@ export class TurnManager {
   async initialize(): Promise<void> {
     await this.cardDataBank.initialize();
     this.cardPoolManager.initialize(this.buildDeckCards());
+
+    // trend_window 模型：加载完卡牌后创建初始趋势状态
+    if (this.isTrendWindowRulesVersion()) {
+      const allCardIds = this.cardDataBank.getAllCards().map(c => c.id);
+      this.scoreVolatilityState = createTrendWindowState(this.volatilityRandom, allCardIds);
+    }
 
     this.currentRound = 1;
     this.state = 'init';
@@ -1040,6 +1100,21 @@ export class TurnManager {
   }
 
   /**
+   * 计算丹田位中与指定卡牌同 mainElement 的卡牌数（含自身）。
+   * 仅计数丹田位（hand slots），不含锁定牌或牌堆。
+   */
+  private getElementConcentration(card: JiaziCard): number {
+    const hand = this.handManager.getHand();
+    let count = 0;
+    for (const slot of hand) {
+      if (slot && slot.card.mainElement === card.mainElement) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
    * 执行对玩家手牌中持仓卡牌的阶段结算（加分并扣神识，进行爆仓检查）
    */
   private settleHoldings(): void {
@@ -1048,17 +1123,21 @@ export class TurnManager {
     const activeSlots = hand.filter((slot): slot is HandSlot => slot !== null);
     // 杠杆持仓：每回合结算时取当前季内回合的实际倍数（换季从 1.0x 重置）。
     const currentLeverage = this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason());
+    const concentrationPremiumFactor = this.balanceConfig.concentrationPremiumFactor;
     const holdingSettlement = calculateHoldingSettlement(
       activeSlots.map((slot) => ({
         cardName: slot.card.name,
         cardScore: this.getCardScore(slot.card, currentSeason),
         useLeverage: slot.useLeverage,
         isEarth: slot.card.tianGanElement === Element.EARTH,
+        concentrationCount: this.getElementConcentration(slot.card),
+        concentrationPremiumFactor,
       })),
       currentLeverage,
       {
         calculateHoldEarnings: (cardScore, leverage) => this.scoreManager.calculateHoldEarnings(cardScore, leverage),
-        calculateHoldQiCost: (cardScore, leverage, isEarth) => this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth),
+        calculateHoldQiCost: (cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor) =>
+          this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor),
       },
     );
 
@@ -1377,9 +1456,15 @@ export class TurnManager {
       this.refreshBranchRoll();
       console.log(`[TurnManager] 季节切换: ${this.seasonCycle.getCurrentSeason()}`);
     } else if (this.scoreVolatilityState) {
-      this.scoreVolatilityState.remainingRounds--;
-      if (this.scoreVolatilityState.remainingRounds <= 0) {
-        this.refreshScoreVolatility();
+      if (this.isTrendWindowRulesVersion()) {
+        // trend_window 模型：每张牌独立递减窗口，到期自动重置
+        this.decrementTrendWindowRounds();
+      } else {
+        // 旧模型：全局 remainingRounds 递减
+        this.scoreVolatilityState.remainingRounds--;
+        if (this.scoreVolatilityState.remainingRounds <= 0) {
+          this.refreshScoreVolatility();
+        }
       }
     }
 
@@ -1569,13 +1654,19 @@ export class TurnManager {
     if (declaredRules === RULES_VERSION_BRANCH_ROLL && !data.branchRoll) {
       throw new Error('rulesVersion=6 存档缺少 branchRoll，拒绝读档');
     }
+    if (declaredRules === RULES_VERSION_TREND_WINDOW && !data.branchRoll) {
+      throw new Error('rulesVersion=7 存档缺少 branchRoll，拒绝读档');
+    }
     if (declaredRules === RULES_VERSION_BRANCH_ROLL && !isValidBranchRollState(data.branchRoll)) {
       throw new Error('rulesVersion=6 存档的 branchRoll 快照非法，拒绝读档');
+    }
+    if (declaredRules === RULES_VERSION_TREND_WINDOW && !isValidBranchRollState(data.branchRoll)) {
+      throw new Error('rulesVersion=7 存档的 branchRoll 快照非法，拒绝读档');
     }
     this.rulesVersion = declaredRules;
     // V5/V6 空亡规则：SeasonCycle 懒生成模式跟随存档声明（base 构造读 V5/V6 档也要懒生成）。
     this.seasonCycle.setLazy(
-      declaredRules === RULES_VERSION_VOID || declaredRules === RULES_VERSION_BRANCH_ROLL,
+      declaredRules === RULES_VERSION_VOID || declaredRules === RULES_VERSION_BRANCH_ROLL || declaredRules === RULES_VERSION_TREND_WINDOW,
     );
     this.scoreManager.setRules(
       isTradeRulesVersion(declaredRules) ? data.scoreRules! : DEFAULT_SCORE_RULES,
@@ -1639,6 +1730,21 @@ export class TurnManager {
               : {}),
           }
           : {}),
+        ...(savedModel === 'trend_window' && data.scoreVolatility.trendWindowByCardId
+          ? {
+            model: 'trend_window' as const,
+            trendWindowByCardId: Object.fromEntries(
+              Object.entries(data.scoreVolatility.trendWindowByCardId).map(([id, entry]) => [
+                Number(id),
+                {
+                  direction: entry.direction,
+                  remainingRounds: entry.remainingRounds,
+                  windowLength: entry.windowLength,
+                },
+              ]),
+            ),
+          }
+          : {}),
       };
     } else {
       this.activeVolatilityConfig = { ...this.scoreVolatilityConfig, enabled: false, model: 'uniform' };
@@ -1648,7 +1754,7 @@ export class TurnManager {
     // 3.6 地支波动还原：仅 rulesVersion=6 且存档携带合法 branchRoll 时还原；
     //    其余一律置 null——V5 及以下不创建不消耗 roll 随机数，换季/空亡跨季
     //    也不会被 refreshBranchRoll 错误重建（门控按当前生效规则版本）。
-    this.branchRollState = declaredRules === RULES_VERSION_BRANCH_ROLL && isValidBranchRollState(data.branchRoll)
+    this.branchRollState = (declaredRules === RULES_VERSION_BRANCH_ROLL || declaredRules === RULES_VERSION_TREND_WINDOW) && isValidBranchRollState(data.branchRoll)
       ? {
           rulesVersion: RULES_VERSION_BRANCH_ROLL,
           rollByDiZhi: { ...data.branchRoll!.rollByDiZhi },
@@ -1812,6 +1918,34 @@ export class TurnManager {
           })
         ) {
           throw new Error('交易规则存档的 scoreVolatility.bandFactors 必须完整且为有限非负数字，拒绝读档');
+        }
+      }
+    } else if ((model ?? 'uniform') === 'trend_window') {
+      // trend_window 模型校验：trendWindowByCardId 可选；若存在必须是对象，
+      // 每个条目 direction ∈ {-1,0,1}、remainingRounds ≥ 0 整数、windowLength ∈ {2,3,4}
+      const { trendWindowByCardId } = vol;
+      if (trendWindowByCardId !== undefined) {
+        if (!isNonNilRecord(trendWindowByCardId)) {
+          throw new Error('trend_window 存档的 scoreVolatility.trendWindowByCardId 必须是对象，拒绝读档');
+        }
+        for (const [idStr, entry] of Object.entries(trendWindowByCardId)) {
+          const id = Number(idStr);
+          if (!Number.isFinite(id) || !Number.isInteger(id) || id <= 0) {
+            throw new Error(`trend_window 存档的 trendWindowByCardId 键 "${idStr}" 非法，拒绝读档`);
+          }
+          if (!isNonNilRecord(entry)) {
+            throw new Error(`trend_window 存档的 trendWindowByCardId[${id}] 必须是对象，拒绝读档`);
+          }
+          const { direction, remainingRounds: er, windowLength: wl } = entry as Record<string, unknown>;
+          if (direction !== -1 && direction !== 0 && direction !== 1) {
+            throw new Error(`trend_window 存档的 trendWindowByCardId[${id}].direction=${direction} 必须是 -1|0|1，拒绝读档`);
+          }
+          if (typeof er !== 'number' || !Number.isInteger(er) || er < 0) {
+            throw new Error(`trend_window 存档的 trendWindowByCardId[${id}].remainingRounds=${er} 必须是非负整数，拒绝读档`);
+          }
+          if (wl !== 2 && wl !== 3 && wl !== 4) {
+            throw new Error(`trend_window 存档的 trendWindowByCardId[${id}].windowLength=${wl} 必须是 2|3|4，拒绝读档`);
+          }
         }
       }
     } else if (requireTradeFields) {
@@ -1991,13 +2125,17 @@ export class TurnManager {
   getCurrentHoldQiCost(): number {
     const currentSeason = this.getCurrentSeason();
     const currentLeverage = this.getLeverageMultiplier();
+    const concentrationPremiumFactor = this.balanceConfig.concentrationPremiumFactor;
     return this.handManager.getHand().reduce((total, slot) => {
       if (!slot) return total;
       const leverage = slot.useLeverage ? currentLeverage : 1;
+      const concentration = this.getElementConcentration(slot.card);
       return total + this.previewHoldQiCost(
         this.getCardScore(slot.card, currentSeason),
         leverage,
         slot.card.tianGanElement === Element.EARTH,
+        concentration,
+        concentrationPremiumFactor,
       );
     }, 0);
   }
@@ -2128,8 +2266,14 @@ export class TurnManager {
   }
 
   /** 预览持仓卡牌每回合的神识消耗 */
-  previewHoldQiCost(cardScore: number, leverage: number, isEarth: boolean = false): number {
-    return this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth);
+  previewHoldQiCost(
+    cardScore: number,
+    leverage: number,
+    isEarth: boolean = false,
+    concentrationCount: number = 0,
+    concentrationPremiumFactor: number = 0,
+  ): number {
+    return this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor);
   }
 
   /** 预览卖出卡牌的得分结算 */
@@ -2252,17 +2396,31 @@ export class TurnManager {
     const nextSeason = this.getSettlementSeason();
     const nextRoundInSeason = this.seasonCycle.getNextRoundInSeason();
     const settlementLeverage = this.getSettlementLeverageMultiplier();
+    const concentrationPremiumFactor = this.balanceConfig.concentrationPremiumFactor;
+    // 预览用 virtualHand（已移除卖出牌）计算集中度，与实际结算（sell 后 hand 已移除）一致。
+    // 直接用 virtualHand 计数而非 getElementConcentration（后者读 real hand，sell 预览时
+    // real hand 尚未移除卖出牌，会导致集中度偏高、holdQiCost 不一致——concentrationPremiumFactor>0 时触发）。
+    const virtualConcentration = (card: JiaziCard): number => {
+      let count = 0;
+      for (const s of virtualHand) {
+        if (s.card.mainElement === card.mainElement) count++;
+      }
+      return count;
+    };
     const holdingSettlement = calculateHoldingSettlement(
       virtualHand.map((slot) => ({
         cardName: slot.card.name,
         cardScore: this.getCardScore(slot.card, nextSeason),
         useLeverage: slot.useLeverage,
         isEarth: slot.card.tianGanElement === Element.EARTH,
+        concentrationCount: virtualConcentration(slot.card),
+        concentrationPremiumFactor,
       })),
       settlementLeverage,
       {
         calculateHoldEarnings: (cardScore, leverage) => this.scoreManager.calculateHoldEarnings(cardScore, leverage),
-        calculateHoldQiCost: (cardScore, leverage, isEarth) => this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth),
+        calculateHoldQiCost: (cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor) =>
+          this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor),
       },
     );
     const qiAfterHold = qiAfterAction - holdingSettlement.holdQiCost;
@@ -2350,15 +2508,17 @@ export class TurnManager {
     this.rulesVersion = this.initialRulesVersion;
     // 懒生成跟随规则版本：读档切到 V5/V6 后 reset 开新局，需先还原季节模式再重排。
     this.seasonCycle.setLazy(
-      this.initialRulesVersion === RULES_VERSION_VOID || this.initialRulesVersion === RULES_VERSION_BRANCH_ROLL,
+      this.initialRulesVersion === RULES_VERSION_VOID || this.initialRulesVersion === RULES_VERSION_BRANCH_ROLL || this.initialRulesVersion === RULES_VERSION_TREND_WINDOW,
     );
     this.seasonCycle.reset();
     this.scoreManager.setRules(this.initialScoreRules);
     this.scoreVolatilityState = this.isVolatilityRulesVersion()
-      ? createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig)
+      ? (this.isTrendWindowRulesVersion()
+          ? createTrendWindowState(this.volatilityRandom, this.cardDataBank.getAllCards().map(c => c.id))
+          : createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig))
       : null;
     // V6 开新局：按构造默认规则重掷首季 roll（V5 及以下置 null，不消耗 roll 随机数）。
-    this.branchRollState = this.initialRulesVersion === RULES_VERSION_BRANCH_ROLL
+    this.branchRollState = this.initialRulesVersion === RULES_VERSION_BRANCH_ROLL || this.initialRulesVersion === RULES_VERSION_TREND_WINDOW
       ? createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex())
       : null;
     this.qiManager.reset();
@@ -2388,12 +2548,38 @@ export class TurnManager {
     this.lastVoidSwallow = null;
   }
 
+  /**
+   * trend_window 模型专用：递减每张牌的窗口剩余回合数。
+   * 若某牌 remainingRounds 归零，则为该牌重新抽取方向与窗口长度（重置窗口）。
+   * 替代旧的全局 remainingRounds-- 逻辑。
+   */
+  private decrementTrendWindowRounds(): void {
+    if (!this.scoreVolatilityState?.trendWindowByCardId) return;
+    for (const cardId of Object.keys(this.scoreVolatilityState.trendWindowByCardId).map(Number)) {
+      const entry = this.scoreVolatilityState.trendWindowByCardId[cardId];
+      if (!entry) continue;
+      entry.remainingRounds--;
+      if (entry.remainingRounds <= 0) {
+        // 窗口到期：为该牌重新抽取方向与窗口长度
+        entry.direction = pickTrendDirection(this.volatilityRandom);
+        entry.windowLength = pickWindowLength(this.volatilityRandom);
+        entry.remainingRounds = entry.windowLength;
+      }
+    }
+  }
+
   private refreshScoreVolatility(): void {
     // 门控以当前生效规则版本为准：只有已知的波动规则版本才在
     // 换季/倒计时归零时重建波动状态。base 规则（含旧档）与未知未来规则版本
     // 绝不在换季/倒计时归零时静默重建波动状态——否则旧档会被当前构建的开关
     // "半开不开"地套上波动，未知版本也会被错当波动规则。
     if (!this.isVolatilityRulesVersion()) return;
+    if (this.isTrendWindowRulesVersion()) {
+      // trend_window 模型：为所有牌生成新的独立趋势窗口
+      const allCardIds = this.cardDataBank.getAllCards().map(c => c.id);
+      this.scoreVolatilityState = createTrendWindowState(this.volatilityRandom, allCardIds);
+      return;
+    }
     this.scoreVolatilityState = createScoreVolatilityState(
       this.volatilityRandom,
       { ...this.activeVolatilityConfig, enabled: true },

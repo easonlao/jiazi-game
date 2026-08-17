@@ -23,12 +23,13 @@ export {
   BALANCED_TRADE_REPLAY_RULES,
   VOID_REPLAY_RULES,
   BRANCH_ROLL_REPLAY_RULES,
+  TREND_WINDOW_REPLAY_RULES,
   SUPPORTED_REPLAY_RULES,
   getReplayRulesByVersion,
   CURRENT_REPLAY_RULES,
   cloneReplayRulesSnapshot,
 } from './ReplayRules';
-export type { ReplayRulesSnapshot, VoidReplayRulesSnapshot, VoidReplayFields, BranchRollReplayRulesSnapshot, BranchRollReplayConfig } from './ReplayRules';
+export type { ReplayRulesSnapshot, VoidReplayRulesSnapshot, VoidReplayFields, BranchRollReplayRulesSnapshot, BranchRollReplayConfig, TrendWindowReplayRulesSnapshot } from './ReplayRules';
 
 export { SeasonCycle, LAZY_SEASON_LENGTH_DISTRIBUTION } from './SeasonCycle';
 export type { Season, SeasonCycleOptions } from './SeasonCycle';
@@ -60,6 +61,14 @@ export {
   BAND_FACTOR,
   relationBand,
   cardAmplitude,
+  pickTrendDirection,
+  pickWindowLength,
+  getTrendDecayFactor,
+  computeTrendDelta,
+  createTrendWindowState,
+  TREND_WINDOW_WEIGHTS,
+  TREND_WINDOW_PROBABILITIES,
+  TREND_FLAT_DELTA,
 } from './ScoreVolatility';
 export type {
   ScoreVolatilityConfig,
@@ -81,6 +90,7 @@ export {
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_VOID,
   RULES_VERSION_BRANCH_ROLL,
+  RULES_VERSION_TREND_WINDOW,
 } from './GameSaveService';
 export type { GameSnapshot, GameSaveLoadError, SupportedRulesVersion, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
 

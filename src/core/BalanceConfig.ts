@@ -52,6 +52,12 @@ export interface BalanceConfig {
    * （否则"买入土牌杠杆躺着不动"成为无脑最优）。非土牌用 leverageQiCostPerX。
    */
   earthLeverageQiCostPerX: number;
+  /**
+   * 同元素集中度溢价系数：concentrationPremium = k × (elementCount - 1)
+   * elementCount = 丹田位中与目标卡 mainElement 相同的卡牌数（max 3）。
+   * k = 0 时禁用（向后兼容默认）。
+   */
+  concentrationPremiumFactor: number;
 }
 
 /** 当前默认配置（模拟验证候选） */
@@ -82,6 +88,8 @@ export const DEFAULT_BALANCE_CONFIG: BalanceConfig = {
   holdQiMin: 0.5,
   leverageQiCostPerX: 2,
   earthLeverageQiCostPerX: 5,
+  /** 同元素集中度溢价系数（V7 生产默认 1 = 启用） */
+  concentrationPremiumFactor: 1,
 };
 
 /** 兼容旧调用方的候选配置别名；生产入口与默认配置完全一致。 */
