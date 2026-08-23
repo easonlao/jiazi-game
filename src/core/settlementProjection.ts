@@ -9,6 +9,8 @@ export interface ProjectedHolding {
   qiCost: number;
   isLeverage: boolean;
   isNewBuy: boolean;
+  /** 该牌在投影手牌中的浓度信息（仅 V7 生效且同元素 ≥2 张时存在），UI 展示浓度来源用。 */
+  concentration?: { count: number; premium: number };
 }
 
 /**
@@ -48,17 +50,25 @@ export function buildProjectedHoldings(
     if (card) slots.push({ card, useLeverage: actionUsesLeverage, isNewBuy: true });
   }
 
+  const factor = tm.getConcentrationPremiumFactor();
+  // 浓度基于投影后的虚拟手牌计数（纳灵并入新牌/释灵剔除卖出牌后），与 previewSettlement 的
+  // virtualConcentration 同口径——否则买/卖预览的浓度会与真实结算不一致。
+  const countOf = (card: JiaziCard) => slots.filter((s) => s.card.mainElement === card.mainElement).length;
+
   return slots.map((slot) => {
     const score = tm.getCardScore(slot.card, tm.getCurrentSeason());
     const lev = slot.useLeverage ? nextLev : 1;
     const earning = tm.previewHoldEarning(score, lev);
-    const qiCost = tm.previewHoldQiCost(score, lev, slot.card.tianGanElement === Element.EARTH);
+    const count = countOf(slot.card);
+    const premium = factor * Math.max(0, count - 1);
+    const qiCost = tm.previewHoldQiCost(score, lev, slot.card.tianGanElement === Element.EARTH, count, factor);
     return {
       name: slot.card.name,
       earning,
       qiCost,
       isLeverage: slot.useLeverage,
       isNewBuy: slot.isNewBuy,
+      concentration: factor > 0 && count >= 2 ? { count, premium } : undefined,
     };
   });
 }

@@ -263,6 +263,11 @@ export function SettlementPreviewModal() {
                             {signed(s.earning)}修为
                           </span>
                           <span className="text-qi-critical ml-1">-{s.qiCost.toFixed(1)}神识</span>
+                          {s.concentration && (
+                            <span className="ml-1 text-[9px] text-amber-700 font-bold" data-testid="projected-concentration">
+                              含浓度+{s.concentration.premium}
+                            </span>
+                          )}
                         </span>
                       </div>
                     ))}

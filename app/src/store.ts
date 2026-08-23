@@ -16,6 +16,7 @@ import {
   isVoidCard,
   BALANCED_TRADE_REPLAY_RULES,
   BRANCH_ROLL_REPLAY_RULES,
+  TREND_WINDOW_REPLAY_RULES,
   CURRENT_REPLAY_RULES,
   VOID_REPLAY_RULES,
   CURRENT_RULES_VERSION,
@@ -309,6 +310,8 @@ interface GameStore {
   previewWaitQi: () => {
     afterQi: number;
     holdQiCost: number;
+    /** 浓度溢价总耗神（仅 V7 生效；V6 及以下恒 0），UI 拆行展示用。 */
+    concentrationPremium: number;
     lockedQiCost: number;
     midQi: number;
     /** 扣除神识后神识归零或为负。 */
@@ -688,8 +691,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // 1. `?rules=v4|v5` URL 参数——E2E 用 `?rules=v4` 跑确定性流程回归
       //    （V5 空亡随机推进回合，固定流程断言需要 V4 确定性；空亡机制由引擎单测
       //    与浏览器行为验证覆盖）；也用于手动对比。
-      // 2. `VITE_RULES_VERSION=5` env——本地预览 V5 空亡（不进 git 的 .env.local）。
-      // 3. 缺省 = 生产默认 CURRENT_REPLAY_RULES（V5，2026-08-14 用户拍板翻转）。
+      // 2. `?rules=v7` URL 参数——本地预览 V7（趋势窗口 + 浓度溢价，2026-08-23 加入，
+      //    因 .env.local 的 VITE_RULES_VERSION=5 会让缺省走 V5，需显式 v7 预览）。
+      // 3. `VITE_RULES_VERSION=5` env——本地预览 V5 空亡（不进 git 的 .env.local）。
+      // 4. 缺省 = 生产默认 CURRENT_REPLAY_RULES（V7，2026-08-17 用户拍板翻转）。
       const urlRules = new URLSearchParams(window.location.search).get('rules');
       const previewRules = urlRules === 'v4'
         ? BALANCED_TRADE_REPLAY_RULES
@@ -697,9 +702,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           ? VOID_REPLAY_RULES
           : urlRules === 'v6'
             ? BRANCH_ROLL_REPLAY_RULES
-            : import.meta.env.VITE_RULES_VERSION === '5'
-              ? VOID_REPLAY_RULES
-              : CURRENT_REPLAY_RULES;
+            : urlRules === 'v7'
+              ? TREND_WINDOW_REPLAY_RULES
+              : import.meta.env.VITE_RULES_VERSION === '5'
+                ? VOID_REPLAY_RULES
+                : CURRENT_REPLAY_RULES;
       const tm = new TurnManager(undefined, undefined, {
         storage: localStorageProvider,
         rulesVersion: previewRules.rulesVersion,
@@ -1335,16 +1342,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   previewWaitQi() {
     const tm = get().turnManager;
     if (!tm) return {
-      afterQi: get().qi, holdQiCost: 0, lockedQiCost: 0, midQi: get().qi,
-       willQiDeplete: false, willMarginCall: false, hasLeverage: false,
+      afterQi: get().qi, holdQiCost: 0, concentrationPremium: 0, lockedQiCost: 0, midQi: get().qi,
+      willQiDeplete: false, willMarginCall: false, hasLeverage: false,
     };
 
     // 最后一回合：等待会直接结束游戏（advanceTurn → 61 > 60 → endGame），
     // 不会发生下一回合结算或回神，预览必须返回当前神识、零耗神。
     if (get().currentRound >= tm.getTotalRounds()) {
       return {
-        afterQi: get().qi, holdQiCost: 0, lockedQiCost: 0, midQi: get().qi,
-         willQiDeplete: false, willMarginCall: false, hasLeverage: false,
+        afterQi: get().qi, holdQiCost: 0, concentrationPremium: 0, lockedQiCost: 0, midQi: get().qi,
+        willQiDeplete: false, willMarginCall: false, hasLeverage: false,
       };
     }
 
@@ -1356,6 +1363,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const currentSeason = tm.getCurrentSeason();
     const handSlots = tm.getHand();
     let holdQiCost = 0;
+    let concentrationPremium = 0;
     const lockedQiCost = tm.getLockedCardIds().length * TurnManager.LOCK_COST_PER_CARD;
     let hasLeverage = false;
     for (const slot of handSlots) {
@@ -1363,10 +1371,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const score = tm.getCardScore(slot.card, currentSeason);
       const leverage = slot.useLeverage ? tm.getNextLeverageNoSeasonChange() : 1;
       if (slot.useLeverage) hasLeverage = true;
+      const { count, premium } = tm.getConcentrationInfo(slot.card);
+      concentrationPremium += premium;
       holdQiCost += tm.previewHoldQiCost(
         score,
         leverage,
         slot.card.tianGanElement === Element.EARTH,
+        count,
+        tm.getConcentrationPremiumFactor(),
       );
     }
     const qi = get().qi;
@@ -1378,7 +1390,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ? midQi
       : Math.min(tm.getMaxQi(), midQi + tm.getBaseRecovery() + tm.getWaitBonus());
 
-    return { afterQi, holdQiCost, lockedQiCost, midQi, willQiDeplete, willMarginCall, hasLeverage };
+    return { afterQi, holdQiCost, concentrationPremium, lockedQiCost, midQi, willQiDeplete, willMarginCall, hasLeverage };
   },
 }));
 

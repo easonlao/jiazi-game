@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store';
 import { HandCard } from './HandCard';
 import type { HandSlot } from '@core/HandSlot';
+import { Element } from '@core/JiaziCard';
 
 export function HandCards() {
   const hand = useGameStore((s) => s.hand);
@@ -86,7 +87,15 @@ export function HandCards() {
                 ? (turnManager ? turnManager.getNextLeverageNoSeasonChange() : 1)
                 : 1;
             const holdEarning = turnManager ? turnManager.previewHoldEarning(score, currentLeverage) : 0;
-            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(score, currentLeverage) : 0;
+            // 浓度溢价：单卡耗神显示含浓度总价（与实际扣费一致）；徽标暗示来源（V7 生效，V6 及以下 premium=0）。
+            const concentration = turnManager ? turnManager.getConcentrationInfo(slot.card) : undefined;
+            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(
+              score,
+              currentLeverage,
+              slot.card.tianGanElement === Element.EARTH,
+              concentration?.count ?? 0,
+              turnManager.getConcentrationPremiumFactor(),
+            ) : 0;
 
             return (
               <HandCard
@@ -107,6 +116,7 @@ export function HandCards() {
                 holdEarnings={slot.holdEarnings}
                 holdEarning={holdEarning}
                 holdQiCost={holdQiCost}
+                concentration={concentration}
                 sellPreview={sellPreview}
                 shattered={shatteredSlots.has(i)}
               />

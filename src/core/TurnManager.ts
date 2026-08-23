@@ -560,6 +560,15 @@ export class TurnManager {
       && (this.activeVolatilityConfig.model ?? 'uniform') === 'trend_window';
   }
 
+  /**
+   * 浓度溢价系数按规则版本门控：仅 V7（trend_window）生效，V6 及以下视为 0。
+   * 设计意图：浓度溢价是 V7 新增机制，V6 保留为历史兼容（design.md 第 6 节）。
+   * public：core 投影层（settlementProjection）需按同一门控计算虚拟浓度。
+   */
+  getConcentrationPremiumFactor(): number {
+    return this.isTrendWindowRulesVersion() ? this.balanceConfig.concentrationPremiumFactor : 0;
+  }
+
   getCardScore(card: JiaziCard, season: string): number {
     const baseScore = card.getSeasonScore(season, this.balanceConfig);
     // 门控以"当前生效规则版本"为准（读档后=存档声明），而非构造函数开关；
@@ -1115,6 +1124,16 @@ export class TurnManager {
   }
 
   /**
+   * 某张丹田位卡的浓度信息（UI 展示用）：count = 同 mainElement 丹田位持有数，
+   * premium = 该卡当前浓度溢价（仅 V7 生效，V6 及以下恒 0）。
+   */
+  getConcentrationInfo(card: JiaziCard): { count: number; premium: number } {
+    const count = this.getElementConcentration(card);
+    const premium = this.getConcentrationPremiumFactor() * Math.max(0, count - 1);
+    return { count, premium };
+  }
+
+  /**
    * 执行对玩家手牌中持仓卡牌的阶段结算（加分并扣神识，进行爆仓检查）
    */
   private settleHoldings(): void {
@@ -1123,7 +1142,7 @@ export class TurnManager {
     const activeSlots = hand.filter((slot): slot is HandSlot => slot !== null);
     // 杠杆持仓：每回合结算时取当前季内回合的实际倍数（换季从 1.0x 重置）。
     const currentLeverage = this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason());
-    const concentrationPremiumFactor = this.balanceConfig.concentrationPremiumFactor;
+    const concentrationPremiumFactor = this.getConcentrationPremiumFactor();
     const holdingSettlement = calculateHoldingSettlement(
       activeSlots.map((slot) => ({
         cardName: slot.card.name,
@@ -2125,7 +2144,7 @@ export class TurnManager {
   getCurrentHoldQiCost(): number {
     const currentSeason = this.getCurrentSeason();
     const currentLeverage = this.getLeverageMultiplier();
-    const concentrationPremiumFactor = this.balanceConfig.concentrationPremiumFactor;
+    const concentrationPremiumFactor = this.getConcentrationPremiumFactor();
     return this.handManager.getHand().reduce((total, slot) => {
       if (!slot) return total;
       const leverage = slot.useLeverage ? currentLeverage : 1;
@@ -2396,7 +2415,7 @@ export class TurnManager {
     const nextSeason = this.getSettlementSeason();
     const nextRoundInSeason = this.seasonCycle.getNextRoundInSeason();
     const settlementLeverage = this.getSettlementLeverageMultiplier();
-    const concentrationPremiumFactor = this.balanceConfig.concentrationPremiumFactor;
+    const concentrationPremiumFactor = this.getConcentrationPremiumFactor();
     // 预览用 virtualHand（已移除卖出牌）计算集中度，与实际结算（sell 后 hand 已移除）一致。
     // 直接用 virtualHand 计数而非 getElementConcentration（后者读 real hand，sell 预览时
     // real hand 尚未移除卖出牌，会导致集中度偏高、holdQiCost 不一致——concentrationPremiumFactor>0 时触发）。
