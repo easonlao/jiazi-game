@@ -85,8 +85,8 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
                 selected={selectedPublicCard === i}
                 onSelect={() => {
                   if (selectedPublicCard !== i) selectPublicCard(i);
-                  setHistoryCard(card);
                 }}
+                onOpenHistory={() => setHistoryCard(card)}
                 disabled={gameState !== 'player_action'}
                 locked={lockedCardIds.includes(card.id)}
                 onToggleLock={gameState === 'player_action' ? () => toggleLockCard(i) : undefined}
@@ -177,6 +177,7 @@ function PublicCardItem({
   index,
   selected,
   onSelect,
+  onOpenHistory,
   disabled,
   locked,
   onToggleLock,
@@ -185,6 +186,7 @@ function PublicCardItem({
   index: number;
   selected: boolean;
   onSelect: () => void;
+  onOpenHistory: () => void;
   disabled: boolean;
   locked: boolean;
   onToggleLock?: () => void;
@@ -213,6 +215,7 @@ function PublicCardItem({
       nextScore={nextScore}
       selected={selected}
       onClick={disabled ? undefined : onSelect}
+      onOpenHistory={onOpenHistory}
       buyCost={cost}
       canAfford={canAfford}
       holdEarning={holdEarning}

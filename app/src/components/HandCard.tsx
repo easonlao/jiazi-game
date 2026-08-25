@@ -1,6 +1,7 @@
 import type { JiaziCard } from '@core/JiaziCard';
 import { Element } from '@core/JiaziCard';
 import { CardVisual } from './CardVisual';
+import { CardHistoryButton } from './CardHistoryButton';
 
 /** 神识消耗统一色（2026-08-06 issue 01 P3：神识消耗=资源冷色，修为才用红绿） */
 const QI_COST_COLOR = 'text-sky-600';
@@ -22,6 +23,8 @@ interface HandCardProps {
   buyScore: number;
   selected?: boolean;
   onClick?: () => void;
+  /** 打开本局评分与买卖行迹，不改变卡牌选中态。 */
+  onOpenHistory: () => void;
   /** 杠杆信息：当前倍数、下回合结算倍数、是否启用 */
   leverage: number;
   settlementLeverage?: number;
@@ -51,6 +54,7 @@ export function HandCard({
   buyScore,
   selected,
   onClick,
+  onOpenHistory,
   leverage,
   settlementLeverage,
   isLeverage,
@@ -114,6 +118,8 @@ export function HandCard({
           </span>
         </div>
       </div>
+
+      <CardHistoryButton cardName={card.name} onOpen={onOpenHistory} />
 
       </CardVisual>
     </div>

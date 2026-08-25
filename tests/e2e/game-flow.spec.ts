@@ -11,10 +11,11 @@
 import { test, expect } from '@playwright/test';
 import {
   closePublicCardHistory,
+  getHandCard,
   getPublicCard,
   getPublicCardHistoryModal,
   openPublicCardHistory,
-  selectPublicCardAndCloseHistory,
+  selectPublicCard,
 } from './public-card-history';
 
 /** 确认行动；确认后直接进入下一回合，不再等待实际结算弹窗。 */
@@ -143,6 +144,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
       await expect(helpModal).toBeHidden();
 
       const publicCard = getPublicCard(page);
+      await publicCard.click();
       await openPublicCardHistory(page, publicCard);
       await closePublicCardHistory(page);
       const buyButton = page.getByRole('button', { name: /纳灵/ });
@@ -150,18 +152,23 @@ test.describe('甲子纪 E2E 游戏流程', () => {
       await buyButton.click();
       await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
       await page.getByRole('button', { name: '返回修改' }).click();
-      await selectPublicCardAndCloseHistory(page);
+      await selectPublicCard(page);
     }
   });
 
-  test('公共牌单牌行迹弹窗可打开、关闭并保留选择', async ({ page }) => {
+  test('公共牌卡面只负责选中，行迹按钮独立打开详情', async ({ page }) => {
     await startGameAndDismiss(page);
 
     const firstPublicCard = getPublicCard(page);
     const modal = getPublicCardHistoryModal(page);
 
+    await firstPublicCard.click();
+    await expect(modal).toHaveCount(0);
+    await expect(firstPublicCard).toHaveAttribute('data-selected', 'true');
+
     await openPublicCardHistory(page, firstPublicCard);
     await expect(modal.getByText('单牌行迹', { exact: true })).toBeVisible();
+    await expect(modal.getByText('评分波动', { exact: true })).toBeVisible();
     await expect(modal.getByText('买卖记录', { exact: true })).toBeVisible();
     await expect(modal.getByTestId('public-card-history-chart')).toBeVisible();
     await expect(firstPublicCard).toHaveAttribute('data-selected', 'true');
@@ -176,6 +183,30 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByText(/纳灵成功|空亡触发/).first()).toBeVisible({ timeout: 5_000 });
   });
 
+  test('手牌与公共牌使用同一套行迹按钮和详情弹窗', async ({ page }) => {
+    await startGameAndDismiss(page);
+
+    await selectPublicCard(page);
+    await page.getByRole('button', { name: /纳灵/ }).click();
+    await confirmSettlementPreview(page);
+    await dismissSettlement(page);
+
+    const handCard = getHandCard(page);
+    const modal = getPublicCardHistoryModal(page);
+    await expect(handCard).toBeVisible({ timeout: 10_000 });
+    await expect(handCard.getByTestId('card-history-button')).toHaveAccessibleName(/查看.+行迹/);
+
+    await handCard.click();
+    await expect(handCard).toHaveAttribute('data-selected', 'true');
+    await expect(modal).toHaveCount(0);
+
+    await openPublicCardHistory(page, handCard);
+    await expect(modal.getByText('纳灵', { exact: true })).toBeVisible();
+    await expect(modal.getByText('买卖次数', { exact: true })).toBeVisible();
+    await closePublicCardHistory(page);
+    await expect(handCard).toHaveAttribute('data-selected', 'true');
+  });
+
   test('公共牌行迹弹窗锁按钮不冒泡，390x844 下曲线与关闭按钮可见', async ({ page }) => {
     await startGameAndDismiss(page);
 
@@ -186,9 +217,11 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     const firstPublicCard = getPublicCard(page);
+    await firstPublicCard.click();
     const modal = await openPublicCardHistory(page, firstPublicCard);
     const chart = modal.getByTestId('public-card-history-chart');
     const closeButton = modal.getByTestId('public-card-history-close');
+    const historyButton = firstPublicCard.getByTestId('card-history-button');
     const viewport = { width: 390, height: 844 };
 
     for (const locator of [modal, chart, closeButton]) {
@@ -201,6 +234,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     }
 
     await expect(closeButton).toBeVisible();
+    await expect.poll(async () => (await historyButton.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await expect.poll(async () => (await closeButton.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
     await closePublicCardHistory(page);
     await expect(modal).toBeHidden();
     await expect(firstPublicCard).toHaveAttribute('data-selected', 'true');
@@ -209,7 +244,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
   test('本地存档续局后保留公共牌曲线并继续追加', async ({ page }) => {
     await startGameAndDismiss(page);
 
-    await selectPublicCardAndCloseHistory(page);
+    await selectPublicCard(page);
     await page.getByRole('button', { name: /纳灵/ }).click();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
@@ -279,7 +314,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByText('周遭灵气')).toBeVisible();
 
     // 点击第一股灵气（卡名会显示天干地支，如「甲子」）
-    await selectPublicCardAndCloseHistory(page);
+    await selectPublicCard(page);
 
     // 点击纳灵
     await page.getByRole('button', { name: /纳灵/ }).click();
@@ -315,7 +350,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
 
     for (let i = 0; i < 3; i++) {
-      await selectPublicCardAndCloseHistory(page);
+      await selectPublicCard(page);
       await page.getByRole('button', { name: /纳灵/ }).click();
       await confirmSettlementPreview(page);
       await dismissSettlement(page);
@@ -360,7 +395,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // ===== 第 1 回合：纳灵一张灵气 =====
     await expect(page.getByText('周遭灵气')).toBeVisible();
-    await selectPublicCardAndCloseHistory(page);
+    await selectPublicCard(page);
     await page.getByRole('button', { name: /纳灵/ }).click();
     await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
     await confirmSettlementPreview(page);
@@ -436,7 +471,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByRole('button', { name: /燃灵 ON/ })).toBeVisible();
 
     // 选择公共牌
-    await selectPublicCardAndCloseHistory(page);
+    await selectPublicCard(page);
 
     // 纳灵
     await page.getByRole('button', { name: /纳灵/ }).click();
@@ -508,7 +543,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.locator('.card-in').first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('周遭暂无灵气浮现', { exact: true })).toHaveCount(0);
     // 新一局仍可正常买入
-    await selectPublicCardAndCloseHistory(page);
+    await selectPublicCard(page);
     await page.getByRole('button', { name: /纳灵/ }).click();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
@@ -523,6 +558,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
       // 纳灵
       const card = getPublicCard(page);
       await expect(card).toBeVisible({ timeout: 10_000 });
+      await card.click();
       await openPublicCardHistory(page, card);
       await closePublicCardHistory(page);
       await page.getByRole('button', { name: /纳灵/ }).click();

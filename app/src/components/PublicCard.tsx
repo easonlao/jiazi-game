@@ -1,6 +1,7 @@
 import type { JiaziCard } from '@core/JiaziCard';
 import type { VolatilityTrend } from '@core/ScoreVolatility';
 import { CardVisual } from './CardVisual';
+import { CardHistoryButton } from './CardHistoryButton';
 
 /** 神识消耗统一色（2026-08-06 issue 01 P3：神识消耗=资源冷色，修为才用红绿） */
 const QI_COST_COLOR = 'text-sky-600';
@@ -19,6 +20,8 @@ interface PublicCardProps {
   locked?: boolean;
   /** 锁定回调（点击锁按钮触发） */
   onToggleLock?: () => void;
+  /** 打开本局评分与买卖行迹，不改变卡牌选中态。 */
+  onOpenHistory: () => void;
   /** 实验模式下相对基础评分的实际变化。 */
   volatilityDelta?: number;
   /** 趋势窗口方向（rising/falling/steady）。 */
@@ -32,6 +35,7 @@ interface PublicCardProps {
 export function PublicCard({
   card, score, nextScore, selected, onClick, buyCost, canAfford,
   holdEarning, holdQiCost, locked, onToggleLock,
+  onOpenHistory,
   volatilityDelta, volatilityTrend,
 }: PublicCardProps) {
   return (
@@ -111,6 +115,7 @@ export function PublicCard({
           </div>
         )}
       </div>
+      <CardHistoryButton cardName={card.name} onOpen={onOpenHistory} />
     </CardVisual>
   );
 }

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store';
 import { HandCard } from './HandCard';
+import { PublicCardHistoryModal } from './PublicCardHistoryModal';
 import type { HandSlot } from '@core/HandSlot';
-import { Element } from '@core/JiaziCard';
+import { Element, type JiaziCard } from '@core/JiaziCard';
 
 export function HandCards() {
+  const [historyCard, setHistoryCard] = useState<JiaziCard | null>(null);
   const hand = useGameStore((s) => s.hand);
   const selectedHandCard = useGameStore((s) => s.selectedHandCard);
   const selectHandCard = useGameStore((s) => s.selectHandCard);
@@ -42,6 +44,10 @@ export function HandCards() {
       }, 3200);
     }
   }, [marginCallEvent]);
+
+  useEffect(() => {
+    if (gameState === 'init') setHistoryCard(null);
+  }, [gameState]);
 
   const hasCards = hand.some((s) => s !== null);
 
@@ -110,6 +116,7 @@ export function HandCards() {
                     ? () => selectHandCard(i)
                     : undefined
                 }
+                onOpenHistory={() => setHistoryCard(slot.card)}
                 leverage={currentLeverage}
                 settlementLeverage={settlementLeverage}
                 isLeverage={slot.useLeverage}
@@ -123,6 +130,14 @@ export function HandCards() {
             );
           })}
         </div>
+      )}
+      {historyCard && turnManager && (
+        <PublicCardHistoryModal
+          card={historyCard}
+          turnManager={turnManager}
+          roundLog={turnManager.getRoundLog()}
+          onClose={() => setHistoryCard(null)}
+        />
       )}
     </div>
   );

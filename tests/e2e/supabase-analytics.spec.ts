@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { selectPublicCardAndCloseHistory } from './public-card-history';
+import { selectPublicCard } from './public-card-history';
 
 test.describe('Supabase 匿名身份与遥测', () => {
   test.skip(
@@ -47,7 +47,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     const startResult = await startResponse.json() as { session_id?: string };
     expect(startResult.session_id).toBeTruthy();
 
-    await selectPublicCardAndCloseHistory(page);
+    await selectPublicCard(page);
     await page.getByRole('button', { name: /纳灵/ }).click();
     const actionUploadResponse = page.waitForResponse(
       (response) => response.url().includes('/rest/v1/game_events') && response.request().method() === 'POST',
