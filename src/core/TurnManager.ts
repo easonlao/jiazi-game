@@ -30,6 +30,7 @@ import {
   RULES_VERSION_VOID,
   type GameSnapshot,
   type GameSaveLoadError,
+  type PublicCardHistorySnapshot,
   type SupportedRulesVersion,
 } from './GameSaveService.ts';
 import {
@@ -144,6 +145,10 @@ export interface SettlementDetail {
 export interface RoundLogEntry {
   /** 回合序号（1-60） */
   round: number;
+  /** 真实行动发生回合（买/卖/等候时与 round 可能不同；终局出清回退到当前回合） */
+  actionRound?: number | null;
+  /** 旧存档兼容补录，只有近似事实，不得冒充真实交易记录。 */
+  compatReconstructed?: boolean;
   /** 该回合所处季节（spring/summer/autumn/winter） */
   season: string;
   /** 季内第几回合 */
@@ -385,10 +390,14 @@ export class TurnManager {
   private totalLocks: number = 0;
   /** 回合数据留存：每回合一条完整记录（交易看板/局终总结的数据源） */
   private roundLog: RoundLogEntry[] = [];
+  /** 公共卡池历史：逐回合真实评分快照（不从当前状态反推）。 */
+  private publicCardHistory: PublicCardHistorySnapshot[] = [];
   /** 决策日志：每次行动记录「情境 × 动作」（局终行为评价用） */
   private decisionLog: DecisionEntry[] = [];
   /** 最后行动的卡牌信息快照（buildRoundLogEntry 归档用，行动时同步更新） */
   private lastActionCard: LastActionCardInfo | null = null;
+  /** 最近一次玩家行动发生的回合号（用于 roundLog 行动层） */
+  private lastActionRound: number | null = null;
 
   // 回调
   private onStateChange?: (state: GameState) => void;
@@ -529,8 +538,10 @@ export class TurnManager {
     this.totalLeverageBuys = 0;
     this.totalLocks = 0;
     this.roundLog = [];
+    this.publicCardHistory = [];
     this.decisionLog = [];
     this.lastActionCard = null;
+    this.lastActionRound = null;
 
     this.saveService = new GameSaveService(options?.storage);
   }
@@ -903,6 +914,7 @@ export class TurnManager {
     // 行动层信息从 lastAction 与 lastSettlementDetail 重建——卖出专属的 buyScore/sellScore
     // 在 executeSell 时已结算，这里直接读最后行动即可（无历史追溯需求，看板逐回合展示）。
     this.roundLog.push(this.buildRoundLogEntry());
+    this.capturePublicCardHistorySnapshot();
 
     // 4. 等待玩家操作
     this.state = 'player_action';
@@ -1016,6 +1028,7 @@ export class TurnManager {
 
     // 5. 归档本回合（action = 上一回合的行动；空亡回合本身无玩家行动）。
     this.roundLog.push(this.buildRoundLogEntry());
+    this.capturePublicCardHistorySnapshot();
 
     // 6. 触发当回合结束后牌回牌堆：空亡回合无玩家行动，公共区未锁定牌需显式回堆，
     //    否则下回合 drawCards 会把它们静默丢弃（deck 流失——"公共池缩水"同源 bug）。
@@ -1053,6 +1066,7 @@ export class TurnManager {
     const roundInSeason = this.seasonCycle.getCurrentRoundInSeason();
     const action = this.lastAction;
     const settlement = this.lastSettlementDetail!;
+    const actionRound = action && this.lastActionRound !== null ? this.lastActionRound : null;
 
     // 从结算明细重建行动层信息：
     // - buy/sell 涉及的卡牌名：结算明细的 holdItems 里存的是"该回合持仓结算"的卡，
@@ -1085,6 +1099,7 @@ export class TurnManager {
 
     return {
       round: this.currentRound,
+      actionRound,
       season,
       roundInSeason,
       action,
@@ -1106,6 +1121,48 @@ export class TurnManager {
       scoreAfter: this.scoreManager.getScore(),
       qiAfter: this.qiManager.getQi(),
     };
+  }
+
+  /** 捕获当前回合的公共牌历史事实快照（60 张普通甲子牌，按 ID 顺序）。 */
+  private capturePublicCardHistorySnapshot(): void {
+    const scores = this.cardDataBank
+      .getAllCards()
+      .filter((card) => !isVoidCard(card))
+      .sort((a, b) => a.id - b.id)
+      .map((card) => {
+        const score = this.getCardScore(card, this.seasonCycle.getCurrentSeason());
+        return Object.is(score, -0) ? 0 : score;
+      });
+    const snapshot = {
+      round: this.currentRound,
+      scores,
+    };
+    const existingIndex = this.publicCardHistory.findIndex((entry) => entry.round === this.currentRound);
+    if (existingIndex >= 0) {
+      this.publicCardHistory[existingIndex] = snapshot;
+    } else {
+      this.publicCardHistory.push(snapshot);
+      this.publicCardHistory.sort((a, b) => a.round - b.round);
+    }
+  }
+
+  /** 获取整局公共牌历史快照，只读。 */
+  getPublicCardHistory(): readonly PublicCardHistorySnapshot[] {
+    return this.publicCardHistory;
+  }
+
+  /** 获取指定卡牌的逐回合历史评分（若无则返回空数组）。 */
+  getPublicCardHistoryForCard(cardId: number): { round: number; score: number }[] {
+    const index = cardId - 1;
+    if (index < 0) return [];
+    return this.publicCardHistory.flatMap((entry) => {
+      const score = entry.scores[index];
+      if (typeof score !== 'number' || !Number.isFinite(score)) return [];
+      return [{
+        round: entry.round,
+        score,
+      }];
+    });
   }
 
   /**
@@ -1311,6 +1368,7 @@ export class TurnManager {
     }
     if (unlockedToReturn.length > 0) this.cardPoolManager.returnCards(unlockedToReturn);
 
+    this.lastActionRound = this.currentRound;
     this.lastAction = 'buy';
     this.recordDecision('buy');
     this.advanceTurn();
@@ -1366,6 +1424,7 @@ export class TurnManager {
       };
     }
 
+    this.lastActionRound = this.currentRound;
     this.lastAction = 'sell';
     this.recordDecision('sell');
     // 卖出后公共牌回牌堆（锁定中的牌保留在公共区）。
@@ -1392,6 +1451,7 @@ export class TurnManager {
     const { unlocked } = this.lockManager.partitionLocked(publicCards);
     this.cardPoolManager.returnCards(unlocked);
 
+    this.lastActionRound = this.currentRound;
     this.lastAction = 'wait';
     this.recordDecision('wait');
     this.totalWaits++;
@@ -1525,6 +1585,7 @@ export class TurnManager {
       // 归档一条「出清」回合记录（round = 终局回合 61，供行迹看板展示）
       this.roundLog.push({
         round: this.currentRound,
+        actionRound: this.currentRound - 1,
         season: currentSeason,
         roundInSeason: this.seasonCycle.getCurrentRoundInSeason(),
         action: 'settle',
@@ -1610,6 +1671,10 @@ export class TurnManager {
       },
       lockedCardIds: this.lockManager.getLockedCardIds(),
       roundLog: this.roundLog,
+      publicCardHistory: this.publicCardHistory.map((entry) => ({
+        round: entry.round,
+        scores: [...entry.scores],
+      })),
       scoreVolatility: this.getScoreVolatilityState() ?? undefined,
       scoreRules: isTradeRulesVersion(this.rulesVersion)
         ? this.scoreManager.getRules()
@@ -1695,6 +1760,9 @@ export class TurnManager {
     this.currentRound = data.currentRound;
     this.state = data.state as GameState;
     this.lastAction = data.lastAction as ActionType | null;
+    this.lastActionRound = data.lastAction && data.currentRound > 1
+      ? data.currentRound - 1
+      : null;
 
     // 2. 还原积分
     this.scoreManager.setScore(
@@ -1816,6 +1884,13 @@ export class TurnManager {
     // 8. 还原回合数据留存（兼容旧存档：roundLog 缺失则空——老玩家读旧档不崩，
     //    但看板只能从读档后的回合开始记录，历史回合无法追溯，属可接受的降级）
     this.roundLog = data.roundLog ? [...data.roundLog] : [];
+    this.publicCardHistory = data.publicCardHistory
+      ? data.publicCardHistory
+          .filter((entry) => Number.isInteger(entry.round) && entry.round >= 1 && entry.round <= this.currentRound && Array.isArray(entry.scores))
+          .map((entry) => ({ round: entry.round, scores: [...entry.scores] }))
+          .sort((a, b) => a.round - b.round)
+          .filter((entry, index, entries) => index === entries.length - 1 || entry.round !== entries[index + 1]!.round)
+      : [];
 
     // 8.5 读档降级补录：手牌中缺失 buy 记录（老存档无 roundLog 或记录不全）的卡，
     //    补录近似买入记录。否则行迹聚合会产生"幽灵卡"——有炼化收益但无买入记录的卡
@@ -1828,6 +1903,7 @@ export class TurnManager {
       const season = this.seasonCycle.getCurrentSeason();
       this.roundLog.push({
         round: slot.buyRound,
+        compatReconstructed: true,
         season,
         roundInSeason: 1,
         action: 'buy',
@@ -1856,6 +1932,13 @@ export class TurnManager {
     }
     // 补录记录 round 可能小于现有记录，统一按回合排序保证看板正序展示
     this.roundLog.sort((a, b) => a.round - b.round);
+
+    const latestHistoryRound = this.publicCardHistory.length > 0
+      ? this.publicCardHistory[this.publicCardHistory.length - 1]!.round
+      : null;
+    if (latestHistoryRound !== this.currentRound) {
+      this.capturePublicCardHistorySnapshot();
+    }
 
     // 8.6 空亡观测统计重建（票 P2-1）：voidTriggers/voidSwallowedEvents/voidMaxK 是
     // 纯内存计数、不入快照，但 roundLog 已持久化每回合 voidSwallow。局中存档→续局后
@@ -2565,6 +2648,8 @@ export class TurnManager {
     this.voidSwallowedEvents = 0;
     this.voidMaxK = 0;
     this.lastVoidSwallow = null;
+    this.publicCardHistory = [];
+    this.lastActionRound = null;
   }
 
   /**

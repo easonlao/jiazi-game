@@ -92,7 +92,7 @@ export {
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_TREND_WINDOW,
 } from './GameSaveService';
-export type { GameSnapshot, GameSaveLoadError, SupportedRulesVersion, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot } from './GameSaveService';
+export type { GameSnapshot, GameSaveLoadError, SupportedRulesVersion, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot, PublicCardHistorySnapshot } from './GameSaveService';
 
 export {
   BRANCH_ROLL_DI_ZHI,

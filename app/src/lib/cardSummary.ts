@@ -141,6 +141,10 @@ export function countSettled(summaries: CardSummary[]): number {
 export interface CardTraceItem {
   /** 所在回合 */
   round: number;
+  /** 真实行动发生回合（买/卖/出清可与 round 不同） */
+  actionRound: number | null;
+  /** 是否由旧存档兼容逻辑近似补录。 */
+  compatReconstructed: boolean;
   /** 季节英文 */
   season: string;
   /** 条目类型（settle = 终局出清，系统强制平仓） */
@@ -175,6 +179,8 @@ export function cardTrace(roundLog: RoundLogEntry[], name: string): CardTraceIte
     if (entry.action === 'buy' && entry.actionCardName === name) {
       items.push({
         round: entry.round,
+        actionRound: entry.actionRound ?? Math.max(1, entry.round - 1),
+        compatReconstructed: entry.compatReconstructed === true,
         season: entry.season,
         kind: 'buy',
         value: entry.actionCardScore ?? 0,
@@ -187,6 +193,8 @@ export function cardTrace(roundLog: RoundLogEntry[], name: string): CardTraceIte
     if (entry.action === 'sell' && entry.actionCardName === name) {
       items.push({
         round: entry.round,
+        actionRound: entry.actionRound ?? Math.max(1, entry.round - 1),
+        compatReconstructed: entry.compatReconstructed === true,
         season: entry.season,
         kind: 'sell',
         value: entry.actionCardScore ?? 0,
@@ -200,6 +208,8 @@ export function cardTrace(roundLog: RoundLogEntry[], name: string): CardTraceIte
     if (entry.action === 'settle' && entry.actionCardName === name) {
       items.push({
         round: entry.round,
+        actionRound: entry.actionRound ?? Math.min(60, entry.round),
+        compatReconstructed: entry.compatReconstructed === true,
         season: entry.season,
         kind: 'settle',
         value: entry.actionCardScore ?? 0,
@@ -214,6 +224,8 @@ export function cardTrace(roundLog: RoundLogEntry[], name: string): CardTraceIte
     if (held) {
       items.push({
         round: entry.round,
+        actionRound: null,
+        compatReconstructed: false,
         season: entry.season,
         kind: 'hold',
         value: held.earning,
@@ -228,6 +240,8 @@ export function cardTrace(roundLog: RoundLogEntry[], name: string): CardTraceIte
     if (mc) {
       items.push({
         round: entry.round,
+        actionRound: null,
+        compatReconstructed: false,
         season: entry.season,
         kind: 'margin',
         value: mc.penaltyScore,
@@ -240,7 +254,7 @@ export function cardTrace(roundLog: RoundLogEntry[], name: string): CardTraceIte
   }
 
   // 按回合排序（同回合内：buy/sell 行动在前，hold/margin 结算在后）
-  items.sort((a, b) => a.round - b.round || (a.kind === 'hold' || a.kind === 'margin' ? 1 : -1) - (b.kind === 'hold' || b.kind === 'margin' ? 1 : -1));
+  items.sort((a, b) => (a.actionRound ?? a.round) - (b.actionRound ?? b.round) || a.round - b.round || (a.kind === 'hold' || a.kind === 'margin' ? 1 : -1) - (b.kind === 'hold' || b.kind === 'margin' ? 1 : -1));
 
   // 合并连续持有回合为区间（hold 相邻回合合并，累计炼化）
   const merged: CardTraceItem[] = [];

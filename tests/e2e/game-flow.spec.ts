@@ -9,6 +9,13 @@
  * 5. 游戏结束与重新开始
  */
 import { test, expect } from '@playwright/test';
+import {
+  closePublicCardHistory,
+  getPublicCard,
+  getPublicCardHistoryModal,
+  openPublicCardHistory,
+  selectPublicCardAndCloseHistory,
+} from './public-card-history';
 
 /** 确认行动；确认后直接进入下一回合，不再等待实际结算弹窗。 */
 async function dismissSettlement(page: import('@playwright/test').Page) {
@@ -135,15 +142,103 @@ test.describe('甲子纪 E2E 游戏流程', () => {
       await page.getByRole('button', { name: '关闭帮助' }).click();
       await expect(helpModal).toBeHidden();
 
-      const publicCard = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..').locator('.card-in').first();
-      await publicCard.click();
+      const publicCard = getPublicCard(page);
+      await openPublicCardHistory(page, publicCard);
+      await closePublicCardHistory(page);
       const buyButton = page.getByRole('button', { name: /纳灵/ });
       await expect(buyButton).toBeEnabled();
       await buyButton.click();
       await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
       await page.getByRole('button', { name: '返回修改' }).click();
-      await publicCard.click();
+      await selectPublicCardAndCloseHistory(page);
     }
+  });
+
+  test('公共牌单牌行迹弹窗可打开、关闭并保留选择', async ({ page }) => {
+    await startGameAndDismiss(page);
+
+    const firstPublicCard = getPublicCard(page);
+    const modal = getPublicCardHistoryModal(page);
+
+    await openPublicCardHistory(page, firstPublicCard);
+    await expect(modal.getByText('单牌行迹', { exact: true })).toBeVisible();
+    await expect(modal.getByText('买卖记录', { exact: true })).toBeVisible();
+    await expect(modal.getByTestId('public-card-history-chart')).toBeVisible();
+    await expect(firstPublicCard).toHaveAttribute('data-selected', 'true');
+
+    await closePublicCardHistory(page);
+    await expect(modal).toBeHidden();
+    await expect(firstPublicCard).toHaveAttribute('data-selected', 'true');
+
+    await page.getByRole('button', { name: /纳灵/ }).click();
+    await confirmSettlementPreview(page);
+    await dismissSettlement(page);
+    await expect(page.getByText(/纳灵成功|空亡触发/).first()).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('公共牌行迹弹窗锁按钮不冒泡，390x844 下曲线与关闭按钮可见', async ({ page }) => {
+    await startGameAndDismiss(page);
+
+    const secondPublicCard = getPublicCard(page, 1);
+    await secondPublicCard.getByRole('button', { name: '锁定此卡牌' }).click();
+    await expect(getPublicCardHistoryModal(page)).toHaveCount(0);
+    await expect(secondPublicCard).not.toHaveAttribute('data-selected', 'true');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const firstPublicCard = getPublicCard(page);
+    const modal = await openPublicCardHistory(page, firstPublicCard);
+    const chart = modal.getByTestId('public-card-history-chart');
+    const closeButton = modal.getByTestId('public-card-history-close');
+    const viewport = { width: 390, height: 844 };
+
+    for (const locator of [modal, chart, closeButton]) {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(-1);
+      expect(box!.y).toBeGreaterThanOrEqual(-1);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+    }
+
+    await expect(closeButton).toBeVisible();
+    await closePublicCardHistory(page);
+    await expect(modal).toBeHidden();
+    await expect(firstPublicCard).toHaveAttribute('data-selected', 'true');
+  });
+
+  test('本地存档续局后保留公共牌曲线并继续追加', async ({ page }) => {
+    await startGameAndDismiss(page);
+
+    await selectPublicCardAndCloseHistory(page);
+    await page.getByRole('button', { name: /纳灵/ }).click();
+    await confirmSettlementPreview(page);
+    await dismissSettlement(page);
+
+    const savedAfterBuy = await page.evaluate(() => JSON.parse(localStorage.getItem('jiazi_game_save') ?? '{}'));
+    expect(savedAfterBuy.schemaVersion).toBe(2);
+    expect(savedAfterBuy.publicCardHistory).toHaveLength(2);
+    expect(savedAfterBuy.roundLog.some((entry: { action?: string }) => entry.action === 'buy')).toBe(true);
+
+    await page.reload();
+    await page.getByText('继续本地游戏', { exact: true }).click();
+    await expect(page.getByText('第 2 回合 / 60', { exact: true })).toBeVisible();
+    const restoredModal = await openPublicCardHistory(page, getPublicCard(page));
+    await expect(restoredModal.locator('circle')).toHaveCount(2);
+    await closePublicCardHistory(page, 'escape');
+
+    await page.getByRole('button', { name: /调息/ }).click();
+    await confirmSettlementPreview(page);
+    await dismissSettlement(page);
+
+    const savedAfterWait = await page.evaluate(() => JSON.parse(localStorage.getItem('jiazi_game_save') ?? '{}'));
+    expect(savedAfterWait.publicCardHistory).toHaveLength(3);
+
+    await page.reload();
+    await page.getByText('继续本地游戏', { exact: true }).click();
+    await expect(page.getByText('第 3 回合 / 60', { exact: true })).toBeVisible();
+    const appendedModal = await openPublicCardHistory(page, getPublicCard(page));
+    await expect(appendedModal.locator('circle')).toHaveCount(3);
+    await closePublicCardHistory(page);
   });
 
   test('普通入口默认显示季内波动提示与实际变化值', async ({ page }) => {
@@ -184,9 +279,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByText('周遭灵气')).toBeVisible();
 
     // 点击第一股灵气（卡名会显示天干地支，如「甲子」）
-    const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
-    const firstPublicCard = publicCardContainer.locator('.card-in').first();
-    await firstPublicCard.click();
+    await selectPublicCardAndCloseHistory(page);
 
     // 点击纳灵
     await page.getByRole('button', { name: /纳灵/ }).click();
@@ -222,7 +315,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
 
     for (let i = 0; i < 3; i++) {
-      await publicCardContainer.locator('.card-in').first().click();
+      await selectPublicCardAndCloseHistory(page);
       await page.getByRole('button', { name: /纳灵/ }).click();
       await confirmSettlementPreview(page);
       await dismissSettlement(page);
@@ -267,9 +360,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // ===== 第 1 回合：纳灵一张灵气 =====
     await expect(page.getByText('周遭灵气')).toBeVisible();
-    const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
-    const firstPublicCard = publicCardContainer.locator('.card-in').first();
-    await firstPublicCard.click();
+    await selectPublicCardAndCloseHistory(page);
     await page.getByRole('button', { name: /纳灵/ }).click();
     await expect(page.getByRole('heading', { name: '结算预览' })).toBeVisible();
     await confirmSettlementPreview(page);
@@ -345,9 +436,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.getByRole('button', { name: /燃灵 ON/ })).toBeVisible();
 
     // 选择公共牌
-    const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
-    const firstPublicCard = publicCardContainer.locator('.card-in').first();
-    await firstPublicCard.click();
+    await selectPublicCardAndCloseHistory(page);
 
     // 纳灵
     await page.getByRole('button', { name: /纳灵/ }).click();
@@ -419,8 +508,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(page.locator('.card-in').first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('周遭暂无灵气浮现', { exact: true })).toHaveCount(0);
     // 新一局仍可正常买入
-    const newPublicCard = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..').locator('.card-in').first();
-    await newPublicCard.click();
+    await selectPublicCardAndCloseHistory(page);
     await page.getByRole('button', { name: /纳灵/ }).click();
     await confirmSettlementPreview(page);
     await dismissSettlement(page);
@@ -433,10 +521,10 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     // 执行 3 轮买入+等待+卖出循环
     for (let cycle = 0; cycle < 3; cycle++) {
       // 纳灵
-      const publicCardContainer = page.locator('h3:has-text("周遭灵气")').locator('..').locator('..');
-      const card = publicCardContainer.locator('.card-in').first();
+      const card = getPublicCard(page);
       await expect(card).toBeVisible({ timeout: 10_000 });
-      await card.click();
+      await openPublicCardHistory(page, card);
+      await closePublicCardHistory(page);
       await page.getByRole('button', { name: /纳灵/ }).click();
       await dismissSettlement(page);
 

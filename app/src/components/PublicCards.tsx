@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react';
 import { useGameStore } from '../store';
 import { PublicCard } from './PublicCard';
+import { PublicCardHistoryModal } from './PublicCardHistoryModal';
 import { HelpButton } from './HelpCenter';
 import type { JiaziCard } from '@core/JiaziCard';
 
 export function PublicCards({ onHelp }: { onHelp: () => void }) {
+  const [historyCard, setHistoryCard] = useState<JiaziCard | null>(null);
   const publicCards = useGameStore((s) => s.publicCards);
   const selectedPublicCard = useGameStore((s) => s.selectedPublicCard);
   const selectPublicCard = useGameStore((s) => s.selectPublicCard);
@@ -14,6 +17,10 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
   // 空亡触发动画期间：空亡牌展示在真实公共牌池的该槽位（与真实公共牌并列），
   // 让玩家看到「空亡是一张从公共牌池现出的牌」（2026-08-14 用户反馈 v3）。
   const voidPoolSlot = useGameStore((s) => s.voidPoolSlot);
+
+  useEffect(() => {
+    if (gameState === 'init') setHistoryCard(null);
+  }, [gameState]);
 
   if (gameState === 'init') {
     return (
@@ -76,7 +83,10 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
                 card={card}
                 index={i}
                 selected={selectedPublicCard === i}
-                onSelect={() => selectPublicCard(i)}
+                onSelect={() => {
+                  if (selectedPublicCard !== i) selectPublicCard(i);
+                  setHistoryCard(card);
+                }}
                 disabled={gameState !== 'player_action'}
                 locked={lockedCardIds.includes(card.id)}
                 onToggleLock={gameState === 'player_action' ? () => toggleLockCard(i) : undefined}
@@ -85,6 +95,14 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
           );
         })}
       </div>
+      {historyCard && turnManager && (
+        <PublicCardHistoryModal
+          card={historyCard}
+          turnManager={turnManager}
+          roundLog={turnManager.getRoundLog()}
+          onClose={() => setHistoryCard(null)}
+        />
+      )}
     </div>
   );
 }

@@ -29,10 +29,10 @@ export type GameSaveLoadError =
 
 /**
  * 存档结构版本（schemaVersion）：描述 GameSnapshot 的字段布局 / 类型 / 必填性。
- * 新增字段、字段改名/改类型、必填性变化时递增。阶段 1 初始化 = 1（当前协议结构）。
+ * 新增字段、字段改名/改类型、必填性变化时递增。当前协议结构 = 2。
  * 缺该字段的旧档 → 按字段缺失回退默认值（save_compat 既有模式）。
  */
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * 游戏规则语义版本（rulesVersion）：描述"这一局按哪套结算规则运行"
@@ -139,6 +139,12 @@ export interface CardPoolSnapshot {
   publicIds: number[];
 }
 
+/** 公共卡池历史快照（逐回合事实）。 */
+export interface PublicCardHistorySnapshot {
+  round: number;
+  scores: number[];
+}
+
 /** 完整的存档快照。 */
 export interface GameSnapshot {
   currentRound: number;
@@ -167,6 +173,8 @@ export interface GameSnapshot {
   rulesVersion?: number;
   /** 回合数据留存（交易看板数据源）。可选：老存档无此字段，读档时空数组。 */
   roundLog?: RoundLogEntry[];
+  /** 公共卡池历史（逐回合真实评分快照）。可选：老存档无此字段，读档时从当前回合起追加。 */
+  publicCardHistory?: PublicCardHistorySnapshot[];
   /** 实验性季内评分波动状态；老存档无此字段时视为未启用。 */
   scoreVolatility?: ScoreVolatilitySnapshot;
   /** 交易规则的计分参数；v1/v2 不写入，保持旧档形状与语义。 */

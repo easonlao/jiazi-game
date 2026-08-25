@@ -79,6 +79,7 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
     return (
       <div
         onClick={onClick}
+        data-selected={selected ? 'true' : 'false'}
         className={`
           card-in card-void relative overflow-hidden rounded-lg border-2 cursor-pointer select-none
           transition-all duration-150 min-w-0
@@ -118,6 +119,7 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
   return (
     <div
       onClick={onClick}
+      data-selected={selected ? 'true' : 'false'}
       className={`
         card-in relative overflow-hidden rounded-lg border-2 cursor-pointer select-none
         transition-all duration-150 min-w-0
