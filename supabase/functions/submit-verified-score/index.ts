@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
 
   const { data: session, error: sessionError } = await supabase
     .from('game_sessions')
-    .select('id, player_id, status, rules_version, replay_seed, rules_snapshot, verified_at, final_score, rounds_completed')
+    .select('id, player_id, status, rules_version, replay_seed, rules_snapshot, started_at, verified_at, final_score, rounds_completed')
     .eq('id', sessionId)
     .eq('player_id', link.player_id)
     .maybeSingle();
