@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
-import type { AnalyticsBackend, PlayerIdentity, SessionUpsert, VerifiedSessionStart } from '../../app/src/lib/analyticsBackend';
+import type {
+  AnalyticsBackend,
+  CultivationLedgerSnapshot,
+  PlayerIdentity,
+  SessionUpsert,
+  VerifiedSessionStart,
+} from '../../app/src/lib/analyticsBackend';
+import { summarizeCultivationLedger, type CultivationLedgerRecord } from '../../app/src/lib/cultivationLedger';
 import type { StorageProvider } from '../../src/core/StorageProvider';
 import { cloneReplayRulesSnapshot, CURRENT_REPLAY_RULES } from '../../src/core';
 
@@ -45,6 +52,14 @@ function createBackend() {
       message: null,
     })),
     fetchLeaderboard: vi.fn(async () => []),
+    fetchCultivationLedger: vi.fn(async (): Promise<CultivationLedgerSnapshot> => ({
+      records: [],
+      summary: summarizeCultivationLedger([]),
+    })),
+    claimCultivationLedger: vi.fn(async (): Promise<CultivationLedgerSnapshot> => ({
+      records: [],
+      summary: summarizeCultivationLedger([]),
+    })),
   } satisfies AnalyticsBackend;
 }
 
@@ -165,6 +180,122 @@ describe('TelemetryController leaderboard eligibility', () => {
       actions: [{ type: 'wait' }],
     });
     expect(JSON.stringify(backend.submitVerifiedScore.mock.calls[0])).not.toContain('999999');
+  });
+
+  it('身份就绪后会同步云端修行账本摘要，认领时只上传终态记录', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    backend.fetchCultivationLedger.mockResolvedValue({
+      records: [
+        {
+          player_id: 'player-1',
+          local_game_id: 'session-1',
+          game_session_id: 'session-1',
+          rules_version: 7,
+          started_at: '2026-08-10T00:00:00.000Z',
+          ended_at: '2026-08-10T00:45:00.000Z',
+          outcome: 'completed',
+          final_score: 128.5,
+          record_source: 'verified_session',
+          created_at: '2026-08-10T00:45:00.000Z',
+          updated_at: '2026-08-10T00:45:00.000Z',
+        },
+      ],
+      summary: summarizeCultivationLedger([
+        {
+          rulesVersion: 7,
+          outcome: 'completed',
+          finalScore: 128.5,
+        },
+      ]),
+    });
+    backend.claimCultivationLedger.mockResolvedValue({
+      records: [
+        {
+          player_id: 'player-1',
+          local_game_id: 'local-1',
+          game_session_id: null,
+          rules_version: 7,
+          started_at: '2026-08-09T00:00:00.000Z',
+          ended_at: '2026-08-09T00:35:00.000Z',
+          outcome: 'completed',
+          final_score: 99.5,
+          record_source: 'local_claim',
+          created_at: '2026-08-09T00:35:00.000Z',
+          updated_at: '2026-08-09T00:35:00.000Z',
+        },
+      ],
+      summary: summarizeCultivationLedger([
+        {
+          rulesVersion: 7,
+          outcome: 'completed',
+          finalScore: 99.5,
+        },
+      ]),
+    });
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    expect(backend.fetchCultivationLedger).toHaveBeenCalledWith('player-1');
+    expect(controller.getState().cultivationLedger?.records).toHaveLength(1);
+    expect(controller.getState().cultivationLedgerBusy).toBe(false);
+
+    await controller.claimCultivationLedger([
+      {
+        id: 'active-1',
+        rulesVersion: 7,
+        startedAt: '2026-08-08T00:00:00.000Z',
+        endedAt: null,
+        outcome: 'active',
+        finalScore: null,
+      },
+      {
+        id: 'local-1',
+        rulesVersion: 7,
+        startedAt: '2026-08-09T00:00:00.000Z',
+        endedAt: '2026-08-09T00:35:00.000Z',
+        outcome: 'completed',
+        finalScore: 99.5,
+      },
+      {
+        id: 'local-2',
+        rulesVersion: 6,
+        startedAt: '2026-08-07T00:00:00.000Z',
+        endedAt: '2026-08-07T00:30:00.000Z',
+        outcome: 'abandoned',
+        finalScore: null,
+      },
+    ] as CultivationLedgerRecord[]);
+
+    expect(backend.claimCultivationLedger).toHaveBeenCalledWith('player-1', [
+      {
+        id: 'local-1',
+        rulesVersion: 7,
+        startedAt: '2026-08-09T00:00:00.000Z',
+        endedAt: '2026-08-09T00:35:00.000Z',
+        outcome: 'completed',
+        finalScore: 99.5,
+      },
+      {
+        id: 'local-2',
+        rulesVersion: 6,
+        startedAt: '2026-08-07T00:00:00.000Z',
+        endedAt: '2026-08-07T00:30:00.000Z',
+        outcome: 'abandoned',
+        finalScore: null,
+      },
+    ]);
+    expect(controller.getState().cultivationLedger?.records).toHaveLength(1);
+    expect(controller.getState().cultivationLedger?.summary).toEqual(
+      summarizeCultivationLedger([
+        {
+          rulesVersion: 7,
+          outcome: 'completed',
+          finalScore: 99.5,
+        },
+      ]),
+    );
   });
 
   it('当前版本（生产默认 V5）未拿到服务端 seed 时不允许创建普通交易会话', async () => {

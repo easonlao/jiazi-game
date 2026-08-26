@@ -5,8 +5,16 @@
  */
 import type { StorageProvider } from '@core/index';
 
+function getLocalStorage(): StorageProvider {
+  const storage = (globalThis as { localStorage?: StorageProvider }).localStorage;
+  if (!storage) {
+    throw new Error('localStorage is not available');
+  }
+  return storage;
+}
+
 export const localStorageProvider: StorageProvider = {
-  getItem: (key) => window.localStorage.getItem(key),
-  setItem: (key, value) => window.localStorage.setItem(key, value),
-  removeItem: (key) => window.localStorage.removeItem(key),
+  getItem: (key) => getLocalStorage().getItem(key),
+  setItem: (key, value) => getLocalStorage().setItem(key, value),
+  removeItem: (key) => getLocalStorage().removeItem(key),
 };

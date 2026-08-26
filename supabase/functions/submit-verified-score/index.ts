@@ -96,6 +96,19 @@ Deno.serve(async (req) => {
         leaderboardSubmitted = true;
       }
     }
+    const ledgerUpdated = await upsertCultivationLedgerEntry(supabase, {
+      player_id: link.player_id,
+      local_game_id: session.id,
+      game_session_id: session.id,
+      rules_version: Number(session.rules_version),
+      started_at: session.started_at,
+      ended_at: session.verified_at,
+      outcome: 'completed',
+      final_score: verifiedScore,
+      record_source: 'verified_session',
+      updated_at: session.verified_at ?? new Date().toISOString(),
+    });
+    if (!ledgerUpdated) return json({ error: 'internal_error' }, 500);
     return json({
       verified: true,
       score: verifiedScore,
@@ -188,6 +201,20 @@ Deno.serve(async (req) => {
     }
   }
 
+  const ledgerUpdated = await upsertCultivationLedgerEntry(supabase, {
+    player_id: link.player_id,
+    local_game_id: session.id,
+    game_session_id: session.id,
+    rules_version: Number(session.rules_version),
+    started_at: session.started_at,
+    ended_at: verifiedAt,
+    outcome: 'completed',
+    final_score: finalScore,
+    record_source: 'verified_session',
+    updated_at: verifiedAt,
+  });
+  if (!ledgerUpdated) return json({ error: 'internal_error' }, 500);
+
   return json({
     verified: true,
     score: finalScore,
@@ -238,6 +265,31 @@ function isReplayRulesSnapshot(value: unknown): value is ReplayRulesSnapshot {
 
 function isIndex(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+async function upsertCultivationLedgerEntry(
+  supabase: ReturnType<typeof createClient>,
+  entry: {
+    player_id: string;
+    local_game_id: string;
+    game_session_id: string;
+    rules_version: number;
+    started_at: string;
+    ended_at: string;
+    outcome: 'completed';
+    final_score: number | null;
+    record_source: 'verified_session';
+    updated_at: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('cultivation_ledger_entries')
+    .upsert(entry, { onConflict: 'player_id,local_game_id' });
+  if (error && error.code !== '23505') {
+    console.error('submit-verified-score cultivation ledger upsert failed', error);
+    return false;
+  }
+  return true;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

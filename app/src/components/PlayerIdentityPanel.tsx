@@ -17,6 +17,8 @@ export function PlayerIdentityPanel() {
   const provisionPlayer = useGameStore((s) => s.provisionPlayer);
   const recoverPlayer = useGameStore((s) => s.recoverPlayer);
   const updatePlayerDisplayName = useGameStore((s) => s.updatePlayerDisplayName);
+  const claimCultivationLedger = useGameStore((s) => s.claimCultivationLedger);
+  const cultivationLedgerClaimableCount = useGameStore((s) => s.cultivationLedgerClaimableCount);
 
   const [nameDraft, setNameDraft] = useState('');
   const [recoverDraft, setRecoverDraft] = useState('');
@@ -27,6 +29,10 @@ export function PlayerIdentityPanel() {
   const recoveryCode = telemetryState?.recovery_code ?? null;
   const error = telemetryState?.error ?? null;
   const busy = telemetryState?.busy ?? false;
+  const cloudLedger = telemetryState?.cultivationLedger ?? null;
+  const cloudBusy = telemetryState?.cultivationLedgerBusy ?? false;
+  const cloudError = telemetryState?.cultivationLedgerError ?? null;
+  const cloudSummary = cloudLedger?.summary ?? null;
 
   const handleCopy = async () => {
     if (!recoveryCode) return;
@@ -149,6 +155,10 @@ export function PlayerIdentityPanel() {
     setNameDraft('');
   };
 
+  const handleClaimLedger = async () => {
+    await claimCultivationLedger();
+  };
+
   return (
     <div className="w-full max-w-xs rounded-lg border border-wood-light bg-[#faf6ee] px-3 py-2.5 text-xs leading-relaxed text-ink-light">
       <h3 className="mb-1 font-serif text-sm font-bold text-ink">匿名数据记录（可选）</h3>
@@ -197,6 +207,74 @@ export function PlayerIdentityPanel() {
           </div>
         </div>
       )}
+
+      <div className="mt-1.5 rounded-xl border border-wood-light bg-white/75 px-2.5 py-2">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="font-serif text-sm font-bold text-ink">云端修行档案</p>
+            <p className="text-[11px] text-ink-light">
+              只合并已完成或中断的本机终态记录，不包含当前进行中的对局。
+            </p>
+          </div>
+          <span className="rounded-full border border-wood-light bg-parchment px-2 py-0.5 text-[10px] text-ink-light">
+            {cloudBusy ? '同步中' : '已连接'}
+          </span>
+        </div>
+
+        {cloudError && <p className="mt-1 text-[11px] text-qi-critical">{cloudError}</p>}
+
+        {cloudSummary ? (
+          <>
+            <div className="mt-2 grid grid-cols-3 gap-1.5 text-center text-[11px]">
+              <div className="rounded-lg bg-parchment px-2 py-2">
+                <div className="text-ink-light">累计局数</div>
+                <div className="mt-0.5 font-semibold text-ink tabular-nums">{cloudSummary.totalGames}</div>
+              </div>
+              <div className="rounded-lg bg-parchment px-2 py-2">
+                <div className="text-ink-light">完成</div>
+                <div className="mt-0.5 font-semibold text-qi-full tabular-nums">{cloudSummary.completedGames}</div>
+              </div>
+              <div className="rounded-lg bg-parchment px-2 py-2">
+                <div className="text-ink-light">中断</div>
+                <div className="mt-0.5 font-semibold text-qi-critical tabular-nums">{cloudSummary.abandonedGames}</div>
+              </div>
+            </div>
+
+            <div className="mt-2 rounded-lg bg-parchment px-2 py-1.5 text-[11px] text-ink-light">
+              当前还有 <span className="font-semibold text-ink tabular-nums">{cultivationLedgerClaimableCount}</span> 条本机终态记录可认领。
+            </div>
+
+            {cloudSummary.byRulesVersion.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-ink-light">
+                {cloudSummary.byRulesVersion.map((group) => (
+                  <span
+                    key={group.rulesVersion}
+                    className="rounded-full border border-wood-light bg-parchment px-2 py-1 tabular-nums"
+                  >
+                    {`V${group.rulesVersion} ${group.completedGames} 完成 · 均 ${group.averageScore?.toFixed(1) ?? '—'}`}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="mt-2 text-[11px] text-ink-light">
+            {cloudBusy ? '正在读取云端账本…' : '完成身份确认后，会自动读取云端账本。'}
+          </p>
+        )}
+
+        <button
+          onClick={() => void handleClaimLedger()}
+          disabled={busy || cloudBusy || cultivationLedgerClaimableCount === 0}
+          className="mt-2 w-full rounded-lg border border-wood-mid px-2.5 py-2 text-xs font-serif font-bold text-ink hover:bg-wood-light transition-colors active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {cloudBusy
+            ? '同步中…'
+            : cultivationLedgerClaimableCount > 0
+              ? `认领并同步 ${cultivationLedgerClaimableCount} 条本机记录`
+              : '当前没有可认领记录'}
+        </button>
+      </div>
 
       <div className="mt-1.5 flex gap-1.5">
         <input

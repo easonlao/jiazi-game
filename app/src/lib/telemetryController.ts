@@ -24,6 +24,7 @@ import {
 } from '@core/telemetry';
 import type {
   AnalyticsBackend,
+  CultivationLedgerSnapshot,
   CloudLeaderboardEntry,
   PlayerIdentity,
   VerifiedSessionStart,
@@ -70,6 +71,9 @@ export interface TelemetryControllerState {
   telemetryEnabled: boolean;
   busy: boolean;
   error: string | null;
+  cultivationLedger: CultivationLedgerSnapshot | null;
+  cultivationLedgerBusy: boolean;
+  cultivationLedgerError: string | null;
 }
 
 export interface TelemetryControllerDeps {
@@ -209,6 +213,9 @@ export class TelemetryController {
       telemetryEnabled: false,
       busy: false,
       error: null,
+      cultivationLedger: null,
+      cultivationLedgerBusy: false,
+      cultivationLedgerError: null,
     };
     this.queue = new TelemetryQueue({
       storage: deps.storage,
@@ -284,6 +291,7 @@ export class TelemetryController {
       }
       if (ok && this.state.identity) {
         await this.verification.resumePending();
+        await this.refreshCultivationLedger();
       }
       this.setState({ busy: false, error: ok ? null : '云端身份暂不可用，可继续本地游玩' });
     }
@@ -304,6 +312,7 @@ export class TelemetryController {
       if (recoveryCode?.trim()) await this.recoverIdentity(recoveryCode);
       else await this.provision(this.defaultDisplayName());
       await this.verification.resumePending();
+      await this.refreshCultivationLedger();
     } else {
       this.setState({ error: '云端服务暂不可用，可稍后重试' });
     }
@@ -339,6 +348,7 @@ export class TelemetryController {
       writeSessionRecoveryCode(result.recovery_code);
       this.setState({ identity, recovery_code: result.recovery_code, error: null });
       void this.queue.flush();
+      await this.refreshCultivationLedger();
       return identity;
     } catch (e) {
       console.warn('[telemetry] provision 失败', e);
@@ -356,6 +366,7 @@ export class TelemetryController {
       writeSessionRecoveryCode(null);
       this.setState({ identity, recovery_code: null, error: null });
       void this.queue.flush();
+      await this.refreshCultivationLedger();
       return identity;
     } catch (e) {
       console.warn('[telemetry] recover 失败', e);
@@ -378,6 +389,7 @@ export class TelemetryController {
       const identity = await this.backend.updateDisplayName(this.state.identity.player_id, trimmed);
       writeIdentity(this.storage, identity);
       this.setState({ identity, error: null });
+      await this.refreshCultivationLedger();
       return true;
     } catch (e) {
       console.warn('[telemetry] updateDisplayName 失败', e);
@@ -501,6 +513,54 @@ export class TelemetryController {
     } catch (e) {
       console.warn('[telemetry] fetchLeaderboard 失败', e);
       return [];
+    }
+  }
+
+  async refreshCultivationLedger(): Promise<CultivationLedgerSnapshot | null> {
+    const identity = this.state.identity;
+    if (!identity || !this.state.consent?.granted) return null;
+    this.setState({ cultivationLedgerBusy: true, cultivationLedgerError: null });
+    try {
+      const snapshot = await this.backend.fetchCultivationLedger(identity.player_id);
+      this.setState({
+        cultivationLedger: snapshot,
+        cultivationLedgerBusy: false,
+        cultivationLedgerError: null,
+      });
+      return snapshot;
+    } catch (e) {
+      console.warn('[telemetry] fetchCultivationLedger 失败', e);
+      this.setState({
+        cultivationLedgerBusy: false,
+        cultivationLedgerError: '云端修行账本暂时不可用',
+      });
+      return null;
+    }
+  }
+
+  async claimCultivationLedger(
+    records: readonly import('./cultivationLedger').CultivationLedgerRecord[],
+  ): Promise<CultivationLedgerSnapshot | null> {
+    const identity = this.state.identity;
+    if (!identity || !this.state.consent?.granted || !this.state.telemetryEnabled) return null;
+    const terminalRecords = records.filter((record) => record.outcome !== 'active');
+    if (terminalRecords.length === 0) return this.refreshCultivationLedger();
+    this.setState({ cultivationLedgerBusy: true, cultivationLedgerError: null });
+    try {
+      const snapshot = await this.backend.claimCultivationLedger(identity.player_id, terminalRecords);
+      this.setState({
+        cultivationLedger: snapshot,
+        cultivationLedgerBusy: false,
+        cultivationLedgerError: null,
+      });
+      return snapshot;
+    } catch (e) {
+      console.warn('[telemetry] claimCultivationLedger 失败', e);
+      this.setState({
+        cultivationLedgerBusy: false,
+        cultivationLedgerError: '修行账本认领失败，请稍后重试',
+      });
+      return null;
     }
   }
 

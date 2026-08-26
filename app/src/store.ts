@@ -46,6 +46,11 @@ import {
   type TelemetryControllerState,
 } from './lib/telemetryController';
 import {
+  CultivationLedgerService,
+  type CultivationLedgerRecord,
+  type CultivationLedgerSummary,
+} from './lib/cultivationLedger';
+import {
   isRecordForDisplay,
   type VerificationRecord,
 } from './lib/verificationState';
@@ -62,6 +67,7 @@ let _telemetryController: TelemetryController | null = null;
 let _telemetryInitPromise: Promise<void> | null = null;
 
 const _leaderboardRefreshGate = new LeaderboardRefreshGate();
+const _cultivationLedger = new CultivationLedgerService(localStorageProvider);
 
 /**
  * 回合末「锁定牌被自动解锁」事件的 Toast 文案（如「神识难继，灵气甲子自行散去」）。
@@ -131,6 +137,28 @@ function ensureTelemetryInit(): Promise<void> {
   return _telemetryInitPromise;
 }
 
+function refreshCultivationLedgerSummary(set: StoreSetter): void {
+  set({
+    cultivationLedgerSummary: _cultivationLedger.getSummary(),
+    cultivationLedgerRecords: _cultivationLedger.getRecords(),
+  });
+}
+
+function refreshCultivationLedgerOverview(set: StoreSetter, get: () => GameStore): void {
+  const telemetry = get().telemetryState;
+  const remoteRecords = telemetry?.cultivationLedger?.records ?? [];
+  const claimedIds = new Set(remoteRecords.map((record) => record.local_game_id));
+  const claimableCount = _cultivationLedger
+    .getTerminalRecords()
+    .filter((record) => !claimedIds.has(record.id))
+    .length;
+  set({
+    cultivationLedgerSummary: _cultivationLedger.getSummary(),
+    cultivationLedgerRecords: _cultivationLedger.getRecords(),
+    cultivationLedgerClaimableCount: claimableCount,
+  });
+}
+
 /** 展示行动反馈 Toast：有自动解锁提示时优先展示并清空，否则用常规文案。 */
 function _showActionToast(get: () => GameStore, fallback: string): void {
   const pending = _pendingAutoUnlockToast;
@@ -183,6 +211,12 @@ interface GameStore {
   totalMarginCallPenalty: number;
   /** V5 空亡观测统计（终局结算摘要数据源；V1-V4 恒 0）。 */
   voidStats: { triggers: number; swallowedEvents: number; maxVoidK: number };
+  /** 本机修行账本摘要（本地私有，不含动作明细） */
+  cultivationLedgerSummary: CultivationLedgerSummary;
+  /** 本机修行账本记录（用于档案视图；本地私有） */
+  cultivationLedgerRecords: readonly CultivationLedgerRecord[];
+  /** 已在云端认领/同步的本机终态记录之外，仍可认领的本机终态记录数。 */
+  cultivationLedgerClaimableCount: number;
 
   // 交互状态
   selectedPublicCard: number;
@@ -275,6 +309,7 @@ interface GameStore {
   recoverPlayer: (recoveryCode: string) => Promise<boolean>;
   updatePlayerDisplayName: (name: string) => Promise<void>;
   refreshCloudLeaderboard: () => Promise<void>;
+  claimCultivationLedger: () => Promise<boolean>;
   /** 重试最近一局的云端校验（failed/rejected 时有效，不抛错） */
   retryVerification: () => void;
 
@@ -282,6 +317,11 @@ interface GameStore {
   dashboardOpen: boolean;
   openDashboard: () => void;
   closeDashboard: () => void;
+
+  // 修行档案
+  cultivationProfileOpen: boolean;
+  openCultivationProfile: () => void;
+  closeCultivationProfile: () => void;
 
   // 操作
   selectPublicCard: (index: number) => void;
@@ -499,6 +539,8 @@ export function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get:
       final_score: finalScore,
       margin_call_count: tm.getMarginCallCount(),
     });
+    _cultivationLedger.completeActiveGame(finalScore);
+    refreshCultivationLedgerOverview(set, get);
     tm.clearSave();
     set({ hasSave: false });
     get().showToast(`一甲子终了！最终修为：${finalScore}`);
@@ -566,6 +608,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   totalSettleEarnings: 0,
   totalMarginCallPenalty: 0,
   voidStats: { triggers: 0, swallowedEvents: 0, maxVoidK: 0 },
+  cultivationLedgerSummary: _cultivationLedger.getSummary(),
+  cultivationLedgerRecords: _cultivationLedger.getRecords(),
+  cultivationLedgerClaimableCount: 0,
 
   selectedPublicCard: -1,
   selectedHandCard: -1,
@@ -587,6 +632,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   verificationState: null,
   _endedSessionId: null,
   dashboardOpen: false,
+  cultivationProfileOpen: false,
 
   // FX 事件（初始为 null，_sync diff 后才会产生）
   seasonEvent: null,
@@ -723,6 +769,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // 检测是否有未完成的存档
       const hasSave = tm.hasSave();
       set({ hasSave });
+      refreshCultivationLedgerOverview(set, get);
 
       // 遥测控制器：云端未配置时走 NoopAnalyticsBackend，绝不阻塞游戏初始化。
       if (!_telemetryController) {
@@ -733,7 +780,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         _telemetryController = new TelemetryController({
           storage: localStorageProvider,
           backend,
-          onStateChange: (state) => set({ telemetryState: state }),
+          onStateChange: (state) => {
+            set({ telemetryState: state });
+            refreshCultivationLedgerOverview(set, get);
+          },
           // 显示守卫：只展示"当前已结束会话"的校验记录，旧局异步回调不污染新局展示。
           onVerificationChange: (record) => {
             set((s) => (
@@ -745,6 +795,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           },
         });
         set({ telemetryState: _telemetryController.getState() });
+        refreshCultivationLedgerOverview(set, get);
         void ensureTelemetryInit();
       }
     } catch (e) {
@@ -801,6 +852,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         bindTurnManagerCallbacks(verifiedTm, set, get);
         set({ turnManager: verifiedTm });
         verifiedTm.startGame();
+        _cultivationLedger.startNewGame(verifiedTm.getRulesVersion(), prepared.session_id);
+        refreshCultivationLedgerOverview(set, get);
         get()._sync();
         set({
           selectedPublicCard: -1,
@@ -827,6 +880,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // 清除会导致开局回神动画丢失；上一局的残留动画已在 reset() 中清空。
       tm.reset();
       tm.startGame();
+      _cultivationLedger.startNewGame(tm.getRulesVersion());
+      refreshCultivationLedgerOverview(set, get);
       get()._sync();
       set({
         selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
@@ -868,6 +923,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
       get()._sync();
       set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, buySettlementEvent: null, voidTriggerQueue: [], _voidAnimationTrueState: null, hasSave: false });
+      _cultivationLedger.resumeActiveGame(tm.getRulesVersion());
+      refreshCultivationLedgerOverview(set, get);
       // 存档没有携带服务端 seed 与完整动作链，续局只能作为本地局继续。
       // 明确终止旧页面会话且不创建伪云端会话，避免终局误导玩家会自动上榜。
       _telemetryController?.abandonSession('reset');
@@ -928,6 +985,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await _telemetryController?.updateDisplayName(name);
   },
 
+  async claimCultivationLedger() {
+    const controller = _telemetryController;
+    if (!controller) return false;
+    const records = _cultivationLedger.getTerminalRecords();
+    if (records.length === 0) {
+      get().showToast('当前没有可认领的修行记录');
+      refreshCultivationLedgerOverview(set, get);
+      return false;
+    }
+    const snapshot = await controller.claimCultivationLedger(records);
+    if (!snapshot) {
+      get().showToast('修行账本认领失败，请稍后重试');
+      return false;
+    }
+    refreshCultivationLedgerOverview(set, get);
+    get().showToast(`已认领并同步 ${records.length} 条修行记录`);
+    return true;
+  },
+
   async refreshCloudLeaderboard() {
     const controller = _telemetryController;
     if (!controller) return;
@@ -961,12 +1037,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ dashboardOpen: false });
   },
 
+  openCultivationProfile() {
+    set({ cultivationProfileOpen: true });
+  },
+
+  closeCultivationProfile() {
+    set({ cultivationProfileOpen: false });
+  },
+
   reset() {
     const tm = get().turnManager;
     if (!tm) return;
     // 遥测：放弃当前会话（无 controller/未同意/无活跃会话时静默 no-op，不阻塞重置）
     _telemetryController?.abandonSession('reset');
     tm.reset();
+    _cultivationLedger.abandonActiveGame();
     // 清掉可能残留的自动解锁提示，避免跨局误弹
     _pendingAutoUnlockToast = null;
     // 清掉残留的空亡触发累积，避免跨局误弹合并 Toast
@@ -1007,6 +1092,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       voidPoolSlot: null,
       voidSwallowing: false,
     });
+    refreshCultivationLedgerOverview(set, get);
     // 同步 TurnManager 重置后的状态（gameState → 'init'），让 UI 回到开始界面
     get()._sync();
   },
@@ -1100,6 +1186,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
       // P1-1：等待推进可能触发空亡吞噬（含终局路径），空亡 toast 最后写入
       flushPendingVoidToasts(get);
+      if (get().gameState === 'game_over') {
+        tm.clearSave();
+        set({ hasSave: false });
+      } else {
+        tm.saveGame();
+      }
     }
     return ok;
   },

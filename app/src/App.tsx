@@ -16,6 +16,7 @@ import { StartScreen } from './components/StartScreen';
 import { GameOverModal } from './components/GameOverModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { TradeDashboard } from './components/TradeDashboard';
+import { CultivationProfileModal } from './components/CultivationProfileModal';
 
 export default function App() {
   const gameState = useGameStore((s) => s.gameState);
@@ -26,12 +27,14 @@ export default function App() {
   const startLocalGame = useGameStore((s) => s.startLocalGame);
   const loadGameFromSave = useGameStore((s) => s.loadGameFromSave);
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
+  const openCultivationProfile = useGameStore((s) => s.openCultivationProfile);
   const closeLeaderboard = useGameStore((s) => s.closeLeaderboard);
   const showToast = useGameStore((s) => s.showToast);
   const hasSave = useGameStore((s) => s.hasSave);
   const startingGame = useGameStore((s) => s.startingGame);
   const startGameError = useGameStore((s) => s.startGameError);
   const leaderboardOpen = useGameStore((s) => s.leaderboardOpen);
+  const cultivationLedgerSummary = useGameStore((s) => s.cultivationLedgerSummary);
   const [helpOpen, setHelpOpen] = useState(false);
 
   // 初始化引擎
@@ -63,6 +66,7 @@ export default function App() {
             hasSave={hasSave}
             startingGame={startingGame}
             startGameError={startGameError}
+            cultivationLedgerSummary={cultivationLedgerSummary}
             onStart={async () => {
               if (await startGame()) showToast('游戏开始');
             }}
@@ -74,6 +78,7 @@ export default function App() {
               loadGameFromSave();
             }}
             onLeaderboard={openLeaderboard}
+            onOpenProfile={openCultivationProfile}
           />
         ) : (
           <>
@@ -105,6 +110,7 @@ export default function App() {
         )}
         <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
         {leaderboardOpen && <LeaderboardModal />}
+        <CultivationProfileModal />
         <TradeDashboard />
       </div>
     </div>

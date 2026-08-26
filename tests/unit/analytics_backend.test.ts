@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseAnalyticsBackend } from '../../app/src/lib/analyticsBackend';
+import { summarizeCultivationLedger } from '../../app/src/lib/cultivationLedger';
 import { cloneReplayRulesSnapshot } from '../../src/core';
 
 describe('SupabaseAnalyticsBackend session lifecycle', () => {
@@ -93,6 +94,149 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
       leaderboard_submitted: false,
       message: 'session_not_active',
     });
+  });
+
+  it('读取云端修行账本时按 owner 过滤并汇总', async () => {
+    const rows = [
+      {
+        player_id: 'player-1',
+        local_game_id: 'game-1',
+        game_session_id: null,
+        rules_version: 7,
+        started_at: '2026-08-10T00:00:00.000Z',
+        ended_at: '2026-08-10T00:30:00.000Z',
+        outcome: 'completed',
+        final_score: 120.5,
+        record_source: 'local_claim',
+        created_at: '2026-08-10T00:30:00.000Z',
+        updated_at: '2026-08-10T00:30:00.000Z',
+      },
+      {
+        player_id: 'player-1',
+        local_game_id: 'game-2',
+        game_session_id: 'session-2',
+        rules_version: 6,
+        started_at: '2026-08-11T00:00:00.000Z',
+        ended_at: '2026-08-11T00:45:00.000Z',
+        outcome: 'abandoned',
+        final_score: null,
+        record_source: 'verified_session',
+        created_at: '2026-08-11T00:45:00.000Z',
+        updated_at: '2026-08-11T00:45:00.000Z',
+      },
+    ];
+    const order = vi.fn(async () => ({ data: rows, error: null }));
+    const eq = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ select }));
+    const client = { from } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const snapshot = await backend.fetchCultivationLedger('player-1');
+
+    expect(from).toHaveBeenCalledWith('cultivation_ledger_entries');
+    expect(eq).toHaveBeenCalledWith('player_id', 'player-1');
+    expect(snapshot).toEqual({
+      records: rows,
+      summary: summarizeCultivationLedger([
+        {
+          rulesVersion: 7,
+          outcome: 'completed',
+          finalScore: 120.5,
+        },
+        {
+          rulesVersion: 6,
+          outcome: 'abandoned',
+          finalScore: null,
+        },
+      ]),
+    });
+  });
+
+  it('认领本机修行账本时只上传终态记录并走专用 Edge Function', async () => {
+    const invoke = vi.fn(async () => ({
+      data: {
+        records: [
+          {
+            player_id: 'player-1',
+            local_game_id: 'game-1',
+            game_session_id: null,
+            rules_version: 7,
+            started_at: '2026-08-10T00:00:00.000Z',
+            ended_at: '2026-08-10T00:30:00.000Z',
+            outcome: 'completed',
+            final_score: 120.5,
+            record_source: 'local_claim',
+            created_at: '2026-08-10T00:30:00.000Z',
+            updated_at: '2026-08-10T00:30:00.000Z',
+          },
+        ],
+      },
+      error: null,
+    }));
+    const client = { functions: { invoke } } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const snapshot = await backend.claimCultivationLedger('player-1', [
+      {
+        id: 'game-0',
+        rulesVersion: 7,
+        startedAt: '2026-08-09T00:00:00.000Z',
+        endedAt: null,
+        outcome: 'active',
+        finalScore: null,
+      },
+      {
+        id: 'game-1',
+        rulesVersion: 7,
+        startedAt: '2026-08-10T00:00:00.000Z',
+        endedAt: '2026-08-10T00:30:00.000Z',
+        outcome: 'completed',
+        finalScore: 120.5,
+      },
+      {
+        id: 'game-2',
+        rulesVersion: 6,
+        startedAt: '2026-08-11T00:00:00.000Z',
+        endedAt: '2026-08-11T00:45:00.000Z',
+        outcome: 'abandoned',
+        finalScore: null,
+      },
+    ]);
+
+    expect(invoke).toHaveBeenCalledWith('claim-cultivation-ledger', {
+      body: {
+        player_id: 'player-1',
+        records: [
+          {
+            local_game_id: 'game-1',
+            rules_version: 7,
+            started_at: '2026-08-10T00:00:00.000Z',
+            ended_at: '2026-08-10T00:30:00.000Z',
+            outcome: 'completed',
+            final_score: 120.5,
+          },
+          {
+            local_game_id: 'game-2',
+            rules_version: 6,
+            started_at: '2026-08-11T00:00:00.000Z',
+            ended_at: '2026-08-11T00:45:00.000Z',
+            outcome: 'abandoned',
+            final_score: null,
+          },
+        ],
+      },
+    });
+    expect(snapshot.records).toHaveLength(1);
+    expect(snapshot.summary).toEqual(
+      summarizeCultivationLedger([
+        {
+          rulesVersion: 7,
+          outcome: 'completed',
+          finalScore: 120.5,
+        },
+      ]),
+    );
   });
 });
 

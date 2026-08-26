@@ -63,6 +63,10 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+[functions.claim-cultivation-ledger]
+enabled = true
+verify_jwt = true
+
 [analytics]
 enabled = false
 

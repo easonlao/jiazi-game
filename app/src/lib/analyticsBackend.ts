@@ -16,6 +16,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ReplayAction, ReplayRulesSnapshot } from '@core/index';
 import type { TelemetryEvent } from '@core/telemetry';
+import {
+  summarizeCultivationLedger,
+  type CultivationLedgerRecord,
+  type CultivationLedgerSummary,
+} from './cultivationLedger';
 
 /** 服务端自动 provision 的默认占位名（未设置自定义用户名） */
 export const DEFAULT_PLACEHOLDER_DISPLAY_NAME = '玩家';
@@ -93,6 +98,27 @@ export interface CloudLeaderboardEntry {
   date: string;
 }
 
+export type CultivationLedgerRecordSource = 'local_claim' | 'verified_session';
+
+export interface CultivationLedgerEntry {
+  player_id: string;
+  local_game_id: string;
+  game_session_id: string | null;
+  rules_version: number;
+  started_at: string;
+  ended_at: string | null;
+  outcome: Exclude<CultivationLedgerRecord['outcome'], 'active'>;
+  final_score: number | null;
+  record_source: CultivationLedgerRecordSource;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CultivationLedgerSnapshot {
+  records: CultivationLedgerEntry[];
+  summary: CultivationLedgerSummary;
+}
+
 export interface AnalyticsBackend {
   /** 恢复/建立匿名会话；返回是否已就绪（离线等场景返回 false，不抛错） */
   ensureSession(): Promise<boolean>;
@@ -108,6 +134,8 @@ export interface AnalyticsBackend {
   startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null>;
   submitVerifiedScore(playerId: string, submission: VerifiedScoreSubmission): Promise<VerifiedScoreOutcome>;
   fetchLeaderboard(limit?: number, rulesVersion?: string): Promise<CloudLeaderboardEntry[]>;
+  fetchCultivationLedger(playerId: string): Promise<CultivationLedgerSnapshot>;
+  claimCultivationLedger(playerId: string, records: readonly CultivationLedgerRecord[]): Promise<CultivationLedgerSnapshot>;
 }
 
 function normalizeError(error: unknown): Error {
@@ -183,6 +211,61 @@ function parseVerifiedSessionStart(data: unknown): VerifiedSessionStart | null {
     seed: seed as number,
     rules_snapshot: snapshot as unknown as ReplayRulesSnapshot,
   };
+}
+
+function parseCultivationLedgerEntry(data: unknown): CultivationLedgerEntry | null {
+  if (!isRecord(data)) return null;
+  const player_id = requireString(data.player_id, 'player_id');
+  const local_game_id = requireString(data.local_game_id, 'local_game_id');
+  const record_source = data.record_source;
+  const started_at = requireString(data.started_at, 'started_at');
+  const created_at = requireString(data.created_at, 'created_at');
+  const updated_at = requireString(data.updated_at, 'updated_at');
+  if (!player_id || !local_game_id || !started_at || !created_at || !updated_at) return null;
+  if (record_source !== 'local_claim' && record_source !== 'verified_session') return null;
+  const rules_version = typeof data.rules_version === 'number' && Number.isInteger(data.rules_version)
+    ? data.rules_version
+    : null;
+  if (rules_version === null) return null;
+  const outcome = data.outcome;
+  if (outcome !== 'completed' && outcome !== 'abandoned') return null;
+  const final_score = data.final_score;
+  if (!(final_score === null || typeof final_score === 'number')) return null;
+  const game_session_id = data.game_session_id === null
+    ? null
+    : requireString(data.game_session_id, 'game_session_id');
+  const ended_at = data.ended_at === null
+    ? null
+    : requireString(data.ended_at, 'ended_at');
+  if (game_session_id === undefined || ended_at === undefined) return null;
+  return {
+    player_id,
+    local_game_id,
+    game_session_id,
+    rules_version,
+    started_at,
+    ended_at,
+    outcome,
+    final_score,
+    record_source,
+    created_at,
+    updated_at,
+  };
+}
+
+function parseCultivationLedgerSnapshot(data: unknown): CultivationLedgerSnapshot | null {
+  if (!isRecord(data) || !Array.isArray(data.records)) return null;
+  const records = data.records
+    .map((record) => parseCultivationLedgerEntry(record))
+    .filter((record): record is CultivationLedgerEntry => Boolean(record));
+  const summary = summarizeCultivationLedger(
+    records.map((record) => ({
+      rulesVersion: record.rules_version,
+      outcome: record.outcome,
+      finalScore: record.final_score,
+    })),
+  );
+  return { records, summary };
 }
 
 /** 解析 Edge Function 返回的公开身份（严格校验字段形状，防脏数据入库）。
@@ -397,6 +480,46 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
       };
     });
   }
+
+  async fetchCultivationLedger(playerId: string): Promise<CultivationLedgerSnapshot> {
+    const { data, error } = await this.client
+      .from('cultivation_ledger_entries')
+      .select('player_id, local_game_id, game_session_id, rules_version, started_at, ended_at, outcome, final_score, record_source, created_at, updated_at')
+      .eq('player_id', playerId)
+      .order('started_at', { ascending: false });
+    if (error) throw normalizeError(error);
+    return parseCultivationLedgerSnapshot({ records: data ?? [] }) ?? {
+      records: [],
+      summary: summarizeCultivationLedger([]),
+    };
+  }
+
+  async claimCultivationLedger(
+    playerId: string,
+    records: readonly CultivationLedgerRecord[],
+  ): Promise<CultivationLedgerSnapshot> {
+    const terminalRecords = records.filter((record) => record.outcome !== 'active');
+    if (terminalRecords.length === 0) {
+      return this.fetchCultivationLedger(playerId);
+    }
+    const { data, error } = await this.client.functions.invoke('claim-cultivation-ledger', {
+      body: {
+        player_id: playerId,
+        records: terminalRecords.map((record) => ({
+          local_game_id: record.id,
+          rules_version: record.rulesVersion,
+          started_at: record.startedAt,
+          ended_at: record.endedAt,
+          outcome: record.outcome,
+          final_score: record.finalScore,
+        })),
+      },
+    });
+    if (error) throw normalizeError(error);
+    const snapshot = parseCultivationLedgerSnapshot(data);
+    if (!snapshot) throw new Error('claim-cultivation-ledger 返回异常');
+    return snapshot;
+  }
 }
 
 /**
@@ -445,5 +568,13 @@ export class NoopAnalyticsBackend implements AnalyticsBackend {
 
   async fetchLeaderboard(): Promise<CloudLeaderboardEntry[]> {
     return [];
+  }
+
+  async fetchCultivationLedger(): Promise<CultivationLedgerSnapshot> {
+    return { records: [], summary: summarizeCultivationLedger([]) };
+  }
+
+  async claimCultivationLedger(): Promise<CultivationLedgerSnapshot> {
+    return { records: [], summary: summarizeCultivationLedger([]) };
   }
 }

@@ -28,6 +28,7 @@ export function GameOverModal() {
   const voidStats = useGameStore((s) => s.voidStats);
   const reset = useGameStore((s) => s.reset);
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
+  const openCultivationProfile = useGameStore((s) => s.openCultivationProfile);
   const openDashboard = useGameStore((s) => s.openDashboard);
   const verificationState = useGameStore((s) => s.verificationState);
   const telemetryState = useGameStore((s) => s.telemetryState);
@@ -193,6 +194,12 @@ export function GameOverModal() {
         )}
 
         <div className="flex flex-col gap-2">
+          <button
+            onClick={openCultivationProfile}
+            className="w-full py-2.5 rounded-xl border border-wood-mid text-ink text-sm font-bold font-serif hover:bg-wood-light/20 transition-colors"
+          >
+            查看修行档案
+          </button>
           <button
             onClick={openDashboard}
             className="w-full py-2.5 rounded-xl border border-wood-mid text-ink text-sm font-bold font-serif hover:bg-wood-light/20 transition-colors"
