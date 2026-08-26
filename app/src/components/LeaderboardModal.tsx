@@ -21,8 +21,13 @@ export function LeaderboardModal() {
   }, [refreshCloudLeaderboard]);
 
   return (
-    <div className="modal-backdrop absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-xs bg-parchment rounded-xl shadow-2xl p-6">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) closeLeaderboard();
+      }}
+      className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+    >
+      <div className="w-full max-w-xs bg-parchment rounded-2xl shadow-2xl p-6 my-auto max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-bold font-serif text-ink mb-4 text-center">排行榜</h2>
 
         <section>

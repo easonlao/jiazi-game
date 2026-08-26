@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { CURRENT_RULES_VERSION } from '@core/index';
 import { useGameStore } from '../store';
 import { buildCultivationProfileSnapshot, type CultivationProfileMilestone } from '../lib/cultivationProfile';
@@ -21,7 +21,7 @@ function SectionHeading({ title, description }: { title: string; description?: s
   return (
     <div>
       <h3 className="font-serif text-base font-bold text-ink">{title}</h3>
-      {description && <p className="mt-1 text-xs leading-relaxed text-ink-light">{description}</p>}
+      {description && <p className="mt-0.5 text-xs leading-relaxed text-ink-light">{description}</p>}
     </div>
   );
 }
@@ -75,6 +75,16 @@ export function CultivationProfileModal() {
   const [nameDraft, setNameDraft] = useState('');
   const [recoverDraft, setRecoverDraft] = useState('');
   const [copied, setCopied] = useState(false);
+
+  // 支持键盘 Esc 键关闭
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, close]);
 
   const currentRulesVersion = turnManager?.getRulesVersion() ?? CURRENT_RULES_VERSION;
   const cloudRecords = telemetryState?.cultivationLedger?.records ?? null;
@@ -133,34 +143,41 @@ export function CultivationProfileModal() {
   };
 
   return (
-    <div className="modal-backdrop absolute inset-0 z-50 flex items-center justify-center bg-black/50 px-3 backdrop-blur-sm">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close();
+      }}
+      className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-hidden"
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="cultivation-profile-title"
-        className="flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-[#DAC9A8] bg-[#F6EDDC] shadow-2xl"
+        className="flex max-h-[88vh] sm:max-h-[85vh] w-full max-w-sm sm:max-w-md flex-col overflow-hidden rounded-[24px] sm:rounded-[28px] border border-[#DAC9A8] bg-[#F6EDDC] shadow-2xl my-auto"
       >
-        <header className="flex items-start justify-between gap-3 border-b border-[#E6D7B8] bg-[#FCF6EA] px-4 py-4">
-          <div className="min-w-0">
+        {/* 固定顶栏：确保关闭按钮始终常驻可见 */}
+        <header className="shrink-0 sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-[#E6D7B8] bg-[#FCF6EA] px-4 py-3.5 sm:py-4">
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold tracking-wide text-wood-dark">修行之路</p>
-            <h2 id="cultivation-profile-title" className="mt-0.5 font-serif text-xl font-bold text-ink">
+            <h2 id="cultivation-profile-title" className="mt-0.5 font-serif text-lg sm:text-xl font-bold text-ink truncate">
               {playerName}的成长
             </h2>
-            <p className="mt-1 text-xs leading-relaxed text-ink-light">每一局都是下一次更从容的落子。</p>
           </div>
           <button
             onClick={close}
-            className="shrink-0 rounded-full border border-wood-light bg-white px-3 py-1.5 text-sm font-bold text-ink transition-colors hover:bg-wood-light/30 active:translate-y-px"
+            aria-label="关闭"
+            className="shrink-0 rounded-full border border-wood-light bg-white px-3.5 py-1.5 text-xs sm:text-sm font-bold font-serif text-ink transition-colors hover:bg-wood-light/30 active:scale-95 shadow-sm cursor-pointer"
           >
             关闭
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-5">
+        {/* 滚动内容区 */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-5 overscroll-contain">
           {/* 成长总览 */}
-          <section className="rounded-[24px] bg-ink px-4 py-4 text-parchment shadow-[0_12px_26px_rgba(74,48,33,0.2)]">
+          <section className="rounded-[22px] sm:rounded-[24px] bg-ink px-4 py-4 text-parchment shadow-[0_12px_26px_rgba(74,48,33,0.2)]">
             <p className="text-xs text-parchment/75">已走过</p>
-            <div className="mt-1 font-serif text-4xl font-black tabular-nums">{totalGames} 局</div>
+            <div className="mt-1 font-serif text-3xl sm:text-4xl font-black tabular-nums">{totalGames} 局</div>
             {totalGames > 0 ? (
               <p className="mt-2 text-xs leading-relaxed text-parchment/80">
                 已完整走完 {completedGames} 局
@@ -174,7 +191,7 @@ export function CultivationProfileModal() {
           {/* 这套玩法的成绩 */}
           <section>
             <SectionHeading title="这套玩法的成绩" description="只和相同玩法下的自己比较。" />
-            <div className="mt-3 rounded-[24px] border border-wood-light bg-white/85 p-3.5 shadow-sm">
+            <div className="mt-2.5 rounded-[22px] sm:rounded-[24px] border border-wood-light bg-white/85 p-3.5 shadow-sm">
               {currentRuleSummary ? (
                 <>
                   <ScoreMetric label="目前最佳修为" value={formatScore(currentRuleSummary.highestScore)} featured />
@@ -210,7 +227,7 @@ export function CultivationProfileModal() {
           {/* 修行印记 */}
           <section>
             <SectionHeading title="修行印记" description={nextMilestone ? `下一步是「${nextMilestone.title}」。` : '所有印记都已点亮。'} />
-            <ul className="mt-3 rounded-[24px] border border-wood-light bg-white/85 px-3 py-1 shadow-sm">
+            <ul className="mt-2.5 rounded-[22px] sm:rounded-[24px] border border-wood-light bg-white/85 px-3 py-1 shadow-sm">
               {profile.milestones.map((milestone) => (
                 <MilestoneLine key={milestone.key} milestone={milestone} isNext={nextMilestone?.key === milestone.key} />
               ))}
@@ -218,7 +235,7 @@ export function CultivationProfileModal() {
           </section>
 
           {/* 身份与云端同步（统一整合） */}
-          <section className="rounded-[24px] border border-wood-light bg-[#FBF8F0] p-4">
+          <section className="rounded-[22px] sm:rounded-[24px] border border-wood-light bg-[#FBF8F0] p-4">
             <SectionHeading
               title="把成长带到其他设备"
               description="管理你的修士称谓与跨设备同步凭据。"
@@ -388,6 +405,16 @@ export function CultivationProfileModal() {
               进行中的对局始终留在当前设备，不会被带到其他设备。
             </p>
           </section>
+
+          {/* 底部便捷关闭按钮 */}
+          <div className="pt-1 pb-2">
+            <button
+              onClick={close}
+              className="w-full py-2.5 rounded-xl border border-wood-mid bg-white/90 text-ink text-xs font-serif font-bold hover:bg-wood-light transition-colors active:scale-95 shadow-sm"
+            >
+              返回开始页
+            </button>
+          </div>
         </div>
       </div>
     </div>
