@@ -1,7 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import { CURRENT_RULES_VERSION } from '@core/index';
 import { useGameStore } from '../store';
-import { buildCultivationProfileSnapshot, type CultivationProfileMilestone } from '../lib/cultivationProfile';
+import {
+  buildCultivationProfileSnapshot,
+  type CultivationProfileMilestone,
+  type CultivationProfileRecord,
+} from '../lib/cultivationProfile';
 
 function formatDate(value: string | null): string {
   if (!value) return '';
@@ -33,6 +37,84 @@ function ScoreMetric({ label, value, featured = false }: { label: string; value:
       <div className={`mt-1 font-serif font-black tabular-nums text-ink ${featured ? 'text-3xl' : 'text-xl'}`}>
         {value}
       </div>
+    </div>
+  );
+}
+
+function RecentScoreTrend({ records }: { records: readonly CultivationProfileRecord[] }) {
+  const scores = records
+    .filter((record) => record.outcome === 'completed' && typeof record.finalScore === 'number')
+    .slice(-8)
+    .map((record) => ({
+      score: record.finalScore as number,
+      label: formatDate(record.endedAt ?? record.startedAt),
+    }));
+
+  if (scores.length < 2) {
+    return (
+      <div className="mt-2.5 rounded-[22px] border border-wood-light bg-white/85 px-4 py-4 text-center shadow-sm">
+        <p className="font-serif text-sm font-bold text-ink">再完成一局，这里就能看见你的修为走势。</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-ink-light">曲线只比较当前玩法下最近完成的对局。</p>
+      </div>
+    );
+  }
+
+  const width = 300;
+  const height = 126;
+  const padding = { top: 18, right: 14, bottom: 26, left: 18 };
+  const minScore = Math.min(...scores.map((point) => point.score));
+  const maxScore = Math.max(...scores.map((point) => point.score));
+  const scoreRange = Math.max(maxScore - minScore, 1);
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const points = scores.map((point, index) => {
+    const x = padding.left + (plotWidth * index) / (scores.length - 1);
+    const y = padding.top + ((maxScore - point.score) / scoreRange) * plotHeight;
+    return { ...point, x, y };
+  });
+  const line = points.map((point) => `${point.x},${point.y}`).join(' ');
+  const area = `${padding.left},${height - padding.bottom} ${line} ${width - padding.right},${height - padding.bottom}`;
+
+  return (
+    <div className="mt-2.5 rounded-[22px] border border-wood-light bg-white/85 p-3.5 shadow-sm">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[11px] text-ink-light">最近 {scores.length} 局 · 最低 {minScore.toFixed(1)}</p>
+        <p className="shrink-0 text-[11px] font-semibold text-wood-dark">最高 {maxScore.toFixed(1)}</p>
+      </div>
+      <svg
+        role="img"
+        aria-label={`最近 ${scores.length} 局修为走势，从 ${minScore.toFixed(1)} 到 ${maxScore.toFixed(1)}`}
+        viewBox={`0 0 ${width} ${height}`}
+        className="mt-2 block h-32 w-full overflow-visible"
+      >
+        <defs>
+          <linearGradient id="cultivation-score-area" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#B8742C" stopOpacity="0.24" />
+            <stop offset="100%" stopColor="#B8742C" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <line
+          x1={padding.left}
+          x2={width - padding.right}
+          y1={height - padding.bottom}
+          y2={height - padding.bottom}
+          stroke="#D9C7A9"
+          strokeWidth="1"
+        />
+        <polyline points={area} fill="url(#cultivation-score-area)" stroke="none" />
+        <polyline points={line} fill="none" stroke="#A75C24" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
+        {points.map((point, index) => (
+          <g key={`${point.label}-${index}`}>
+            <circle cx={point.x} cy={point.y} fill="#FCF6EA" r="4.5" stroke="#A75C24" strokeWidth="2.5" />
+            {(index === 0 || index === points.length - 1) && (
+              <text x={point.x} y={height - 7} fill="#8D745B" fontSize="9" textAnchor={index === 0 ? 'start' : 'end'}>
+                {point.label}
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+      <p className="sr-only">{scores.map((point) => `${point.label} ${point.score.toFixed(1)} 修为`).join('；')}</p>
     </div>
   );
 }
@@ -111,6 +193,7 @@ export function CultivationProfileModal() {
   const otherRuleSummaries = profile.combinedSummary.byRulesVersion.filter(
     (group) => group.rulesVersion !== currentRulesVersion,
   );
+  const currentRuleRecentRecords = profile.records.filter((record) => record.rulesVersion === currentRulesVersion);
   const nextMilestone = profile.milestones.find((milestone) => !milestone.achieved) ?? null;
   const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
   const playerName = identity?.display_name && identity.display_name !== '玩家' ? identity.display_name : '你';
@@ -222,6 +305,12 @@ export function CultivationProfileModal() {
                 </div>
               )}
             </div>
+          </section>
+
+          {/* 最近成绩走势 */}
+          <section>
+            <SectionHeading title="最近修为走势" description="只看当前玩法，避免不同规则的成绩混在一起。" />
+            <RecentScoreTrend records={currentRuleRecentRecords} />
           </section>
 
           {/* 修行印记 */}

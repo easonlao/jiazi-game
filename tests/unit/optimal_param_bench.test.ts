@@ -141,6 +141,8 @@ function play(tm: TurnManager, p: Params) {
 }
 
 describe('optimal-param-bench', () => {
+  // 4 组各 20,000 局的真引擎压测在 Windows CI 上实测约 17 分钟，
+  // 需要高于原有 15 分钟上限，避免计算已完成却被框架误判失败。
   it('J2/J4 20000 each', async () => {
     const GAMES = 20000;
     for (const p of VARIANTS) {
@@ -167,5 +169,5 @@ describe('optimal-param-bench', () => {
       _log(lines.join('\n'));
     }
     _log('=== FINAL DONE ===');
-  }, 900000);
+  }, 1_200_000);
 });

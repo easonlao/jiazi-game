@@ -32,18 +32,34 @@ test.describe('修行档案', () => {
               finalScore: null,
             },
             {
-              id: 'local-v4',
+              id: 'local-v4-first',
               rulesVersion: 4,
               startedAt: '2026-08-02T09:00:00.000Z',
               endedAt: '2026-08-02T09:40:00.000Z',
               outcome: 'completed',
+              finalScore: 78.4,
+            },
+            {
+              id: 'local-v4',
+              rulesVersion: 4,
+              startedAt: '2026-08-03T09:00:00.000Z',
+              endedAt: '2026-08-03T09:40:00.000Z',
+              outcome: 'completed',
               finalScore: 100.2,
+            },
+            {
+              id: 'local-v4-latest',
+              rulesVersion: 4,
+              startedAt: '2026-08-04T09:00:00.000Z',
+              endedAt: '2026-08-04T09:40:00.000Z',
+              outcome: 'completed',
+              finalScore: 96.7,
             },
             {
               id: 'local-v6',
               rulesVersion: 6,
-              startedAt: '2026-08-03T09:00:00.000Z',
-              endedAt: '2026-08-03T09:55:00.000Z',
+              startedAt: '2026-08-05T09:00:00.000Z',
+              endedAt: '2026-08-05T09:55:00.000Z',
               outcome: 'completed',
               finalScore: 88.8,
             },
@@ -63,17 +79,19 @@ test.describe('修行档案', () => {
     const modal = page.locator('.modal-backdrop').filter({ has: page.getByRole('dialog', { name: '归档修士的成长' }) });
     await expect(modal).toBeVisible();
     await expect(modal.getByText('已走过', { exact: true })).toBeVisible();
-    await expect(modal.getByText('3 局', { exact: true })).toBeVisible();
+    await expect(modal.getByText('5 局', { exact: true })).toBeVisible();
     await expect(modal.getByText('这套玩法的成绩', { exact: true })).toBeVisible();
     await expect(modal.getByText('目前最佳修为', { exact: true })).toBeVisible();
     await expect(modal.getByText('目前最佳修为', { exact: true }).locator('..').getByText('100.2', { exact: true })).toBeVisible();
+    await expect(modal.getByText('最近修为走势', { exact: true })).toBeVisible();
+    await expect(modal.getByRole('img', { name: '最近 3 局修为走势，从 78.4 到 100.2' })).toBeVisible();
     await expect(modal.getByText('修行印记', { exact: true })).toBeVisible();
     await expect(modal.getByText('首次开局', { exact: true })).toBeVisible();
     await expect(modal.getByText('首次完成一甲子', { exact: true })).toBeVisible();
     await expect(modal.getByText('累计完成局数', { exact: true })).toBeVisible();
     await expect(modal.getByText('当前规则个人纪录', { exact: true })).toBeVisible();
     await expect(modal.getByText('把成长带到其他设备', { exact: true })).toBeVisible();
-    await expect(modal.getByRole('button', { name: /保存这 2 局成长记录/ })).toBeVisible();
+    await expect(modal.getByRole('button', { name: /保存这 4 局成长记录/ })).toBeVisible();
 
     await modal.getByRole('button', { name: '关闭' }).click();
     await expect(modal).toBeHidden();
