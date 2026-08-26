@@ -200,6 +200,9 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(handCard).toHaveAttribute('data-selected', 'true');
     await expect(modal).toHaveCount(0);
 
+    await handCard.click();
+    await expect(handCard).toHaveAttribute('data-selected', 'true');
+
     await openPublicCardHistory(page, handCard);
     await expect(modal.getByText('纳灵', { exact: true })).toBeVisible();
     await expect(modal.getByText('买卖次数', { exact: true })).toBeVisible();

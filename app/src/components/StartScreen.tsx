@@ -53,7 +53,7 @@ export function StartScreen({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-serif text-sm font-bold text-ink">本机修行账本</h3>
-            <p className="mt-0.5 text-[11px] text-ink-light">仅保存在这台设备；从启用后开始统计，不回填旧局。</p>
+            <p className="mt-0.5 text-[11px] text-ink-light">仅保存在这台设备；记录对局累计、完成与最好成绩。</p>
           </div>
           <span className="shrink-0 rounded-full border border-wood-light bg-parchment px-2 py-0.5 text-[10px] text-ink-light">
             {`V${rulesVersion || '?'}`}

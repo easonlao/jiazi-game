@@ -113,7 +113,9 @@ export function HandCards() {
                 selected={selectedHandCard === i}
                 onClick={
                   gameState === 'player_action'
-                    ? () => selectHandCard(i)
+                    ? () => {
+                        if (selectedHandCard !== i) selectHandCard(i);
+                      }
                     : undefined
                 }
                 onOpenHistory={() => setHistoryCard(slot.card)}

@@ -116,4 +116,56 @@ describe('CultivationLedgerService', () => {
       ],
     });
   });
+
+  it('存在旧版排行榜记录时，自动迁移为本机修行账本并正确统计', () => {
+    storage.setItem('jiazi_leaderboard', JSON.stringify([
+      { score: 2460.0, date: '2026-08-23', rulesVersion: 7 },
+      { score: 1800.5, date: '2026-08-20', rulesVersion: 6 },
+    ]));
+
+    const freshLedger = new CultivationLedgerService(storage);
+    const summary = freshLedger.getSummary();
+    expect(summary.totalGames).toBe(2);
+    expect(summary.completedGames).toBe(2);
+    expect(summary.byRulesVersion).toEqual([
+      {
+        rulesVersion: 7,
+        completedGames: 1,
+        averageScore: 2460.0,
+        highestScore: 2460.0,
+        lowestScore: 2460.0,
+      },
+      {
+        rulesVersion: 6,
+        completedGames: 1,
+        averageScore: 1800.5,
+        highestScore: 1800.5,
+        lowestScore: 1800.5,
+      },
+    ]);
+
+    const records = freshLedger.getRecords();
+    expect(records).toHaveLength(2);
+    expect(records[0]?.finalScore).toBe(2460.0);
+    expect(records[0]?.rulesVersion).toBe(7);
+    expect(records[0]?.outcome).toBe('completed');
+  });
+
+  it('旧版排行榜在账本为空时补充迁移，且多次构造保持幂等', () => {
+    storage.setItem('jiazi_cultivation_ledger', JSON.stringify({
+      version: 1,
+      activeGameId: null,
+      records: [],
+    }));
+    storage.setItem('jiazi_leaderboard', JSON.stringify([
+      { score: 2460.0, date: '2026-08-23', rulesVersion: 7 },
+    ]));
+
+    const ledger1 = new CultivationLedgerService(storage);
+    expect(ledger1.getSummary().totalGames).toBe(1);
+
+    const ledger2 = new CultivationLedgerService(storage);
+    expect(ledger2.getSummary().totalGames).toBe(1);
+    expect(ledger2.getRecords()).toHaveLength(1);
+  });
 });

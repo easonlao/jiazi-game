@@ -2,6 +2,7 @@ import type { StorageProvider } from '@core/index';
 
 export const CULTIVATION_LEDGER_VERSION = 1 as const;
 const CULTIVATION_LEDGER_KEY = 'jiazi_cultivation_ledger';
+const LEADERBOARD_KEY = 'jiazi_leaderboard';
 
 export type CultivationLedgerOutcome = 'active' | 'completed' | 'abandoned';
 
@@ -57,14 +58,58 @@ function createEmptyState(): CultivationLedgerState {
   };
 }
 
+function readLegacyLeaderboardRecords(storage: StorageProvider): CultivationLedgerRecord[] {
+  try {
+    const raw = storage.getItem(LEADERBOARD_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const validEntries = parsed.filter((entry): entry is { score: number; date: string; rulesVersion?: number } => (
+      typeof entry === 'object' &&
+      entry !== null &&
+      typeof (entry as { score?: unknown }).score === 'number' &&
+      Number.isFinite((entry as { score?: unknown }).score) &&
+      typeof (entry as { date?: unknown }).date === 'string' &&
+      ((entry as { rulesVersion?: unknown }).rulesVersion === undefined ||
+        Number.isInteger((entry as { rulesVersion?: unknown }).rulesVersion))
+    ));
+    return validEntries.map((entry, index) => {
+      const rulesVersion = typeof entry.rulesVersion === 'number' ? entry.rulesVersion : 1;
+      const score = Math.round(entry.score * 10) / 10;
+      const startedAt = entry.date.includes('T') ? entry.date : `${entry.date}T00:00:00.000Z`;
+      return {
+        id: `legacy_lb_${rulesVersion}_${entry.date}_${score}_${index}`,
+        rulesVersion,
+        startedAt,
+        endedAt: startedAt,
+        outcome: 'completed' as const,
+        finalScore: score,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 function readJson(storage: StorageProvider): CultivationLedgerState {
   try {
     const raw = storage.getItem(CULTIVATION_LEDGER_KEY);
-    if (!raw) return createEmptyState();
+    if (!raw) {
+      const legacyRecords = readLegacyLeaderboardRecords(storage);
+      const initialState: CultivationLedgerState = {
+        version: CULTIVATION_LEDGER_VERSION,
+        activeGameId: null,
+        records: legacyRecords,
+      };
+      if (legacyRecords.length > 0) {
+        writeJson(storage, initialState);
+      }
+      return initialState;
+    }
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== 'object') return createEmptyState();
 
-    const records = Array.isArray((parsed as { records?: unknown }).records)
+    let records = Array.isArray((parsed as { records?: unknown }).records)
       ? (parsed as { records: unknown[] }).records.filter((record): record is CultivationLedgerRecord => (
           typeof record === 'object' &&
           record !== null &&
@@ -78,6 +123,20 @@ function readJson(storage: StorageProvider): CultivationLedgerState {
           ((record as CultivationLedgerRecord).finalScore === null || typeof (record as CultivationLedgerRecord).finalScore === 'number')
         ))
       : [];
+
+    if (records.length === 0) {
+      const legacyRecords = readLegacyLeaderboardRecords(storage);
+      if (legacyRecords.length > 0) {
+        records = legacyRecords;
+        writeJson(storage, {
+          version: typeof (parsed as { version?: unknown }).version === 'number'
+            ? (parsed as { version: number }).version
+            : CULTIVATION_LEDGER_VERSION,
+          activeGameId: null,
+          records,
+        });
+      }
+    }
 
     const activeGameId = typeof (parsed as { activeGameId?: unknown }).activeGameId === 'string'
       ? (parsed as { activeGameId: string }).activeGameId
