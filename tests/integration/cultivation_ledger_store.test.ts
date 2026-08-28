@@ -27,11 +27,33 @@ class LocalStorageMock {
 (globalThis as any).localStorage = new LocalStorageMock();
 vi.stubGlobal('fetch', () => Promise.reject(new Error('no fetch in test env')));
 
-async function freshGame(seed: number) {
+async function freshGame(seed: number, established = false) {
   const tm = new TurnManager(DEFAULT_BALANCE_CONFIG, new SeededRandomSource(seed));
   await tm.initialize();
   bindTurnManagerCallbacks(tm, useGameStore.setState, () => useGameStore.getState());
-  useGameStore.setState({ turnManager: tm, lastSettlement: null });
+  useGameStore.setState({
+    turnManager: tm,
+    lastSettlement: null,
+    telemetryState: established
+      ? {
+          consent: { version: 1, granted: true, granted_at: '2026-08-01T00:00:00.000Z' },
+          identity: {
+            player_id: 'p1',
+            public_player_id: 'pub1',
+            public_code: 'CODE1',
+            display_name: '已立档修士',
+            leaderboard_eligible: true,
+          },
+          telemetryEnabled: true,
+          busy: false,
+          error: null,
+          recovery_code: 'REC1',
+          cultivationLedger: null,
+          cultivationLedgerBusy: false,
+          cultivationLedgerError: null,
+        }
+      : null,
+  });
   useGameStore.getState().startGame();
   useGameStore.getState()._sync();
   return tm;
@@ -116,6 +138,20 @@ describe('本机修行账本与 store 接线', () => {
     expect(ledgerAfterReset.records).toHaveLength(1);
     expect(ledgerAfterReset.records[0]?.id).toBe(activeLedgerBefore.records[0]?.id);
     expect(ledgerAfterReset.records[0]?.outcome).toBe('abandoned');
+    void tm;
+  });
+
+  it('已立档玩家未上云的本地试玩局不会计入账号修行概览', async () => {
+    const tm = await freshGame(42, true);
+    // 已立档玩家开局后，未上云本地局不计入账号概览（严格账号优先边界）
+    expect(useGameStore.getState().cultivationLedgerSummary.totalGames).toBe(0);
+
+    useGameStore.getState().executeWait();
+    expect(useGameStore.getState().cultivationLedgerSummary.totalGames).toBe(0);
+
+    // 本地存档依然正常存在并可继续
+    expect(useGameStore.getState().loadGameFromSave()).toBe(true);
+    expect(useGameStore.getState().cultivationLedgerSummary.totalGames).toBe(0);
     void tm;
   });
 });

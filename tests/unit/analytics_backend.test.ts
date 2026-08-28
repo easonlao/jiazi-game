@@ -153,90 +153,92 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
     });
   });
 
-  it('认领本机修行账本时只上传终态记录并走专用 Edge Function', async () => {
-    const invoke = vi.fn(async () => ({
-      data: {
-        records: [
-          {
-            player_id: 'player-1',
-            local_game_id: 'game-1',
-            game_session_id: null,
-            rules_version: 7,
-            started_at: '2026-08-10T00:00:00.000Z',
-            ended_at: '2026-08-10T00:30:00.000Z',
-            outcome: 'completed',
-            final_score: 120.5,
-            record_source: 'local_claim',
-            created_at: '2026-08-10T00:30:00.000Z',
-            updated_at: '2026-08-10T00:30:00.000Z',
-          },
-        ],
+  it('fetchActiveGameSession 正确查询 game_sessions 与 game_events 并还原动作链（区分数据库主键与客户端ID）', async () => {
+    const sessionData = {
+      id: 'db-uuid-session-123',
+      client_session_id: 'client-sess-abc',
+      started_at: '2026-08-27T10:00:00.000Z',
+      replay_seed: 42,
+      rules_snapshot: {
+        rulesVersion: 7,
+        scoreRules: {},
+        volatility: {},
+        voidCardCount: 2,
       },
-      error: null,
-    }));
-    const client = { functions: { invoke } } as unknown as SupabaseClient;
+      status: 'started',
+      rounds_completed: 3,
+      final_score: 50,
+    };
+
+    const eventsData = [
+      {
+        event_type: 'action_buy',
+        sequence: 1,
+        payload: { card_index: 0, use_leverage: false },
+        occurred_at: '2026-08-27T10:01:00.000Z',
+      },
+      {
+        event_type: 'action_wait',
+        sequence: 2,
+        payload: {},
+        occurred_at: '2026-08-27T10:02:00.000Z',
+      },
+      {
+        event_type: 'action_lock',
+        sequence: 3,
+        payload: { card_index: 1 },
+        occurred_at: '2026-08-27T10:03:00.000Z',
+      },
+      {
+        event_type: 'action_sell',
+        sequence: 4,
+        payload: { slot_index: 0 },
+        occurred_at: '2026-08-27T10:04:00.000Z',
+      },
+    ];
+
+    const eventsEqMock = vi.fn().mockReturnThis();
+
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === 'game_sessions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: sessionData, error: null }),
+          };
+        }
+        if (table === 'game_events') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: eventsEqMock,
+            order: vi.fn().mockReturnThis(),
+            then: (resolve: any) => resolve({ data: eventsData, error: null }),
+          };
+        }
+        return {};
+      }),
+    } as unknown as SupabaseClient;
+
     const backend = new SupabaseAnalyticsBackend(client);
+    const active = await backend.fetchActiveGameSession('player-1');
 
-    const snapshot = await backend.claimCultivationLedger('player-1', [
-      {
-        id: 'game-0',
-        rulesVersion: 7,
-        startedAt: '2026-08-09T00:00:00.000Z',
-        endedAt: null,
-        outcome: 'active',
-        finalScore: null,
-      },
-      {
-        id: 'game-1',
-        rulesVersion: 7,
-        startedAt: '2026-08-10T00:00:00.000Z',
-        endedAt: '2026-08-10T00:30:00.000Z',
-        outcome: 'completed',
-        finalScore: 120.5,
-      },
-      {
-        id: 'game-2',
-        rulesVersion: 6,
-        startedAt: '2026-08-11T00:00:00.000Z',
-        endedAt: '2026-08-11T00:45:00.000Z',
-        outcome: 'abandoned',
-        finalScore: null,
-      },
+    expect(active).not.toBeNull();
+    expect(active?.session_id).toBe('db-uuid-session-123');
+    expect(active?.client_session_id).toBe('client-sess-abc');
+    expect(active?.seed).toBe(42);
+    expect(active?.rules_snapshot.rulesVersion).toBe(7);
+    expect(eventsEqMock).toHaveBeenCalledWith('player_id', 'player-1');
+    expect(eventsEqMock).toHaveBeenCalledWith('session_id', 'db-uuid-session-123');
+    expect(active?.actions).toEqual([
+      { type: 'buy', cardIndex: 0, leverage: false },
+      { type: 'wait' },
+      { type: 'lock', cardIndex: 1 },
+      { type: 'sell', slotIndex: 0 },
     ]);
-
-    expect(invoke).toHaveBeenCalledWith('claim-cultivation-ledger', {
-      body: {
-        player_id: 'player-1',
-        records: [
-          {
-            local_game_id: 'game-1',
-            rules_version: 7,
-            started_at: '2026-08-10T00:00:00.000Z',
-            ended_at: '2026-08-10T00:30:00.000Z',
-            outcome: 'completed',
-            final_score: 120.5,
-          },
-          {
-            local_game_id: 'game-2',
-            rules_version: 6,
-            started_at: '2026-08-11T00:00:00.000Z',
-            ended_at: '2026-08-11T00:45:00.000Z',
-            outcome: 'abandoned',
-            final_score: null,
-          },
-        ],
-      },
-    });
-    expect(snapshot.records).toHaveLength(1);
-    expect(snapshot.summary).toEqual(
-      summarizeCultivationLedger([
-        {
-          rulesVersion: 7,
-          outcome: 'completed',
-          finalScore: 120.5,
-        },
-      ]),
-    );
   });
 });
 

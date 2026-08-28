@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TelemetryController } from '../../app/src/lib/telemetryController';
+import {
+  TelemetryController,
+  isSameAction,
+  mergeActionChains,
+} from '../../app/src/lib/telemetryController';
 import type {
   AnalyticsBackend,
   CultivationLedgerSnapshot,
@@ -56,10 +60,7 @@ function createBackend() {
       records: [],
       summary: summarizeCultivationLedger([]),
     })),
-    claimCultivationLedger: vi.fn(async (): Promise<CultivationLedgerSnapshot> => ({
-      records: [],
-      summary: summarizeCultivationLedger([]),
-    })),
+    fetchActiveGameSession: vi.fn(async () => null),
   } satisfies AnalyticsBackend;
 }
 
@@ -210,30 +211,6 @@ describe('TelemetryController leaderboard eligibility', () => {
         },
       ]),
     });
-    backend.claimCultivationLedger.mockResolvedValue({
-      records: [
-        {
-          player_id: 'player-1',
-          local_game_id: 'local-1',
-          game_session_id: null,
-          rules_version: 7,
-          started_at: '2026-08-09T00:00:00.000Z',
-          ended_at: '2026-08-09T00:35:00.000Z',
-          outcome: 'completed',
-          final_score: 99.5,
-          record_source: 'local_claim',
-          created_at: '2026-08-09T00:35:00.000Z',
-          updated_at: '2026-08-09T00:35:00.000Z',
-        },
-      ],
-      summary: summarizeCultivationLedger([
-        {
-          rulesVersion: 7,
-          outcome: 'completed',
-          finalScore: 99.5,
-        },
-      ]),
-    });
     const controller = new TelemetryController({ storage, backend });
 
     await controller.init();
@@ -241,61 +218,17 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(controller.getState().cultivationLedger?.records).toHaveLength(1);
     expect(controller.getState().cultivationLedgerBusy).toBe(false);
 
-    await controller.claimCultivationLedger([
-      {
-        id: 'active-1',
-        rulesVersion: 7,
-        startedAt: '2026-08-08T00:00:00.000Z',
-        endedAt: null,
-        outcome: 'active',
-        finalScore: null,
-      },
-      {
-        id: 'local-1',
-        rulesVersion: 7,
-        startedAt: '2026-08-09T00:00:00.000Z',
-        endedAt: '2026-08-09T00:35:00.000Z',
-        outcome: 'completed',
-        finalScore: 99.5,
-      },
-      {
-        id: 'local-2',
-        rulesVersion: 6,
-        startedAt: '2026-08-07T00:00:00.000Z',
-        endedAt: '2026-08-07T00:30:00.000Z',
-        outcome: 'abandoned',
-        finalScore: null,
-      },
-    ] as CultivationLedgerRecord[]);
+    expect(backend.fetchActiveGameSession).toHaveBeenCalledWith('player-1');
 
-    expect(backend.claimCultivationLedger).toHaveBeenCalledWith('player-1', [
-      {
-        id: 'local-1',
-        rulesVersion: 7,
-        startedAt: '2026-08-09T00:00:00.000Z',
-        endedAt: '2026-08-09T00:35:00.000Z',
-        outcome: 'completed',
-        finalScore: 99.5,
-      },
-      {
-        id: 'local-2',
-        rulesVersion: 6,
-        startedAt: '2026-08-07T00:00:00.000Z',
-        endedAt: '2026-08-07T00:30:00.000Z',
-        outcome: 'abandoned',
-        finalScore: null,
-      },
-    ]);
-    expect(controller.getState().cultivationLedger?.records).toHaveLength(1);
-    expect(controller.getState().cultivationLedger?.summary).toEqual(
-      summarizeCultivationLedger([
-        {
-          rulesVersion: 7,
-          outcome: 'completed',
-          finalScore: 99.5,
-        },
-      ]),
+    // Test resumeVerifiedSession
+    const resumed = controller.resumeVerifiedSession(
+      { rules_version: '7', game_mode: 'standard', volatility_enabled: true },
+      { session_id: 'session-resumed', started_at: '2026-08-27T10:00:00.000Z', seed: 42, rules_snapshot: {} as any },
+      [{ type: 'buy', cardIndex: 0, leverage: false }],
+      { rounds: 1, final_score: 10, margin_call_count: 0 }
     );
+    expect(resumed).toBe(true);
+    expect(controller.getActiveSessionId()).toBe('session-resumed');
   });
 
   it('当前版本（生产默认 V5）未拿到服务端 seed 时不允许创建普通交易会话', async () => {
@@ -517,5 +450,206 @@ describe('TelemetryController.updateDisplayName', () => {
     expect(controller.getState().error).toBe('昵称更新失败，请稍后重试');
     expect(JSON.parse(storage.getItem('jiazi_player_identity')!)).toEqual(before);
     warn.mockRestore();
+  });
+});
+
+describe('TelemetryController 会话持久化与刷新恢复 (Session Persistence)', () => {
+  const verifiedMeta: ActiveSessionMeta = {
+    rules_version: '7',
+    game_mode: 'volatility_trade',
+    volatility_enabled: true,
+  };
+
+  const verifiedStart: VerifiedSessionStart = {
+    session_id: 'sess-persist-1',
+    client_session_id: 'client-sess-1',
+    started_at: '2026-08-28T00:00:00.000Z',
+    seed: 12345,
+    rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+  };
+
+  it('startSession 登记并持久化活跃会话，recordReplayAction 增量写入存储', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    const controller = new TelemetryController({ storage, backend });
+    await controller.init();
+
+    expect(controller.startSession(verifiedMeta, verifiedStart)).toBe(true);
+    expect(controller.getActiveSessionId()).toBe('sess-persist-1');
+
+    // 写入动作
+    controller.recordReplayAction({ type: 'buy', cardIndex: 0, leverage: false });
+    controller.recordReplayAction({ type: 'wait' });
+
+    const raw = storage.getItem('jiazi_active_verified_session');
+    expect(raw).toBeTruthy();
+    const persisted = JSON.parse(raw!);
+    expect(persisted.session_id).toBe('sess-persist-1');
+    expect(persisted.replayActions).toHaveLength(2);
+    expect(persisted.replayActions[0]).toEqual({ type: 'buy', cardIndex: 0, leverage: false });
+    expect(persisted.replayActions[1]).toEqual({ type: 'wait' });
+  });
+
+  it('页面刷新后新实例自动复原会话与完整动作链', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    const c1 = new TelemetryController({ storage, backend });
+    await c1.init();
+    c1.startSession(verifiedMeta, verifiedStart);
+    c1.recordReplayAction({ type: 'buy', cardIndex: 0, leverage: false });
+    c1.recordReplayAction({ type: 'wait' });
+    c1.recordReplayAction({ type: 'sell', slotIndex: 0 });
+
+    // 模拟页面刷新：创建全新 controller 实例（共享同一 storage）
+    const c2 = new TelemetryController({ storage, backend });
+    await c2.init();
+    expect(c2.getActiveSessionId()).toBe('sess-persist-1');
+
+    // 即使云端重播列表落后（仅 1 步），resumeVerifiedSession 也优先保留本地完整的 3 步动作
+    c2.resumeVerifiedSession(verifiedMeta, verifiedStart, [{ type: 'buy', cardIndex: 0, leverage: false }], {
+      rounds: 3,
+      final_score: 100,
+      margin_call_count: 0,
+    });
+
+    // 增量记录第 4 步动作
+    c2.recordReplayAction({ type: 'wait' });
+
+    const persisted = JSON.parse(storage.getItem('jiazi_active_verified_session')!);
+    expect(persisted.replayActions).toHaveLength(4);
+    expect(persisted.replayActions[2]).toEqual({ type: 'sell', slotIndex: 0 });
+    expect(persisted.replayActions[3]).toEqual({ type: 'wait' });
+  });
+
+  it('endSession 正常终局或放弃时清理本地持久化会话', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    const controller = new TelemetryController({ storage, backend });
+    await controller.init();
+    controller.startSession(verifiedMeta, verifiedStart);
+    expect(storage.getItem('jiazi_active_verified_session')).toBeTruthy();
+
+    controller.endSession({
+      reason: 'game_over',
+      rounds: 60,
+      final_score: 500,
+      margin_call_count: 0,
+    });
+
+    expect(controller.getActiveSessionId()).toBeNull();
+    expect(storage.getItem('jiazi_active_verified_session')).toBeNull();
+  });
+});
+
+describe('双设备动作链冲突检测与合并机制 (Dual-Device Conflict Detection)', () => {
+  const verifiedMeta: ActiveSessionMeta = {
+    rules_version: '7',
+    game_mode: 'volatility_trade',
+    volatility_enabled: true,
+  };
+
+  const verifiedStart: VerifiedSessionStart = {
+    session_id: 'sess-conflict-1',
+    client_session_id: 'client-sess-conflict-1',
+    started_at: '2026-08-28T00:00:00.000Z',
+    seed: 12345,
+    rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+  };
+
+  it('mergeActionChains: 相同前缀且本地更全时合并为 local', () => {
+    const local = [
+      { type: 'buy', cardIndex: 0, leverage: false },
+      { type: 'wait' },
+    ] as const;
+    const cloud = [{ type: 'buy', cardIndex: 0, leverage: false }] as const;
+
+    const res = mergeActionChains(local, cloud);
+    expect(res.type).toBe('match');
+    if (res.type === 'match') {
+      expect(res.source).toBe('local');
+      expect(res.actions).toHaveLength(2);
+    }
+  });
+
+  it('mergeActionChains: 相同前缀且云端更全时合并为 cloud', () => {
+    const local = [{ type: 'buy', cardIndex: 0, leverage: false }] as const;
+    const cloud = [
+      { type: 'buy', cardIndex: 0, leverage: false },
+      { type: 'sell', slotIndex: 0 },
+    ] as const;
+
+    const res = mergeActionChains(local, cloud);
+    expect(res.type).toBe('match');
+    if (res.type === 'match') {
+      expect(res.source).toBe('cloud');
+      expect(res.actions).toHaveLength(2);
+    }
+  });
+
+  it('mergeActionChains: 动作在同位置分叉时精准检测 conflict', () => {
+    const local = [
+      { type: 'buy', cardIndex: 0, leverage: false },
+      { type: 'wait' },
+    ] as const;
+    const cloud = [
+      { type: 'buy', cardIndex: 0, leverage: false },
+      { type: 'sell', slotIndex: 0 },
+    ] as const;
+
+    const res = mergeActionChains(local, cloud);
+    expect(res.type).toBe('conflict');
+    if (res.type === 'conflict') {
+      expect(res.divergedAt).toBe(1);
+      expect(res.localAction).toEqual({ type: 'wait' });
+      expect(res.cloudAction).toEqual({ type: 'sell', slotIndex: 0 });
+    }
+  });
+
+  it('resumeVerifiedSession: 遭遇双设备分叉时返回 false 并设置明确冲突错误', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    const controller = new TelemetryController({ storage, backend });
+    await controller.init();
+
+    // 假设本地先前执行了 [Buy(0), Wait]
+    storage.setItem(
+      'jiazi_active_verified_session',
+      JSON.stringify({
+        session_id: 'sess-conflict-1',
+        started_at: '2026-08-28T00:00:00.000Z',
+        meta: verifiedMeta,
+        verified: verifiedStart,
+        replayActions: [
+          { type: 'buy', cardIndex: 0, leverage: false },
+          { type: 'wait' },
+        ],
+        playerId: 'player-1',
+        progress: { rounds: 2, final_score: 50, margin_call_count: 0 },
+      }),
+    );
+
+    // 重新初始化读取本地持久化
+    const c2 = new TelemetryController({ storage, backend });
+    await c2.init();
+
+    // 云端传入了分叉的动作链 [Buy(0), Sell(0)]
+    const cloudDivergedActions = [
+      { type: 'buy', cardIndex: 0, leverage: false },
+      { type: 'sell', slotIndex: 0 },
+    ];
+
+    const result = c2.resumeVerifiedSession(verifiedMeta, verifiedStart, cloudDivergedActions, {
+      rounds: 2,
+      final_score: 60,
+      margin_call_count: 0,
+    });
+
+    // 断言拒绝继续并标明冲突
+    expect(result).toBe(false);
+    expect(c2.getState().error).toContain('冲突');
   });
 });

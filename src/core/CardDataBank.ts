@@ -4,11 +4,30 @@ import { VOID_CARD_COUNT, VOID_CARD_ID_START, VoidCard } from './VoidCard.ts';
 /** 卡牌数据银行 - 加载和管理所有甲子卡牌 */
 export class CardDataBank {
   private cards: Map<number, JiaziCard> = new Map();
-  /** V5 空亡牌张数（可选注入；缺省 = VOID_CARD_COUNT 定稿值 3）。 */
-  private readonly voidCardCount: number;
+  /** 空亡牌张数（可选注入；缺省 = VOID_CARD_COUNT）。 */
+  private voidCardCount: number;
 
   constructor(voidCardCount: number = VOID_CARD_COUNT) {
     this.voidCardCount = Math.max(0, Math.floor(voidCardCount));
+  }
+
+  /** 更新/确保空亡牌张数（读档时同步，保留已加载的 60 甲子牌） */
+  setVoidCardCount(count: number): void {
+    this.voidCardCount = Math.max(0, Math.floor(count));
+    if (this.cards.size > 0) {
+      for (let id = VOID_CARD_ID_START; ; id++) {
+        if (!this.cards.has(id)) break;
+        if (id >= VOID_CARD_ID_START + this.voidCardCount) {
+          this.cards.delete(id);
+        }
+      }
+      for (let i = 0; i < this.voidCardCount; i++) {
+        const id = VOID_CARD_ID_START + i;
+        if (!this.cards.has(id)) {
+          this.cards.set(id, new VoidCard(id));
+        }
+      }
+    }
   }
 
   /** 从 JSON 数据初始化 */
@@ -28,20 +47,21 @@ export class CardDataBank {
       // 使用默认数据可保证 60 张甲子循环卡牌完整可用。
       this.loadDefaultCards();
     }
-    // 追加 3 张同名空亡纯事件牌（V5 牌堆专用）。V1-V4 是否入堆由 TurnManager
+    // 追加同名空亡纯事件牌（V5 牌堆专用）。V1-V4 是否入堆由 TurnManager
     // 按规则版本门控（buildDeckCards 过滤），本库始终持有它们以便读档按 id 还原。
     this.addVoidCards();
   }
 
   /**
-   * 追加同名空亡纯事件牌（id 61 起，张数 = voidCardCount，缺省 3 = V5 定稿值）。
+   * 追加同名空亡纯事件牌（id 61 起，张数 = voidCardCount）。
    * initialize 可能被重复调用（幂等守卫：已存在则跳过）。
    */
   private addVoidCards(): void {
-    if (this.cards.has(VOID_CARD_ID_START)) return;
     for (let i = 0; i < this.voidCardCount; i++) {
-      const card = new VoidCard(VOID_CARD_ID_START + i);
-      this.cards.set(card.id, card);
+      const id = VOID_CARD_ID_START + i;
+      if (!this.cards.has(id)) {
+        this.cards.set(id, new VoidCard(id));
+      }
     }
   }
 

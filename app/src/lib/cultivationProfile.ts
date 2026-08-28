@@ -19,6 +19,19 @@ export interface CultivationProfileRecord {
   sourceLabel: string;
 }
 
+export interface CultivationPerseveranceSummary {
+  completedGames: number;
+  abandonedGames: number;
+  activeGames: number;
+  terminalGames: number;
+  perseveranceRate: number | null;
+  currentStreak: number;
+  bestStreak: number;
+  evalStatus: 'accumulating' | 'evaluated';
+  ratingLabel: string;
+  description: string;
+}
+
 export interface CultivationProfileMilestone {
   key: 'first_start' | 'first_completion' | 'completion_count' | 'current_rule_record';
   title: string;
@@ -40,6 +53,7 @@ export interface CultivationProfileSnapshot {
     verifiedSession: number;
   };
   milestones: CultivationProfileMilestone[];
+  perseverance: CultivationPerseveranceSummary;
 }
 
 function stripTime(date: string): number {
@@ -120,26 +134,115 @@ function formatSourceCount(
 
 /**
  * 把本机账本与云端账本归一化为档案视图数据。
- * - 云端存在时，以云端记录为主，并补上本机仍在进行中的局内记录；
- * - 云端不存在时，直接使用本机账本；
- * - 统计与里程碑都基于去重后的展示序列，避免把已认领的本机记录重复算两次。
+ * - 已立档玩家：以云端记录为主，并合并未在云端的历史/本地对局；
+ * - 游客（未立档）：本地试玩局不计入账号成长，既有云端记录保持可见；
+ * - 统计与里程碑均基于去重后的账号修行记录序列。
  */
+export function calculatePerseveranceSummary(
+  records: readonly CultivationProfileRecord[]
+): CultivationPerseveranceSummary {
+  const terminalRecords = records.filter(
+    (r) => r.outcome === 'completed' || r.outcome === 'abandoned'
+  );
+  const activeGames = records.filter((r) => r.outcome === 'active').length;
+  const completedGames = records.filter((r) => r.outcome === 'completed').length;
+  const abandonedGames = records.filter((r) => r.outcome === 'abandoned').length;
+  const terminalGames = completedGames + abandonedGames;
+
+  let currentStreak = 0;
+  let bestStreak = 0;
+  let runningStreak = 0;
+
+  for (const rec of terminalRecords) {
+    if (rec.outcome === 'completed') {
+      runningStreak += 1;
+      if (runningStreak > bestStreak) {
+        bestStreak = runningStreak;
+      }
+    } else {
+      runningStreak = 0;
+    }
+  }
+
+  for (let i = terminalRecords.length - 1; i >= 0; i--) {
+    if (terminalRecords[i].outcome === 'completed') {
+      currentStreak += 1;
+    } else {
+      break;
+    }
+  }
+
+  if (terminalGames === 0) {
+    return {
+      completedGames: 0,
+      abandonedGames: 0,
+      activeGames,
+      terminalGames: 0,
+      perseveranceRate: null,
+      currentStreak: 0,
+      bestStreak: 0,
+      evalStatus: 'accumulating',
+      ratingLabel: '道心初启',
+      description: '暂无已完结的修行，完整走完一甲子开启道心记录。',
+    };
+  }
+
+  if (terminalGames < 3) {
+    return {
+      completedGames,
+      abandonedGames,
+      activeGames,
+      terminalGames,
+      perseveranceRate: null,
+      currentStreak,
+      bestStreak,
+      evalStatus: 'accumulating',
+      ratingLabel: '道心初启',
+      description: `当前已完成 ${completedGames} 局、主动终止 ${abandonedGames} 局。正在积累道心样本（需满 3 局）。`,
+    };
+  }
+
+  const rawRate = (completedGames / terminalGames) * 100;
+  const perseveranceRate = Math.round(rawRate * 10) / 10;
+
+  let ratingLabel = '持之以恒';
+  if (perseveranceRate >= 90) {
+    ratingLabel = '道心恒固';
+  } else if (perseveranceRate >= 75) {
+    ratingLabel = '持之以恒';
+  } else if (perseveranceRate >= 50) {
+    ratingLabel = '随缘自适';
+  } else {
+    ratingLabel = '行止由心';
+  }
+
+  return {
+    completedGames,
+    abandonedGames,
+    activeGames,
+    terminalGames,
+    perseveranceRate,
+    currentStreak,
+    bestStreak,
+    evalStatus: 'evaluated',
+    ratingLabel,
+    description: `已完成 ${completedGames} 局，主动终止 ${abandonedGames} 局。坚持度 ${perseveranceRate}%，反映专注走完一甲子的修养节奏。`,
+  };
+}
+
 export function buildCultivationProfileSnapshot(
   localRecords: readonly CultivationLedgerRecord[],
   cloudRecords: readonly CultivationLedgerEntry[] | null,
   currentRulesVersion: number | null,
+  isAccountEstablished: boolean = true,
 ): CultivationProfileSnapshot {
   const localSummary = summarizeCultivationLedger(localRecords);
   const cloudNormalized = cloudRecords?.map(mapCloudRecord) ?? null;
-  // 已取得云端账本时，云端记录是跨设备去重的主记录；但尚未认领的
-  // 本机终态记录仍属于玩家当前可见的成长，不能因为联网而暂时从档案消失。
-  // 以 local_game_id 去重后保留它们，认领成功后自然收敛为云端来源。
-  const localOnlyRecords = localRecords
-    .filter((record) => !cloudNormalized?.some((cloudRecord) => cloudRecord.id === record.id))
-    .map(mapLocalRecord);
-  const combinedRecords = cloudNormalized
-    ? [...cloudNormalized, ...localOnlyRecords]
-    : localOnlyRecords;
+
+  // 账号优先边界：无论游客还是已立档玩家，账号档案（局数、修为、里程碑、走势与坚持度）均仅统计云端记录，本机试玩/未上云局绝不计入
+  const combinedRecords: CultivationProfileRecord[] = cloudNormalized
+    ? [...cloudNormalized]
+    : [];
 
   const records = sortRecords(combinedRecords);
   const combinedSummary = summarizeCultivationLedger(records.map(toSummarySource));
@@ -213,6 +316,8 @@ export function buildCultivationProfileSnapshot(
     },
   ];
 
+  const perseverance = calculatePerseveranceSummary(records);
+
   return {
     records,
     localSummary,
@@ -220,5 +325,6 @@ export function buildCultivationProfileSnapshot(
     combinedSummary,
     sourceBreakdown,
     milestones,
+    perseverance,
   };
 }

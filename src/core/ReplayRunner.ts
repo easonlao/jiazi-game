@@ -22,6 +22,7 @@ export interface ReplayRequest {
   rulesVersion: SupportedRulesVersion;
   volatility?: Partial<ScoreVolatilityConfig>;
   scoreRules?: Partial<ScoreRules>;
+  voidCardCount?: number;
 }
 
 export interface ReplayResult {
@@ -114,6 +115,11 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
     throw new ReplayValidationError('rulesVersion 不受支持');
   }
 
+  const fallbackVoidCardCount = request.rulesVersion >= 5 ? 3 : 0;
+  const replayVoidCardCount = request.voidCardCount !== undefined
+    ? request.voidCardCount
+    : fallbackVoidCardCount;
+
   const random = new SeededRandomSource(request.seed);
   const turnManager = new TurnManager(undefined, random, {
     rulesVersion: request.rulesVersion,
@@ -122,6 +128,7 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
     volatilityRandom: random,
     // V6 地支波动：与服务端重放透传同一 seeded 源（客户端局 = 服务端重放同 roll）。
     branchRollRandom: random,
+    voidConfig: { voidCardCount: replayVoidCardCount },
   });
 
   try {

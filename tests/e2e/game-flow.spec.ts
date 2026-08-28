@@ -171,6 +171,8 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await expect(modal.getByText('评分波动', { exact: true })).toBeVisible();
     await expect(modal.getByText('买卖记录', { exact: true })).toBeVisible();
     await expect(modal.getByTestId('public-card-history-chart')).toBeVisible();
+    await expect(modal.getByTestId('card-history-season-legend')).toBeVisible();
+    await expect(modal.locator('[data-testid^="season-band-"]').first()).toBeVisible();
     await expect(firstPublicCard).toHaveAttribute('data-selected', 'true');
 
     await closePublicCardHistory(page);
@@ -206,11 +208,13 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     await openPublicCardHistory(page, handCard);
     await expect(modal.getByText('纳灵', { exact: true })).toBeVisible();
     await expect(modal.getByText('买卖次数', { exact: true })).toBeVisible();
+    await expect(modal.getByTestId('card-history-trade-legend')).toBeVisible();
+    await expect(modal.locator('[data-testid^="chart-marker-buy-"]').first()).toBeVisible();
     await closePublicCardHistory(page);
     await expect(handCard).toHaveAttribute('data-selected', 'true');
   });
 
-  test('公共牌行迹弹窗锁按钮不冒泡，390x844 下曲线与关闭按钮可见', async ({ page }) => {
+  test('公共牌行迹弹窗锁按钮不冒泡，390x844 下曲线、季节图例、买卖标记与交易图例清晰可见', async ({ page }) => {
     await startGameAndDismiss(page);
 
     const secondPublicCard = getPublicCard(page, 1);
@@ -225,9 +229,10 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     const chart = modal.getByTestId('public-card-history-chart');
     const closeButton = modal.getByTestId('public-card-history-close');
     const historyButton = firstPublicCard.getByTestId('card-history-button');
+    const seasonLegend = modal.getByTestId('card-history-season-legend');
     const viewport = { width: 390, height: 844 };
 
-    for (const locator of [modal, chart, closeButton]) {
+    for (const locator of [modal, chart, closeButton, seasonLegend]) {
       const box = await locator.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(-1);
@@ -236,12 +241,81 @@ test.describe('甲子纪 E2E 游戏流程', () => {
       expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
     }
 
+    await expect(seasonLegend).toBeVisible();
+    await expect(modal.locator('[data-testid^="season-band-"]').first()).toBeVisible();
     await expect(closeButton).toBeVisible();
     await expect.poll(async () => (await historyButton.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
     await expect.poll(async () => (await closeButton.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
     await closePublicCardHistory(page);
     await expect(modal).toBeHidden();
     await expect(firstPublicCard).toHaveAttribute('data-selected', 'true');
+
+    // 纳灵入手牌后在 390 窄屏下验证买卖标记与交易图例
+    await page.getByRole('button', { name: /纳灵/ }).click();
+    await confirmSettlementPreview(page);
+    await dismissSettlement(page);
+
+    const handCard = getHandCard(page, 0);
+    const handModal = await openPublicCardHistory(page, handCard);
+    const tradeLegend = handModal.getByTestId('card-history-trade-legend');
+    const tradeMarker = handModal.locator('[data-testid^="chart-marker-buy-"]').first();
+
+    await expect(tradeLegend).toBeVisible();
+    await expect(tradeMarker).toBeVisible();
+    for (const locator of [tradeLegend, tradeMarker]) {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(-1);
+      expect(box!.y).toBeGreaterThanOrEqual(-1);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+    }
+
+    await closePublicCardHistory(page);
+  });
+
+  test('390x844 窄屏下空亡吞噬标记、+K 步数与空亡图例清晰可见且在视口内', async ({ page }) => {
+    await startGameAndDismiss(page);
+
+    // 推进一回合，并向本地存档注入空亡吞噬事实
+    await selectPublicCard(page);
+    await page.getByRole('button', { name: /纳灵/ }).click();
+    await confirmSettlementPreview(page);
+    await dismissSettlement(page);
+
+    await page.evaluate(() => {
+      const save = JSON.parse(localStorage.getItem('jiazi_game_save') ?? '{}');
+      if (Array.isArray(save.roundLog) && save.roundLog.length > 0) {
+        save.roundLog[0].voidSwallow = { count: 1, totalK: 4, maxK: 4, swallowed: 0 };
+      }
+      localStorage.setItem('jiazi_game_save', JSON.stringify(save));
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await page.getByRole('button', { name: /继续/ }).click();
+    await dismissSettlement(page);
+
+    const firstPublicCard = getPublicCard(page);
+    const modal = await openPublicCardHistory(page, firstPublicCard);
+    const voidMarker = modal.locator('[data-testid="chart-marker-void-1"]');
+    const voidLegend = modal.getByTestId('card-history-void-legend');
+    const viewport = { width: 390, height: 844 };
+
+    await expect(voidMarker).toBeVisible();
+    await expect(voidLegend).toBeVisible();
+    await expect(voidMarker.locator('text=+4')).toBeVisible();
+
+    for (const locator of [voidMarker, voidLegend]) {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(-1);
+      expect(box!.y).toBeGreaterThanOrEqual(-1);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+    }
+
+    await closePublicCardHistory(page);
   });
 
   test('本地存档续局后保留公共牌曲线并继续追加', async ({ page }) => {
@@ -258,7 +332,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     expect(savedAfterBuy.roundLog.some((entry: { action?: string }) => entry.action === 'buy')).toBe(true);
 
     await page.reload();
-    await page.getByText('继续本地游戏', { exact: true }).click();
+    await page.getByRole('button', { name: /继续/ }).click();
     await expect(page.getByText('第 2 回合 / 60', { exact: true })).toBeVisible();
     const restoredModal = await openPublicCardHistory(page, getPublicCard(page));
     await expect(restoredModal.locator('circle')).toHaveCount(2);
@@ -272,7 +346,7 @@ test.describe('甲子纪 E2E 游戏流程', () => {
     expect(savedAfterWait.publicCardHistory).toHaveLength(3);
 
     await page.reload();
-    await page.getByText('继续本地游戏', { exact: true }).click();
+    await page.getByRole('button', { name: /继续/ }).click();
     await expect(page.getByText('第 3 回合 / 60', { exact: true })).toBeVisible();
     const appendedModal = await openPublicCardHistory(page, getPublicCard(page));
     await expect(appendedModal.locator('circle')).toHaveCount(3);
@@ -588,6 +662,52 @@ test.describe('甲子纪 E2E 游戏流程', () => {
 
     // 验证游戏仍在进行中（未结束）
     await expect(page.getByText('游戏结束', { exact: true })).not.toBeVisible();
+  });
+
+  test('暂停修行、主动终止与开新局确认防误触流程', async ({ page }) => {
+    await startGameAndDismiss(page);
+    await expect(page.getByText('第 1 回合 / 60')).toBeVisible();
+
+    // 1. 局内点击「暂停」
+    await page.getByRole('button', { name: '暂停修行' }).click();
+    await expect(page.getByRole('heading', { name: '暂停修行' })).toBeVisible();
+
+    // 2. 点击「保存并回到主页」
+    await page.getByRole('button', { name: '保存并回到主页' }).click();
+    await expect(page.getByRole('button', { name: /继续/ })).toBeVisible();
+    await expect(page.getByText('修行已暂存，可在开始页随时继续')).toBeVisible();
+
+    // 3. 点击「继续修行」恢复游戏
+    await page.getByRole('button', { name: /继续/ }).click();
+    await expect(page.getByText('第 1 回合 / 60')).toBeVisible();
+
+    // 4. 再次打开暂停，选择「终止本局修行」
+    await page.getByRole('button', { name: '暂停修行' }).click();
+    await page.getByRole('button', { name: /终止本局修行/ }).click();
+    await expect(page.getByRole('heading', { name: '确认终止修行' })).toBeVisible();
+
+    // 5. 确认终止
+    await page.getByRole('button', { name: '确认终止本局' }).click();
+    await expect(page.getByRole('button', { name: '开始游戏' })).toBeVisible();
+    await expect(page.getByText('已主动终止本局修行')).toBeVisible();
+
+    // 6. 重新开始一局，然后调息一回合，保存
+    await startGameAndDismiss(page);
+    await page.getByRole('button', { name: /调息/ }).click();
+    await confirmSettlementPreview(page);
+    await dismissSettlement(page);
+
+    // 7. 刷新页面，开始页出现「继续修行」与「新游戏」
+    await page.reload();
+    await expect(page.getByRole('button', { name: /继续/ })).toBeVisible();
+
+    // 8. 点击「新游戏」触发防误触确认弹窗
+    await page.getByRole('button', { name: '新游戏' }).click();
+    await expect(page.getByRole('heading', { name: '发现进行中的修行' })).toBeVisible();
+
+    // 9. 点击「放弃当前局并开启新修行」
+    await page.getByRole('button', { name: '放弃当前局并开启新修行' }).click();
+    await expect(page.getByText('第 1 回合 / 60')).toBeVisible();
   });
 });
 

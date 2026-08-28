@@ -31,6 +31,7 @@ export function TopPanel() {
   const seasonTheme = SEASON_THEME[season] ?? SEASON_THEME.spring;
   const openDashboard = useGameStore((s) => s.openDashboard);
   const openCultivationProfile = useGameStore((s) => s.openCultivationProfile);
+  const openPauseModal = useGameStore((s) => s.openPauseModal);
   const gameState = useGameStore((s) => s.gameState);
 
   const [floaters, setFloaters] = useState<Floater[]>([]);
@@ -49,7 +50,7 @@ export function TopPanel() {
 
   return (
     <div className="flex flex-col bg-[#faf6ee] border-b border-wood-light">
-      <div className="flex items-start gap-2.5 px-4 py-2 max-md:py-1.5">
+      <div className="flex items-start gap-2 px-3 sm:px-4 py-2 max-md:py-1.5">
         <div className="min-w-0 flex-1">
           <h1 className={`text-lg font-bold font-serif ${seasonTheme.text}`}>
             {/* key 变化触发切换动画，提示回合推进 */}
@@ -66,20 +67,27 @@ export function TopPanel() {
           </div>
         </div>
         {gameState === 'player_action' && (
-          <div className="flex shrink-0 flex-col gap-1">
+          <div className="flex shrink-0 items-center gap-1 my-auto">
             <button
               onClick={openDashboard}
-              className="px-3 py-1.5 rounded-lg bg-white border border-wood-mid text-wood-dark text-[11px] font-bold font-serif hover:bg-wood-light/20 hover:shadow-sm transition-all"
+              className="px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-white border border-wood-mid text-wood-dark text-[10px] sm:text-[11px] font-bold font-serif hover:bg-wood-light/20 hover:shadow-sm transition-all cursor-pointer"
               aria-label="打开交易看板"
             >
               行迹
             </button>
             <button
               onClick={openCultivationProfile}
-              className="px-3 py-1.5 rounded-lg bg-white border border-wood-mid text-wood-dark text-[11px] font-bold font-serif hover:bg-wood-light/20 hover:shadow-sm transition-all"
+              className="px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-white border border-wood-mid text-wood-dark text-[10px] sm:text-[11px] font-bold font-serif hover:bg-wood-light/20 hover:shadow-sm transition-all cursor-pointer"
               aria-label="打开修行档案"
             >
               档案
+            </button>
+            <button
+              onClick={openPauseModal}
+              className="px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-white border border-wood-mid text-wood-dark text-[10px] sm:text-[11px] font-bold font-serif hover:bg-wood-light/20 hover:shadow-sm transition-all cursor-pointer"
+              aria-label="暂停修行"
+            >
+              暂停
             </button>
           </div>
         )}

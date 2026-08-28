@@ -143,6 +143,8 @@ const validators: Record<TelemetryEventType, Validator> = {
     if (!isNullableNumber(raw.volatility_delta)) return null;
     if (!isNumber(raw.buy_cost)) return null;
     if (!isBoolean(raw.use_leverage)) return null;
+    const card_index = isNumber(raw.card_index) ? raw.card_index : undefined;
+    const replay_action = isRecord(raw.replay_action) ? raw.replay_action : undefined;
     return {
       ...base,
       card_id: raw.card_id,
@@ -154,6 +156,8 @@ const validators: Record<TelemetryEventType, Validator> = {
       volatility_delta: raw.volatility_delta,
       buy_cost: raw.buy_cost,
       use_leverage: raw.use_leverage,
+      ...(card_index !== undefined ? { card_index } : {}),
+      ...(replay_action ? { replay_action } : {}),
     };
   },
   action_sell: (raw) => {
@@ -168,6 +172,7 @@ const validators: Record<TelemetryEventType, Validator> = {
     if (!isNumber(raw.sell_score)) return null;
     if (!isBoolean(raw.use_leverage)) return null;
     if (!isNumber(raw.qi_return)) return null;
+    const replay_action = isRecord(raw.replay_action) ? raw.replay_action : undefined;
     return {
       ...base,
       slot_index: raw.slot_index,
@@ -178,6 +183,7 @@ const validators: Record<TelemetryEventType, Validator> = {
       sell_score: raw.sell_score,
       use_leverage: raw.use_leverage,
       qi_return: raw.qi_return,
+      ...(replay_action ? { replay_action } : {}),
     };
   },
   action_wait: (raw) => {
@@ -185,7 +191,8 @@ const validators: Record<TelemetryEventType, Validator> = {
     if (!base) return null;
     if (!isRecord(raw)) return null;
     if (!isBoolean(raw.ends_game)) return null;
-    return { ...base, ends_game: raw.ends_game };
+    const replay_action = isRecord(raw.replay_action) ? raw.replay_action : undefined;
+    return { ...base, ends_game: raw.ends_game, ...(replay_action ? { replay_action } : {}) };
   },
   action_lock: (raw) => {
     const base = validateBaseAction(raw);
@@ -193,7 +200,15 @@ const validators: Record<TelemetryEventType, Validator> = {
     if (!isRecord(raw)) return null;
     if (!isNumber(raw.card_id)) return null;
     if (!isShortString(raw.card_name)) return null;
-    return { ...base, card_id: raw.card_id, card_name: raw.card_name };
+    const card_index = isNumber(raw.card_index) ? raw.card_index : undefined;
+    const replay_action = isRecord(raw.replay_action) ? raw.replay_action : undefined;
+    return {
+      ...base,
+      card_id: raw.card_id,
+      card_name: raw.card_name,
+      ...(card_index !== undefined ? { card_index } : {}),
+      ...(replay_action ? { replay_action } : {}),
+    };
   },
   action_unlock: (raw) => {
     const base = validateBaseAction(raw);
@@ -201,7 +216,15 @@ const validators: Record<TelemetryEventType, Validator> = {
     if (!isRecord(raw)) return null;
     if (!isNumber(raw.card_id)) return null;
     if (!isShortString(raw.card_name)) return null;
-    return { ...base, card_id: raw.card_id, card_name: raw.card_name };
+    const card_index = isNumber(raw.card_index) ? raw.card_index : undefined;
+    const replay_action = isRecord(raw.replay_action) ? raw.replay_action : undefined;
+    return {
+      ...base,
+      card_id: raw.card_id,
+      card_name: raw.card_name,
+      ...(card_index !== undefined ? { card_index } : {}),
+      ...(replay_action ? { replay_action } : {}),
+    };
   },
   round_settled: (raw) => {
     if (!isRecord(raw)) return null;

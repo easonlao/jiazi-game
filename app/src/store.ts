@@ -40,6 +40,7 @@ import {
   SupabaseAnalyticsBackend,
   type AnalyticsBackend,
   type CloudLeaderboardEntry,
+  type CloudActiveGameSession,
 } from './lib/analyticsBackend';
 import {
   TelemetryController,
@@ -50,6 +51,7 @@ import {
   type CultivationLedgerRecord,
   type CultivationLedgerSummary,
 } from './lib/cultivationLedger';
+import { buildCultivationProfileSnapshot } from './lib/cultivationProfile';
 import {
   isRecordForDisplay,
   type VerificationRecord,
@@ -62,9 +64,12 @@ export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent, FxBu
 /** 防止 React StrictMode 下 initialize 被重复调用 */
 let _initializing = false;
 
-/** TelemetryController 单例：store.initialize 内惰性创建（不阻塞初始化） */
 let _telemetryController: TelemetryController | null = null;
 let _telemetryInitPromise: Promise<void> | null = null;
+
+export function setTelemetryControllerForTesting(controller: TelemetryController | null): void {
+  _telemetryController = controller;
+}
 
 const _leaderboardRefreshGate = new LeaderboardRefreshGate();
 const _cultivationLedger = new CultivationLedgerService(localStorageProvider);
@@ -146,16 +151,22 @@ function refreshCultivationLedgerSummary(set: StoreSetter): void {
 
 function refreshCultivationLedgerOverview(set: StoreSetter, get: () => GameStore): void {
   const telemetry = get().telemetryState;
-  const remoteRecords = telemetry?.cultivationLedger?.records ?? [];
-  const claimedIds = new Set(remoteRecords.map((record) => record.local_game_id));
-  const claimableCount = _cultivationLedger
-    .getTerminalRecords()
-    .filter((record) => !claimedIds.has(record.id))
-    .length;
+  const identity = telemetry?.identity ?? null;
+  const consentGranted = telemetry?.consent?.granted ?? false;
+  const telemetryEnabled = telemetry?.telemetryEnabled ?? false;
+  const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
+
+  const localRecords = _cultivationLedger.getRecords();
+  const cloudRecords = telemetry?.cultivationLedger?.records ?? null;
+  const tm = get().turnManager;
+  const currentRulesVersion = tm?.getRulesVersion() ?? CURRENT_RULES_VERSION;
+
+  const profile = buildCultivationProfileSnapshot(localRecords, cloudRecords, currentRulesVersion, hasCloudIdentity);
+
   set({
-    cultivationLedgerSummary: _cultivationLedger.getSummary(),
+    cultivationLedgerSummary: hasCloudIdentity ? profile.combinedSummary : profile.localSummary,
     cultivationLedgerRecords: _cultivationLedger.getRecords(),
-    cultivationLedgerClaimableCount: claimableCount,
+    cultivationLedgerClaimableCount: 0,
   });
 }
 
@@ -274,15 +285,22 @@ interface GameStore {
    */
   voidSwallowing: boolean;
 
-  // 生命周期
+  // 生命周期与暂停/终止
   initialize: () => Promise<void>;
   startGame: (localOnly?: boolean) => Promise<boolean>;
   startLocalGame: () => Promise<boolean>;
   reset: () => void;
+  pauseModalOpen: boolean;
+  openPauseModal: () => void;
+  closePauseModal: () => void;
+  pauseGame: () => void;
+  terminateGame: (reason?: 'voluntary_termination' | 'new_game_override' | 'reset') => void;
 
   // 存档恢复
   hasSave: boolean;
+  continueGame: () => Promise<boolean>;
   loadGameFromSave: () => boolean;
+  resumeCloudSession: (session?: CloudActiveGameSession | null) => Promise<boolean>;
   startNewGame: () => Promise<boolean>;
 
   // 排行榜
@@ -309,7 +327,6 @@ interface GameStore {
   recoverPlayer: (recoveryCode: string) => Promise<boolean>;
   updatePlayerDisplayName: (name: string) => Promise<void>;
   refreshCloudLeaderboard: () => Promise<void>;
-  claimCultivationLedger: () => Promise<boolean>;
   /** 重试最近一局的云端校验（failed/rejected 时有效，不抛错） */
   retryVerification: () => void;
 
@@ -385,7 +402,7 @@ function recordActionTelemetry(
   after: GameStore,
   tm: TurnManager,
   action: SettlementPreviewAction,
-  lockAction?: { type: 'lock' | 'unlock'; card: JiaziCard },
+  lockAction?: { type: 'lock' | 'unlock'; card: JiaziCard; cardIndex: number },
   sessionIdOverride?: string | null,
 ): void {
   const controller = _telemetryController;
@@ -426,7 +443,13 @@ function recordActionTelemetry(
   if (lockAction) {
     controller.track(
       lockAction.type === 'lock' ? 'action_lock' : 'action_unlock',
-      { ...base, card_id: lockAction.card.id, card_name: lockAction.card.name },
+      {
+        ...base,
+        card_id: lockAction.card.id,
+        card_name: lockAction.card.name,
+        card_index: lockAction.cardIndex,
+        replay_action: { type: lockAction.type, cardIndex: lockAction.cardIndex },
+      },
     );
     return;
   }
@@ -443,6 +466,7 @@ function recordActionTelemetry(
     const volatilityDelta = tm.getCardVolatilityDelta(card);
     controller.track('action_buy', {
       ...base,
+      card_index: action.cardIndex,
       card_id: card.id,
       card_name: card.name,
       card_main_element: card.mainElement,
@@ -454,6 +478,7 @@ function recordActionTelemetry(
         ? Math.abs(log.actionQiChange)
         : tm.previewBuyCost(card, action.leverage),
       use_leverage: action.leverage,
+      replay_action: { type: 'buy', cardIndex: action.cardIndex, leverage: action.leverage },
     });
   } else if (action.type === 'sell') {
     const slot = before.hand[action.slotIndex];
@@ -470,10 +495,12 @@ function recordActionTelemetry(
       sell_score: log?.action === 'sell' && log.sellScore !== null ? log.sellScore : tm.previewSellScore(slot),
       use_leverage: slot.useLeverage,
       qi_return: log?.action === 'sell' ? log.actionQiChange : tm.previewSellQiChange(slot),
+      replay_action: { type: 'sell', slotIndex: action.slotIndex },
     });
   } else {
     controller.track('action_wait', {
       ...base,
+      replay_action: { type: 'wait' },
       ends_game: after.gameState === 'game_over',
     });
   }
@@ -633,6 +660,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   _endedSessionId: null,
   dashboardOpen: false,
   cultivationProfileOpen: false,
+  pauseModalOpen: false,
 
   // FX 事件（初始为 null，_sync diff 后才会产生）
   seasonEvent: null,
@@ -835,12 +863,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         const random = new SeededRandomSource(prepared.seed);
         const snapshot = prepared.rules_snapshot;
+        const snapshotVoidCardCount = (snapshot as { voidCardCount?: number }).voidCardCount;
+        const resolvedVoidCardCount = snapshotVoidCardCount !== undefined
+          ? snapshotVoidCardCount
+          : (snapshot.rulesVersion >= 5 ? 3 : 0);
         const verifiedTm = new TurnManager(undefined, random, {
           storage: localStorageProvider,
           rulesVersion: snapshot.rulesVersion,
           scoreRules: snapshot.scoreRules,
           volatility: snapshot.volatility,
           volatilityRandom: random,
+          voidConfig: { voidCardCount: resolvedVoidCardCount },
         });
         await verifiedTm.initialize();
         if (!controller.startSession(getTelemetryGameMeta(verifiedTm), prepared)) {
@@ -908,29 +941,212 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  loadGameFromSave() {
+  async resumeCloudSession(session?: CloudActiveGameSession | null): Promise<boolean> {
+    const cloudSession = session ?? get().telemetryState?.activeCloudSession;
+    if (!cloudSession) return false;
+    const snapshot = cloudSession.rules_snapshot;
+    const snapshotVoidCardCount = (snapshot as { voidCardCount?: number }).voidCardCount;
+    const resolvedVoidCardCount = snapshotVoidCardCount !== undefined
+      ? snapshotVoidCardCount
+      : (snapshot.rulesVersion >= 5 ? 3 : 0);
+    const random = new SeededRandomSource(cloudSession.seed);
+    const tm = new TurnManager(undefined, random, {
+      storage: localStorageProvider,
+      rulesVersion: snapshot.rulesVersion,
+      scoreRules: snapshot.scoreRules,
+      volatility: snapshot.volatility,
+      volatilityRandom: random,
+      branchRollRandom: random,
+      voidConfig: { voidCardCount: resolvedVoidCardCount },
+    });
+    await tm.initialize();
+    bindTurnManagerCallbacks(tm, set, get);
+    set({ turnManager: tm });
+    tm.startGame();
+
+    // 依序重放云端动作序列，恢复至中断时的精确状态
+    for (const action of cloudSession.actions) {
+      switch (action.type) {
+        case 'buy':
+          tm.executeBuy(action.cardIndex, action.leverage);
+          break;
+        case 'sell':
+          tm.executeSell(action.slotIndex);
+          break;
+        case 'wait':
+          tm.executeWait();
+          break;
+        case 'lock':
+          tm.executeLockCard(action.cardIndex);
+          break;
+        case 'unlock':
+          tm.executeUnlockCard(action.cardIndex);
+          break;
+      }
+    }
+
+    tm.saveGame();
+    _cultivationLedger.resumeActiveGame(tm.getRulesVersion(), cloudSession.session_id);
+    refreshCultivationLedgerOverview(set, get);
+
+    const verifiedStart = {
+      session_id: cloudSession.session_id,
+      client_session_id: cloudSession.client_session_id,
+      started_at: cloudSession.started_at,
+      seed: cloudSession.seed,
+      rules_snapshot: cloudSession.rules_snapshot,
+    };
+    _telemetryController?.resumeVerifiedSession(
+      getTelemetryGameMeta(tm),
+      verifiedStart,
+      cloudSession.actions,
+      {
+        rounds: Math.max(0, tm.getCurrentRound() - 1),
+        final_score: tm.getScore(),
+        margin_call_count: tm.getMarginCallCount(),
+      },
+    );
+
+    get()._sync();
+    set({
+      selectedPublicCard: -1,
+      selectedHandCard: -1,
+      useLeverage: false,
+      pendingAction: null,
+      settlementPreview: null,
+      buySettlementEvent: null,
+      voidTriggerQueue: [],
+      _voidAnimationTrueState: null,
+      hasSave: false,
+    });
+    get().showToast('已同步恢复当前修行');
+    return true;
+  },
+
+  async continueGame(): Promise<boolean> {
+    const tm = get().turnManager;
+    const controller = _telemetryController;
+    const identity = controller?.getState().identity;
+    const consentGranted = controller?.getState().consent?.granted;
+    const telemetryEnabled = controller?.getState().telemetryEnabled;
+    const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
+
+    // 1. 同设备即时存档优先：若本地存在该局最新存档，直接读档继续，
+    // 确保包含尚未 flush 到云端的最新回合与手牌状态，避免从落后的云端动作链重放发生回滚。
+    if (tm && tm.hasSave()) {
+      const loaded = get().loadGameFromSave();
+      if (loaded && hasCloudIdentity && controller && !controller.getActiveSessionId()) {
+        // 关键重绑：页面刷新后 controller.session 为空，若存在活跃云端局，必须重绑云端会话！
+        let cloudSession = controller.getState().activeCloudSession;
+        if (!cloudSession) {
+          cloudSession = await controller.refreshActiveSession();
+        }
+        if (cloudSession && cloudSession.rounds_completed < 60) {
+          const verifiedStart = {
+            session_id: cloudSession.session_id,
+            client_session_id: cloudSession.client_session_id,
+            started_at: cloudSession.started_at,
+            seed: cloudSession.seed,
+            rules_snapshot: cloudSession.rules_snapshot,
+          };
+          const ok = controller.resumeVerifiedSession(
+            getTelemetryGameMeta(tm),
+            verifiedStart,
+            cloudSession.actions,
+            {
+              rounds: Math.max(0, tm.getCurrentRound() - 1),
+              final_score: tm.getScore(),
+              margin_call_count: tm.getMarginCallCount(),
+            },
+          );
+          if (!ok && controller.getState().error?.includes('冲突')) {
+            get().showToast('检测到其他设备操作冲突，已自动同步云端最新修行');
+            return get().resumeCloudSession(cloudSession);
+          }
+        }
+      }
+      return loaded;
+    }
+
+    // 2. 跨设备或本地无存档：从云端活跃局拉取并重放动作链
+    if (hasCloudIdentity && controller) {
+      let cloudSession = controller.getState().activeCloudSession;
+      if (!cloudSession) {
+        cloudSession = await controller.refreshActiveSession();
+      }
+      if (cloudSession && cloudSession.rounds_completed < 60) {
+        return get().resumeCloudSession(cloudSession);
+      }
+    }
+    return get().loadGameFromSave();
+  },
+
+  loadGameFromSave(): boolean {
     const tm = get().turnManager;
     if (!tm) return false;
-    const ok = tm.loadGame();
-    if (ok) {
-      // 先同步当前状态到加载后的值，避免 diffFxEvents 误触发季节/回合动画
-      set({
-        season: tm.getCurrentSeason(),
-        currentRound: tm.getCurrentRound(),
-        qi: tm.getQi(),
-        score: tm.getScore(),
-        marginCallCount: tm.getMarginCallCount(),
-      });
-      get()._sync();
-      set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, buySettlementEvent: null, voidTriggerQueue: [], _voidAnimationTrueState: null, hasSave: false });
-      _cultivationLedger.resumeActiveGame(tm.getRulesVersion());
-      refreshCultivationLedgerOverview(set, get);
-      // 存档没有携带服务端 seed 与完整动作链，续局只能作为本地局继续。
-      // 明确终止旧页面会话且不创建伪云端会话，避免终局误导玩家会自动上榜。
-      _telemetryController?.abandonSession('reset');
-      get().showToast('已继续本地存档，本局不进入云端校验');
-      return ok;
+    if (tm.hasSave()) {
+      const ok = tm.loadGame();
+      if (ok) {
+        // 先同步当前状态到加载后的值，避免 diffFxEvents 误触发季节/回合动画
+        set({
+          season: tm.getCurrentSeason(),
+          currentRound: tm.getCurrentRound(),
+          qi: tm.getQi(),
+          score: tm.getScore(),
+          marginCallCount: tm.getMarginCallCount(),
+        });
+        get()._sync();
+        set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, buySettlementEvent: null, voidTriggerQueue: [], _voidAnimationTrueState: null, hasSave: false });
+        _cultivationLedger.resumeActiveGame(tm.getRulesVersion());
+        refreshCultivationLedgerOverview(set, get);
+        // 关键防护：页面刷新后若 controller 内部尚未重绑 session，在此尝试根据已缓存的 activeCloudSession 重绑
+        const controller = _telemetryController;
+        const identity = controller?.getState().identity;
+        const consentGranted = controller?.getState().consent?.granted;
+        const telemetryEnabled = controller?.getState().telemetryEnabled;
+        const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
+        const activeCloudSession = controller?.getState().activeCloudSession;
+        if (hasCloudIdentity && controller && activeCloudSession && activeCloudSession.rounds_completed < 60 && !controller.getActiveSessionId()) {
+          const verifiedStart = {
+            session_id: activeCloudSession.session_id,
+            client_session_id: activeCloudSession.client_session_id,
+            started_at: activeCloudSession.started_at,
+            seed: activeCloudSession.seed,
+            rules_snapshot: activeCloudSession.rules_snapshot,
+          };
+          const resumedOk = controller.resumeVerifiedSession(
+            getTelemetryGameMeta(tm),
+            verifiedStart,
+            activeCloudSession.actions,
+            {
+              rounds: Math.max(0, tm.getCurrentRound() - 1),
+              final_score: tm.getScore(),
+              margin_call_count: tm.getMarginCallCount(),
+            },
+          );
+          if (!resumedOk && controller.getState().error?.includes('冲突')) {
+            get().showToast('检测到其他设备操作冲突，已自动同步云端最新修行');
+            void get().resumeCloudSession(activeCloudSession);
+            return true;
+          }
+        }
+
+        const hasActiveCloudSession = Boolean(controller?.getActiveSessionId());
+        if (hasActiveCloudSession) {
+          get().showToast('已继续当前修行');
+        } else {
+          get().showToast('已继续本地存档');
+        }
+        return ok;
+      }
     }
+
+    const cloudSession = get().telemetryState?.activeCloudSession;
+    if (cloudSession && cloudSession.rounds_completed < 60) {
+      void get().resumeCloudSession(cloudSession);
+      return true;
+    }
+
     // 读档失败：区分「存档版本过新」、已结束存档与一般失败。
     const loadError = tm.getLastLoadError();
     if (!tm.hasSave()) set({ hasSave: false });
@@ -941,7 +1157,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ? '存档版本过新，请更新游戏'
         : '读档失败',
     );
-    return ok;
+    return false;
   },
 
   startNewGame() {
@@ -985,24 +1201,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await _telemetryController?.updateDisplayName(name);
   },
 
-  async claimCultivationLedger() {
-    const controller = _telemetryController;
-    if (!controller) return false;
-    const records = _cultivationLedger.getTerminalRecords();
-    if (records.length === 0) {
-      get().showToast('当前没有可认领的修行记录');
-      refreshCultivationLedgerOverview(set, get);
-      return false;
-    }
-    const snapshot = await controller.claimCultivationLedger(records);
-    if (!snapshot) {
-      get().showToast('修行账本认领失败，请稍后重试');
-      return false;
-    }
-    refreshCultivationLedgerOverview(set, get);
-    get().showToast(`已认领并同步 ${records.length} 条修行记录`);
-    return true;
-  },
+
 
   async refreshCloudLeaderboard() {
     const controller = _telemetryController;
@@ -1045,6 +1244,76 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ cultivationProfileOpen: false });
   },
 
+  openPauseModal() {
+    set({ pauseModalOpen: true });
+  },
+
+  closePauseModal() {
+    set({ pauseModalOpen: false });
+  },
+
+  pauseGame() {
+    const tm = get().turnManager;
+    if (!tm) return;
+    tm.saveGame();
+    set({
+      gameState: 'init',
+      hasSave: true,
+      pauseModalOpen: false,
+      selectedPublicCard: -1,
+      selectedHandCard: -1,
+      useLeverage: false,
+      pendingAction: null,
+      settlementPreview: null,
+    });
+    get().showToast('修行已暂存，可在开始页随时继续');
+  },
+
+  terminateGame(reason = 'voluntary_termination') {
+    const tm = get().turnManager;
+    _telemetryController?.abandonSession(reason as any);
+    if (tm) {
+      tm.clearSave();
+      tm.reset();
+    }
+    _cultivationLedger.abandonActiveGame();
+    refreshCultivationLedgerOverview(set, get);
+    _pendingAutoUnlockToast = null;
+    _pendingVoidToasts = [];
+    set({
+      gameState: 'init',
+      hasSave: false,
+      pauseModalOpen: false,
+      season: tm ? tm.getCurrentSeason() : 'spring',
+      currentRound: tm ? tm.getCurrentRound() : 1,
+      roundInSeason: tm ? tm.getCurrentRoundInSeason() : 1,
+      qi: tm ? tm.getQi() : 100,
+      score: tm ? tm.getScore() : 0,
+      marginCallCount: tm ? tm.getMarginCallCount() : 0,
+      selectedPublicCard: -1,
+      selectedHandCard: -1,
+      useLeverage: false,
+      pendingAction: null,
+      settlementPreview: null,
+      lastSettlement: null,
+      roundLog: [],
+      decisionLog: [],
+      _endedSessionId: null,
+      verificationState: null,
+      seasonEvent: null,
+      marginCallEvent: null,
+      scoreDelta: null,
+      qiDelta: null,
+      roundEvent: null,
+      buySettlementEvent: null,
+      voidTriggerQueue: [],
+      _voidAnimationTrueState: null,
+      voidPoolSlot: null,
+      voidSwallowing: false,
+    });
+    get().showToast('已主动终止本局修行');
+  },
+
   reset() {
     const tm = get().turnManager;
     if (!tm) return;
@@ -1060,12 +1329,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 否则随后的 _sync 会把"重置前的旧季节/分数/神识 vs 重置后的初始值"的差异
     // 误判为新 FX 事件，导致新一局开局误播上一局的换季/得分/回神动画。
     set({
-      season: tm.getCurrentSeason(),
-      currentRound: tm.getCurrentRound(),
-      roundInSeason: tm.getCurrentRoundInSeason(),
-      qi: tm.getQi(),
-      score: tm.getScore(),
-      marginCallCount: tm.getMarginCallCount(),
+      season: tm ? tm.getCurrentSeason() : 'spring',
+      currentRound: tm ? tm.getCurrentRound() : 1,
+      roundInSeason: tm ? tm.getCurrentRoundInSeason() : 1,
+      qi: tm ? tm.getQi() : 100,
+      score: tm ? tm.getScore() : 0,
+      marginCallCount: tm ? tm.getMarginCallCount() : 0,
     });
     set({
       selectedPublicCard: -1,
@@ -1209,7 +1478,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (!ok) _telemetryController?.removeLastReplayAction();
       if (ok) {
         get()._sync();
-        recordActionTelemetry(before, get(), tm, { type: 'wait' }, { type: 'unlock', card });
+        recordActionTelemetry(before, get(), tm, { type: 'wait' }, { type: 'unlock', card, cardIndex: index });
         get().showToast('已解锁');
       } else {
         get().showToast('解锁失败');
@@ -1222,7 +1491,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!result.ok) _telemetryController?.removeLastReplayAction();
     if (result.ok) {
       get()._sync();
-      recordActionTelemetry(before, get(), tm, { type: 'wait' }, { type: 'lock', card });
+      recordActionTelemetry(before, get(), tm, { type: 'wait' }, { type: 'lock', card, cardIndex: index });
       get().showToast(`已锁定（每回合 -${TurnManager.LOCK_COST_PER_CARD} 神识）`);
       return;
     }

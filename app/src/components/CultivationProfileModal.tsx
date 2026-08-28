@@ -143,8 +143,6 @@ function MilestoneLine({ milestone, isNext }: { milestone: CultivationProfileMil
 export function CultivationProfileModal() {
   const open = useGameStore((s) => s.cultivationProfileOpen);
   const close = useGameStore((s) => s.closeCultivationProfile);
-  const claim = useGameStore((s) => s.claimCultivationLedger);
-  const claimableCount = useGameStore((s) => s.cultivationLedgerClaimableCount);
   const localRecords = useGameStore((s) => s.cultivationLedgerRecords);
   const telemetryState = useGameStore((s) => s.telemetryState);
   const turnManager = useGameStore((s) => s.turnManager);
@@ -170,7 +168,6 @@ export function CultivationProfileModal() {
 
   const currentRulesVersion = turnManager?.getRulesVersion() ?? CURRENT_RULES_VERSION;
   const cloudRecords = telemetryState?.cultivationLedger?.records ?? null;
-  const cloudBusy = telemetryState?.cultivationLedgerBusy ?? false;
   const cloudError = telemetryState?.cultivationLedgerError ?? null;
   const identity = telemetryState?.identity ?? null;
   const consent = telemetryState?.consent ?? null;
@@ -179,10 +176,11 @@ export function CultivationProfileModal() {
   const telemetryError = telemetryState?.error ?? null;
   const consentGranted = consent?.granted ?? false;
   const telemetryEnabled = telemetryState?.telemetryEnabled ?? false;
+  const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
 
   const profile = useMemo(
-    () => buildCultivationProfileSnapshot(localRecords, cloudRecords, currentRulesVersion),
-    [localRecords, cloudRecords, currentRulesVersion],
+    () => buildCultivationProfileSnapshot(localRecords, cloudRecords, currentRulesVersion, hasCloudIdentity),
+    [localRecords, cloudRecords, currentRulesVersion, hasCloudIdentity],
   );
 
   if (!open) return null;
@@ -195,7 +193,6 @@ export function CultivationProfileModal() {
   );
   const currentRuleRecentRecords = profile.records.filter((record) => record.rulesVersion === currentRulesVersion);
   const nextMilestone = profile.milestones.find((milestone) => !milestone.achieved) ?? null;
-  const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
   const playerName = identity?.display_name && identity.display_name !== '玩家' ? identity.display_name : '你';
   const totalGames = profile.combinedSummary.totalGames;
   const completedGames = profile.combinedSummary.completedGames;
@@ -241,9 +238,14 @@ export function CultivationProfileModal() {
         {/* 固定顶栏：确保关闭按钮始终常驻可见 */}
         <header className="shrink-0 sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-[#E6D7B8] bg-[#FCF6EA] px-4 py-3.5 sm:py-4">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold tracking-wide text-wood-dark">修行之路</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[11px] font-bold tracking-wide text-wood-dark">修行之路</p>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${hasCloudIdentity ? 'bg-qi-full/15 text-qi-full' : 'bg-wood-light/40 text-ink-light'}`}>
+                {hasCloudIdentity ? '已立档' : '本机试玩'}
+              </span>
+            </div>
             <h2 id="cultivation-profile-title" className="mt-0.5 font-serif text-lg sm:text-xl font-bold text-ink truncate">
-              {playerName}的成长
+              {hasCloudIdentity ? `${playerName}的成长` : '本机试玩成长'}
             </h2>
           </div>
           <button
@@ -259,15 +261,28 @@ export function CultivationProfileModal() {
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-5 overscroll-contain">
           {/* 成长总览 */}
           <section className="rounded-[22px] sm:rounded-[24px] bg-ink px-4 py-4 text-parchment shadow-[0_12px_26px_rgba(74,48,33,0.2)]">
-            <p className="text-xs text-parchment/75">已走过</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-parchment/75">已走过</p>
+              <span className="text-[10px] text-parchment/60 font-mono">
+                {hasCloudIdentity ? '账号档案' : '本机试玩'}
+              </span>
+            </div>
             <div className="mt-1 font-serif text-3xl sm:text-4xl font-black tabular-nums">{totalGames} 局</div>
-            {totalGames > 0 ? (
-              <p className="mt-2 text-xs leading-relaxed text-parchment/80">
-                已完整走完 {completedGames} 局
-                {abandonedGames > 0 ? `，另有 ${abandonedGames} 局未走到结算` : ''}。
-              </p>
+            {hasCloudIdentity ? (
+              totalGames > 0 ? (
+                <p className="mt-2 text-xs leading-relaxed text-parchment/80">
+                  已完整走完 {completedGames} 局
+                  {abandonedGames > 0 ? `，另有 ${abandonedGames} 局未走到结算` : ''}。
+                </p>
+              ) : (
+                <p className="mt-2 text-xs leading-relaxed text-parchment/80">
+                  新开对局将自动计入此账号，并在所有设备同步修行轨迹与印记。
+                </p>
+              )
             ) : (
-              <p className="mt-2 text-xs leading-relaxed text-parchment/80">从第一局开始，慢慢留下属于你的修行轨迹。</p>
+              <p className="mt-2 text-xs leading-relaxed text-parchment/80">
+                当前为本机试玩模式。立档后，新对局将自动累计至可跨设备查看的修行记录。
+              </p>
             )}
           </section>
 
@@ -307,6 +322,52 @@ export function CultivationProfileModal() {
             </div>
           </section>
 
+          {/* 修行坚持度与心性 */}
+          <section>
+            <SectionHeading
+              title="修行坚持度"
+              description="专注走完一甲子，反映修行的心性与专注度；暂停与继续中不降低数值。"
+            />
+            <div className="mt-2.5 rounded-[22px] sm:rounded-[24px] border border-wood-light bg-white/85 p-3.5 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[11px] text-ink-light">道心坚持度</div>
+                  <div className="mt-1 font-serif text-2xl sm:text-3xl font-black text-ink">
+                    {profile.perseverance.evalStatus === 'evaluated'
+                      ? `${profile.perseverance.perseveranceRate}%`
+                      : '积累样本中'}
+                  </div>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-serif font-bold ${
+                  profile.perseverance.evalStatus === 'evaluated'
+                    ? 'bg-qi-full/15 text-qi-full'
+                    : 'bg-wood-light/40 text-ink-light'
+                }`}>
+                  {profile.perseverance.ratingLabel}
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="rounded-2xl bg-[#FBF8F0] px-3 py-2.5">
+                  <div className="text-[11px] text-ink-light">当前连续完整</div>
+                  <div className="mt-0.5 font-serif text-lg font-bold text-ink">
+                    {profile.perseverance.currentStreak} 局
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-[#FBF8F0] px-3 py-2.5">
+                  <div className="text-[11px] text-ink-light">历史最高连续</div>
+                  <div className="mt-0.5 font-serif text-lg font-bold text-ink">
+                    {profile.perseverance.bestStreak} 局
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-3 text-[11px] leading-relaxed text-ink-light">
+                {profile.perseverance.description}
+              </p>
+            </div>
+          </section>
+
           {/* 最近成绩走势 */}
           <section>
             <SectionHeading title="最近修为走势" description="只看当前玩法，避免不同规则的成绩混在一起。" />
@@ -332,21 +393,21 @@ export function CultivationProfileModal() {
 
             {!consent ? (
               <div className="mt-3 rounded-2xl bg-white/85 p-3.5 text-xs leading-relaxed text-ink-light border border-wood-light">
-                <p className="font-serif font-bold text-ink text-sm">开启云端同步（可选）</p>
-                <p className="mt-1 text-[11px]">记录对局与修为，支持跨设备同步与上榜；无需真实姓名与密码。</p>
+                <p className="font-serif font-bold text-ink text-sm">完成立档（开启跨设备记录）</p>
+                <p className="mt-1 text-[11px]">立档后，新对局将自动计入账号并累计修行记录与印记，支持跨设备同步与上榜；无需真实姓名与密码。</p>
                 <div className="mt-2.5 flex gap-2">
                   <button
                     onClick={() => void grantTelemetryConsent()}
                     disabled={telemetryBusy}
-                    className="flex-1 py-2 rounded-xl bg-ink text-parchment text-xs font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 disabled:opacity-50"
+                    className="flex-1 py-2 rounded-xl bg-ink text-parchment text-xs font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 disabled:opacity-50 cursor-pointer"
                   >
                     同意并生成玩家 ID
                   </button>
                   <button
                     onClick={declineTelemetryConsent}
-                    className="py-2 px-3 rounded-xl border border-wood-light text-ink-light text-xs font-serif hover:bg-wood-light transition-colors"
+                    className="py-2 px-3 rounded-xl border border-wood-light text-ink-light text-xs font-serif hover:bg-wood-light transition-colors cursor-pointer"
                   >
-                    暂不开启
+                    保持本机试玩
                   </button>
                 </div>
                 <div className="mt-2.5 border-t border-wood-light/60 pt-2.5">
@@ -361,7 +422,7 @@ export function CultivationProfileModal() {
                     <button
                       onClick={() => void grantTelemetryConsent(recoverDraft.trim())}
                       disabled={telemetryBusy || !recoverDraft.trim()}
-                      className="shrink-0 px-3 py-1.5 rounded-xl bg-wood-mid text-parchment text-xs font-serif font-bold hover:bg-wood-dark transition-colors active:scale-95 disabled:opacity-50"
+                      className="shrink-0 px-3 py-1.5 rounded-xl bg-wood-mid text-parchment text-xs font-serif font-bold hover:bg-wood-dark transition-colors active:scale-95 disabled:opacity-50 cursor-pointer"
                     >
                       找回
                     </button>
@@ -371,14 +432,14 @@ export function CultivationProfileModal() {
             ) : consent.granted === false ? (
               <div className="mt-3 rounded-2xl bg-white/85 p-3.5 text-xs leading-relaxed text-ink-light border border-wood-light flex items-center justify-between gap-2">
                 <div>
-                  <p className="font-serif font-bold text-ink">当前为纯本地模式</p>
-                  <p className="text-[11px]">对局与成长仅保存在这台设备。</p>
+                  <p className="font-serif font-bold text-ink">当前为本机试玩模式</p>
+                  <p className="text-[11px]">对局仅供当前设备体验，不计入跨设备修行记录。</p>
                 </div>
                 <button
                   onClick={() => void grantTelemetryConsent()}
-                  className="shrink-0 px-3 py-1.5 rounded-xl bg-wood-mid text-parchment text-xs font-serif font-bold hover:bg-wood-dark transition-colors active:scale-95"
+                  className="shrink-0 px-3 py-1.5 rounded-xl bg-wood-mid text-parchment text-xs font-serif font-bold hover:bg-wood-dark transition-colors active:scale-95 cursor-pointer"
                 >
-                  开启云端同步
+                  立即立档
                 </button>
               </div>
             ) : !identity ? (
@@ -388,7 +449,7 @@ export function CultivationProfileModal() {
                 <button
                   onClick={() => void provisionPlayer()}
                   disabled={telemetryBusy}
-                  className="mt-2 w-full py-2 rounded-xl border border-wood-mid text-ink text-xs font-bold font-serif hover:bg-wood-light transition-colors active:scale-95 disabled:opacity-50"
+                  className="mt-2 w-full py-2 rounded-xl border border-wood-mid text-ink text-xs font-bold font-serif hover:bg-wood-light transition-colors active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
                   {telemetryBusy ? '生成中…' : '重试生成玩家 ID'}
                 </button>
@@ -419,7 +480,7 @@ export function CultivationProfileModal() {
                     <button
                       onClick={() => void handleUpdateName()}
                       disabled={!nameDraft.trim()}
-                      className="shrink-0 px-3 py-1.5 rounded-xl bg-wood-mid text-parchment text-xs font-serif font-bold hover:bg-wood-dark transition-colors active:scale-95 disabled:opacity-50"
+                      className="shrink-0 px-3 py-1.5 rounded-xl bg-wood-mid text-parchment text-xs font-serif font-bold hover:bg-wood-dark transition-colors active:scale-95 disabled:opacity-50 cursor-pointer"
                     >
                       保存
                     </button>
@@ -434,7 +495,7 @@ export function CultivationProfileModal() {
                       <code className="min-w-0 flex-1 truncate font-mono text-xs text-ink bg-white/70 px-2 py-1 rounded-lg">{recoveryCode}</code>
                       <button
                         onClick={() => void handleCopy()}
-                        className="shrink-0 px-3 py-1 rounded-lg border border-wood-mid bg-white text-ink text-xs font-serif font-bold hover:bg-wood-light transition-colors"
+                        className="shrink-0 px-3 py-1 rounded-lg border border-wood-mid bg-white text-ink text-xs font-serif font-bold hover:bg-wood-light transition-colors cursor-pointer"
                       >
                         {copied ? '已复制' : '复制'}
                       </button>
@@ -446,25 +507,12 @@ export function CultivationProfileModal() {
                 <div className="rounded-2xl bg-white/85 p-3.5 shadow-sm border border-wood-light">
                   <div className="flex items-center justify-between text-xs text-ink mb-1">
                     <span className="font-serif font-bold">云端同步</span>
-                    <span className="text-[11px] text-qi-full font-semibold">已连接</span>
+                    <span className="text-[11px] text-qi-full font-semibold">已连接 · 自动同步</span>
                   </div>
                   <p className="text-[11px] text-ink-light">
-                    {hasCloudIdentity
-                      ? claimableCount > 0
-                        ? `这台设备有 ${claimableCount} 局完成记录等待保存到你的账号。`
-                        : '这台设备暂时没有等待保存的完成记录。'
-                      : '登录并允许云端记录后，已完成的对局可以由你决定是否保存到账号。'}
+                    新对局完成时自动写入你的云端档案，换设备输入恢复码即可完整继承。
                   </p>
                   {cloudError && <p className="mt-1.5 text-xs text-qi-critical">{cloudError}</p>}
-                  {hasCloudIdentity && claimableCount > 0 && (
-                    <button
-                      onClick={() => void claim()}
-                      disabled={cloudBusy}
-                      className="mt-2.5 w-full rounded-xl bg-ink px-4 py-2.5 text-xs font-bold font-serif text-parchment transition-colors hover:bg-wood-dark active:translate-y-px disabled:cursor-wait disabled:opacity-60"
-                    >
-                      {cloudBusy ? '正在保存…' : `保存这 ${claimableCount} 局成长记录`}
-                    </button>
-                  )}
                 </div>
 
                 {/* 换设备恢复输入 */}
@@ -481,7 +529,7 @@ export function CultivationProfileModal() {
                     <button
                       onClick={() => void handleRecover()}
                       disabled={!recoverDraft.trim()}
-                      className="shrink-0 px-3 py-1.5 rounded-xl bg-wood-mid text-parchment text-xs font-serif font-bold hover:bg-wood-dark transition-colors active:scale-95 disabled:opacity-50"
+                      className="shrink-0 px-3 py-1.5 rounded-xl bg-wood-mid text-parchment text-xs font-serif font-bold hover:bg-wood-dark transition-colors active:scale-95 disabled:opacity-50 cursor-pointer"
                     >
                       恢复
                     </button>
@@ -491,7 +539,7 @@ export function CultivationProfileModal() {
             )}
 
             <p className="mt-3 text-[10px] leading-relaxed text-ink-light text-center">
-              进行中的对局始终留在当前设备，不会被带到其他设备。
+              进行中的对局会自动同步至云端，可在任意设备随时继续修行。
             </p>
           </section>
 

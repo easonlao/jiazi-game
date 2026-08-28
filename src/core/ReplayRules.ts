@@ -90,7 +90,7 @@ export const VOID_REPLAY_RULES: VoidReplayRulesSnapshot = {
     bandFactors: { ...BALANCED_TRADE_REPLAY_RULES.volatility.bandFactors },
   },
   scoreRules: { ...BALANCED_TRADE_SCORE_RULES },
-  voidCardCount: VOID_CARD_COUNT,
+  voidCardCount: 3,
   voidKMin: 2,
   voidKMax: 8,
   lazySeason: true,
@@ -129,7 +129,7 @@ export const BRANCH_ROLL_REPLAY_RULES: BranchRollReplayRulesSnapshot = {
     bandFactors: { ...VOID_REPLAY_RULES.volatility.bandFactors },
   },
   scoreRules: { ...BALANCED_TRADE_SCORE_RULES },
-  voidCardCount: VOID_CARD_COUNT,
+  voidCardCount: 3,
   voidKMin: 2,
   voidKMax: 8,
   lazySeason: true,
@@ -153,6 +153,7 @@ export interface TrendWindowReplayRulesSnapshot extends Omit<BranchRollReplayRul
 export const TREND_WINDOW_REPLAY_RULES: TrendWindowReplayRulesSnapshot = {
   ...BRANCH_ROLL_REPLAY_RULES,
   rulesVersion: RULES_VERSION_TREND_WINDOW,
+  voidCardCount: VOID_CARD_COUNT,
   volatility: {
     ...BRANCH_ROLL_REPLAY_RULES.volatility,
     model: 'trend_window',

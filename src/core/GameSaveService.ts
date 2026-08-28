@@ -185,6 +185,8 @@ export interface GameSnapshot {
    * schemaVersion 保持 1（与 V5 空亡增量同模式）。
    */
   branchRoll?: BranchRollState;
+  /** 每局固化的空亡牌数量。新档写入当前局数值；旧档缺失时按 rulesVersion 安全回退（V5/V6/V7 回退 3）。 */
+  voidCardCount?: number;
 }
 
 const SAVE_KEY = 'jiazi_game_save';

@@ -550,3 +550,38 @@ describe('V6 地支波动存档（rulesVersion=6 / branchRoll，schemaVersion �
     expect(tm.exportSnapshot().rulesVersion).toBe(RULES_BASE);
   });
 });
+
+describe('存档 voidCardCount 校验与兼容（Standards P2）', () => {
+  it('合法的 voidCardCount 正常还原并同步牌库', async () => {
+    const tm = await makeTm();
+    const save = makeValidSnapshot({ voidCardCount: 3 });
+    expect(() => tm.importSnapshot(save)).not.toThrow();
+    expect(tm.getVoidCardCount()).toBe(3);
+    expect(tm.getCardById(63)).toBeDefined();
+
+    const save2 = makeValidSnapshot({ voidCardCount: 2 });
+    expect(() => tm.importSnapshot(save2)).not.toThrow();
+    expect(tm.getVoidCardCount()).toBe(2);
+    expect(tm.getCardById(63)).toBeUndefined();
+  });
+
+  it('非法/异常 voidCardCount（负数、小数、超上限、非数字）明确拒绝读档', async () => {
+    const tm = await makeTm();
+
+    // 负数
+    const negSave = makeValidSnapshot({ voidCardCount: -1 });
+    expect(() => tm.importSnapshot(negSave)).toThrowError(/voidCardCount 非法/);
+
+    // 小数
+    const floatSave = makeValidSnapshot({ voidCardCount: 2.5 });
+    expect(() => tm.importSnapshot(floatSave)).toThrowError(/voidCardCount 非法/);
+
+    // 超出上限 (> 10)
+    const overflowSave = makeValidSnapshot({ voidCardCount: 99 });
+    expect(() => tm.importSnapshot(overflowSave)).toThrowError(/voidCardCount 非法/);
+
+    // 非数字
+    const stringSave = makeValidSnapshot({ voidCardCount: '3' as any });
+    expect(() => tm.importSnapshot(stringSave)).toThrowError(/voidCardCount 非法/);
+  });
+});

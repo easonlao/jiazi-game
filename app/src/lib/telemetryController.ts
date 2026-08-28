@@ -28,6 +28,7 @@ import type {
   CloudLeaderboardEntry,
   PlayerIdentity,
   VerifiedSessionStart,
+  CloudActiveGameSession,
 } from './analyticsBackend';
 import {
   VerificationStateController,
@@ -37,9 +38,60 @@ import {
 const CONSENT_KEY = 'jiazi_consent';
 const IDENTITY_KEY = 'jiazi_player_identity';
 const RECOVERY_SESSION_KEY = 'jiazi_recovery_code_session';
+const ACTIVE_SESSION_STORAGE_KEY = 'jiazi_active_verified_session';
 
 /** 与 package.json 版本保持一致（发版时同步修改） */
 export const APP_VERSION = '0.2.0';
+
+export function isSameAction(a: ReplayAction, b: ReplayAction): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === 'buy' && b.type === 'buy') {
+    return a.cardIndex === b.cardIndex && Boolean(a.leverage) === Boolean(b.leverage);
+  }
+  if (a.type === 'sell' && b.type === 'sell') {
+    return a.slotIndex === b.slotIndex;
+  }
+  if (a.type === 'lock' && b.type === 'lock') {
+    return a.cardIndex === b.cardIndex;
+  }
+  if (a.type === 'unlock' && b.type === 'unlock') {
+    return a.cardIndex === b.cardIndex;
+  }
+  if (a.type === 'wait' && b.type === 'wait') {
+    return true;
+  }
+  return false;
+}
+
+export type ActionChainMergeResult =
+  | { type: 'match'; actions: ReplayAction[]; source: 'local' | 'cloud' | 'identical' }
+  | { type: 'conflict'; divergedAt: number; localAction: ReplayAction; cloudAction: ReplayAction };
+
+export function mergeActionChains(
+  localActions: readonly ReplayAction[],
+  cloudActions: readonly ReplayAction[],
+): ActionChainMergeResult {
+  const minLen = Math.min(localActions.length, cloudActions.length);
+  for (let i = 0; i < minLen; i++) {
+    if (!isSameAction(localActions[i], cloudActions[i])) {
+      return {
+        type: 'conflict',
+        divergedAt: i,
+        localAction: localActions[i],
+        cloudAction: cloudActions[i],
+      };
+    }
+  }
+
+  // 共同前缀完全一致：安全超集
+  if (localActions.length > cloudActions.length) {
+    return { type: 'match', actions: [...localActions], source: 'local' };
+  } else if (cloudActions.length > localActions.length) {
+    return { type: 'match', actions: [...cloudActions], source: 'cloud' };
+  } else {
+    return { type: 'match', actions: [...localActions], source: 'identical' };
+  }
+}
 
 export interface ConsentState {
   version: number;
@@ -60,7 +112,36 @@ export interface SessionProgress {
 }
 
 export interface SessionEndResult extends SessionProgress {
-  reason: 'game_over' | 'pagehide' | 'reset';
+  reason: 'game_over' | 'voluntary_termination' | 'new_game_override' | 'reset' | 'pagehide';
+}
+
+export interface PersistedVerifiedSession {
+  session_id: string;
+  client_session_id?: string;
+  started_at: string;
+  meta: ActiveSessionMeta;
+  verified: VerifiedSessionStart | null;
+  replayActions: ReplayAction[];
+  playerId: string;
+  progress: SessionProgress;
+}
+
+function readActiveSession(storage: StorageProvider): PersistedVerifiedSession | null {
+  const p = readJson<PersistedVerifiedSession>(storage, ACTIVE_SESSION_STORAGE_KEY);
+  if (!p || typeof p.session_id !== 'string' || !Array.isArray(p.replayActions)) return null;
+  return p;
+}
+
+function writeActiveSession(storage: StorageProvider, session: PersistedVerifiedSession | null): void {
+  try {
+    if (!session) {
+      storage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    } else {
+      storage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(session));
+    }
+  } catch (e) {
+    console.warn('[telemetry] 写入活跃会话快照失败:', e);
+  }
 }
 
 export interface TelemetryControllerState {
@@ -74,6 +155,8 @@ export interface TelemetryControllerState {
   cultivationLedger: CultivationLedgerSnapshot | null;
   cultivationLedgerBusy: boolean;
   cultivationLedgerError: string | null;
+  activeCloudSession: CloudActiveGameSession | null;
+  activeCloudSessionBusy: boolean;
 }
 
 export interface TelemetryControllerDeps {
@@ -189,6 +272,7 @@ export class TelemetryController {
   private state: TelemetryControllerState;
   private session: {
     session_id: string;
+    client_session_id?: string;
     started_at: string;
     ended: boolean;
     meta: ActiveSessionMeta;
@@ -216,6 +300,8 @@ export class TelemetryController {
       cultivationLedger: null,
       cultivationLedgerBusy: false,
       cultivationLedgerError: null,
+      activeCloudSession: null,
+      activeCloudSessionBusy: false,
     };
     this.queue = new TelemetryQueue({
       storage: deps.storage,
@@ -224,6 +310,22 @@ export class TelemetryController {
     });
     this.verification = new VerificationStateController({ backend: deps.backend, storage: deps.storage });
     this.verification.subscribe((record) => this.onVerificationChange?.(record));
+
+    // 页面刷新恢复：若本地存在该玩家尚未结束的活跃会话快照，自动复原内存会话与已记录的动作链
+    const savedSession = readActiveSession(deps.storage);
+    if (savedSession && savedSession.playerId === this.state.identity?.player_id) {
+      this.session = {
+        session_id: savedSession.session_id,
+        client_session_id: savedSession.client_session_id,
+        started_at: savedSession.started_at,
+        ended: false,
+        meta: savedSession.meta,
+        verified: savedSession.verified,
+        replayActions: [...savedSession.replayActions],
+        playerId: savedSession.playerId,
+      };
+      this.sessionProgress = { ...savedSession.progress };
+    }
   }
 
   getState(): TelemetryControllerState {
@@ -291,7 +393,7 @@ export class TelemetryController {
       }
       if (ok && this.state.identity) {
         await this.verification.resumePending();
-        await this.refreshCultivationLedger();
+        await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
       }
       this.setState({ busy: false, error: ok ? null : '云端身份暂不可用，可继续本地游玩' });
     }
@@ -312,7 +414,7 @@ export class TelemetryController {
       if (recoveryCode?.trim()) await this.recoverIdentity(recoveryCode);
       else await this.provision(this.defaultDisplayName());
       await this.verification.resumePending();
-      await this.refreshCultivationLedger();
+      await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
     } else {
       this.setState({ error: '云端服务暂不可用，可稍后重试' });
     }
@@ -348,7 +450,7 @@ export class TelemetryController {
       writeSessionRecoveryCode(result.recovery_code);
       this.setState({ identity, recovery_code: result.recovery_code, error: null });
       void this.queue.flush();
-      await this.refreshCultivationLedger();
+      await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
       return identity;
     } catch (e) {
       console.warn('[telemetry] provision 失败', e);
@@ -366,7 +468,7 @@ export class TelemetryController {
       writeSessionRecoveryCode(null);
       this.setState({ identity, recovery_code: null, error: null });
       void this.queue.flush();
-      await this.refreshCultivationLedger();
+      await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
       return identity;
     } catch (e) {
       console.warn('[telemetry] recover 失败', e);
@@ -389,7 +491,7 @@ export class TelemetryController {
       const identity = await this.backend.updateDisplayName(this.state.identity.player_id, trimmed);
       writeIdentity(this.storage, identity);
       this.setState({ identity, error: null });
-      await this.refreshCultivationLedger();
+      await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
       return true;
     } catch (e) {
       console.warn('[telemetry] updateDisplayName 失败', e);
@@ -409,13 +511,17 @@ export class TelemetryController {
         Number(meta.rules_version) !== CURRENT_RULES_VERSION ||
         !verified ||
         verified.rules_snapshot.rulesVersion !== CURRENT_RULES_VERSION
-      ) return false;
+      ) {
+        return false;
+      }
     }
     if (!this.state.consent?.granted || !this.state.identity || !this.state.telemetryEnabled) return false;
     const session_id = verified?.session_id ?? newUuid();
+    const client_session_id = verified ? ((meta as { client_session_id?: string }).client_session_id ?? (verified as { client_session_id?: string }).client_session_id ?? session_id) : session_id;
     const started_at = verified?.started_at ?? new Date().toISOString();
     this.session = {
       session_id,
+      client_session_id,
       started_at,
       ended: false,
       meta,
@@ -425,6 +531,20 @@ export class TelemetryController {
       playerId: this.state.identity.player_id,
     };
     this.sessionProgress = { rounds: 0, final_score: 0, margin_call_count: 0 };
+    if (verified) {
+      writeActiveSession(this.storage, {
+        session_id: this.session.session_id,
+        client_session_id: this.session.client_session_id,
+        started_at: this.session.started_at,
+        meta: this.session.meta,
+        verified: this.session.verified,
+        replayActions: this.session.replayActions,
+        playerId: this.session.playerId,
+        progress: this.sessionProgress,
+      });
+    } else {
+      writeActiveSession(this.storage, null);
+    }
     this.track('session_start', {
       session_id,
       rules_version: meta.rules_version,
@@ -434,7 +554,7 @@ export class TelemetryController {
       consent_version: this.state.consent.version,
       platform: 'web',
     });
-    if (!verified) {
+    if (!verified && this.session) {
       void this.upsertSessionNow(this.session).catch((e) => {
         console.warn('[telemetry] game_sessions 会话创建 upsert 失败（结束时仍会再次尝试）', e);
       });
@@ -442,29 +562,117 @@ export class TelemetryController {
     return true;
   }
 
+  /** 跨设备恢复或续局时重新绑定已有会话并接续动作链。 */
+  resumeVerifiedSession(
+    meta: ActiveSessionMeta,
+    verified: VerifiedSessionStart & { client_session_id?: string },
+    actions: readonly ReplayAction[],
+    progress: SessionProgress,
+  ): boolean {
+    if (!this.state.consent?.granted || !this.state.identity || !this.state.telemetryEnabled) return false;
+
+    // 获取本地已有动作链（内存中或持久化存储中）
+    const persisted = readActiveSession(this.storage);
+    const existingLocalActions = (this.session && this.session.session_id === verified.session_id)
+      ? this.session.replayActions
+      : (persisted && persisted.session_id === verified.session_id)
+      ? persisted.replayActions
+      : null;
+
+    let effectiveActions = [...actions];
+    if (existingLocalActions && existingLocalActions.length > 0) {
+      const merge = mergeActionChains(existingLocalActions, actions);
+      if (merge.type === 'conflict') {
+        console.warn(`[telemetry] 双设备动作链冲突于第 ${merge.divergedAt + 1} 步: 本地动作 vs 云端动作不一致`);
+        // 关键冲突处理：阻止分叉继续并提示冲突
+        this.setState({
+          error: '检测到其他设备操作冲突，请重新载入最新对局',
+        });
+        return false;
+      }
+      effectiveActions = merge.actions;
+    }
+
+    this.session = {
+      session_id: verified.session_id,
+      client_session_id: verified.client_session_id ?? verified.session_id,
+      started_at: verified.started_at,
+      ended: false,
+      meta,
+      verified,
+      replayActions: effectiveActions,
+      playerId: this.state.identity.player_id,
+    };
+    this.sessionProgress = { ...progress };
+    writeActiveSession(this.storage, {
+      session_id: this.session.session_id,
+      client_session_id: this.session.client_session_id,
+      started_at: this.session.started_at,
+      meta: this.session.meta,
+      verified: this.session.verified,
+      replayActions: effectiveActions,
+      playerId: this.session.playerId,
+      progress: this.sessionProgress,
+    });
+    return true;
+  }
+
   /** 记录已被核心引擎接受的动作；服务端只重放这些动作，不读取客户端最终分数。 */
   recordReplayAction(action: ReplayAction): void {
     if (!this.session || this.session.ended || !this.session.verified) return;
     this.session.replayActions.push(action);
+    writeActiveSession(this.storage, {
+      session_id: this.session.session_id,
+      client_session_id: this.session.client_session_id,
+      started_at: this.session.started_at,
+      meta: this.session.meta,
+      verified: this.session.verified,
+      replayActions: this.session.replayActions,
+      playerId: this.session.playerId,
+      progress: this.sessionProgress,
+    });
   }
 
   /** 执行动作失败时撤销预先登记的动作。 */
   removeLastReplayAction(): void {
     if (!this.session || this.session.ended || !this.session.verified) return;
     this.session.replayActions.pop();
+    writeActiveSession(this.storage, {
+      session_id: this.session.session_id,
+      client_session_id: this.session.client_session_id,
+      started_at: this.session.started_at,
+      meta: this.session.meta,
+      verified: this.session.verified,
+      replayActions: this.session.replayActions,
+      playerId: this.session.playerId,
+      progress: this.sessionProgress,
+    });
   }
 
   /** 游戏过程中持续刷新当前进度（页面关闭/放弃时带走真实数值）。 */
   updateSessionProgress(progress: SessionProgress): void {
     if (!this.session || this.session.ended) return;
     this.sessionProgress = { ...progress };
+    if (this.session.verified) {
+      writeActiveSession(this.storage, {
+        session_id: this.session.session_id,
+        client_session_id: this.session.client_session_id,
+        started_at: this.session.started_at,
+        meta: this.session.meta,
+        verified: this.session.verified,
+        replayActions: this.session.replayActions,
+        playerId: this.session.playerId,
+        progress: this.sessionProgress,
+      });
+    }
   }
 
-  /** 结束会话：正常结束上报 session_end；放弃/页面离开上报 session_abandon。 */
+  /** 结束会话：正常结束上报 session_end；放弃上报 session_abandon。 */
   endSession(result: SessionEndResult): void {
     const session = this.session;
     if (!session || session.ended) return;
     session.ended = true;
+    writeActiveSession(this.storage, null);
     const progress = {
       rounds: result.rounds,
       final_score: result.final_score,
@@ -484,13 +692,15 @@ export class TelemetryController {
     this.session = null;
   }
 
-  /** 页面离开/放弃当前会话（best-effort，最终由队列重试保证送达）。 */
-  abandonSession(reason: 'pagehide' | 'reset'): void {
+  /** 放弃当前会话（主动终止、开新局覆盖等；由队列重试保证送达）。 */
+  abandonSession(reason: 'voluntary_termination' | 'new_game_override' | 'reset' | 'pagehide' = 'voluntary_termination'): void {
     this.endSession({
       reason,
       ...this.sessionProgress,
     });
+    this.setState({ activeCloudSession: null });
     void this.queue.flush();
+    void this.refreshCultivationLedger();
   }
 
   // ── 事件上报 ──────────────────────────────────────────────
@@ -516,6 +726,24 @@ export class TelemetryController {
     }
   }
 
+  async refreshActiveSession(): Promise<CloudActiveGameSession | null> {
+    const identity = this.state.identity;
+    if (!identity || !this.state.consent?.granted) return null;
+    this.setState({ activeCloudSessionBusy: true });
+    try {
+      const session = await this.backend.fetchActiveGameSession(identity.player_id);
+      this.setState({
+        activeCloudSession: session,
+        activeCloudSessionBusy: false,
+      });
+      return session;
+    } catch (e) {
+      console.warn('[telemetry] fetchActiveGameSession failed', e);
+      this.setState({ activeCloudSessionBusy: false });
+      return null;
+    }
+  }
+
   async refreshCultivationLedger(): Promise<CultivationLedgerSnapshot | null> {
     const identity = this.state.identity;
     if (!identity || !this.state.consent?.granted) return null;
@@ -533,32 +761,6 @@ export class TelemetryController {
       this.setState({
         cultivationLedgerBusy: false,
         cultivationLedgerError: '云端修行账本暂时不可用',
-      });
-      return null;
-    }
-  }
-
-  async claimCultivationLedger(
-    records: readonly import('./cultivationLedger').CultivationLedgerRecord[],
-  ): Promise<CultivationLedgerSnapshot | null> {
-    const identity = this.state.identity;
-    if (!identity || !this.state.consent?.granted || !this.state.telemetryEnabled) return null;
-    const terminalRecords = records.filter((record) => record.outcome !== 'active');
-    if (terminalRecords.length === 0) return this.refreshCultivationLedger();
-    this.setState({ cultivationLedgerBusy: true, cultivationLedgerError: null });
-    try {
-      const snapshot = await this.backend.claimCultivationLedger(identity.player_id, terminalRecords);
-      this.setState({
-        cultivationLedger: snapshot,
-        cultivationLedgerBusy: false,
-        cultivationLedgerError: null,
-      });
-      return snapshot;
-    } catch (e) {
-      console.warn('[telemetry] claimCultivationLedger 失败', e);
-      this.setState({
-        cultivationLedgerBusy: false,
-        cultivationLedgerError: '修行账本认领失败，请稍后重试',
       });
       return null;
     }
@@ -584,7 +786,7 @@ export class TelemetryController {
   }
 
   private async upsertSessionNow(
-    session: { session_id: string; started_at: string; meta: ActiveSessionMeta; playerId: string },
+    session: { session_id: string; client_session_id?: string; started_at: string; meta: ActiveSessionMeta; playerId: string },
     end?: { ended: boolean; abandoned: boolean; rounds: number; final_score: number },
   ): Promise<void> {
     const playerId = session.playerId;
@@ -592,6 +794,7 @@ export class TelemetryController {
     const status = !end?.ended ? 'started' : end.abandoned ? 'abandoned' : 'completed';
     await this.backend.upsertSession(playerId, {
       session_id: session.session_id,
+      client_session_id: session.client_session_id,
       // 携带客户端原始 started_at：约束 ended_at >= started_at 依赖同一时钟
       // 来源，避免数据库默认 now() 晚于客户端 ended_at 导致 check 失败。
       started_at: session.started_at,
@@ -611,6 +814,7 @@ export class TelemetryController {
   private async finalizeSession(
     session: {
       session_id: string;
+      client_session_id?: string;
       started_at: string;
       meta: ActiveSessionMeta;
       verified: VerifiedSessionStart | null;
@@ -647,11 +851,6 @@ export class TelemetryController {
     if (this.pagehideBound) return;
     this.pagehideBound = true;
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-      window.addEventListener('pagehide', () => {
-        if (this.session && !this.session.ended) {
-          this.abandonSession('pagehide');
-        }
-      });
       window.addEventListener('online', () => {
         void this.verification.resumePending();
       });

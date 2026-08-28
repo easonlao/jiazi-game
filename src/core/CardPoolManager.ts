@@ -29,6 +29,7 @@ export class CardPoolManager {
    */
   initialize(cards: JiaziCard[]): void {
     this.deck = [...cards];
+    this.publicCards = [];
     this.shuffleDeck();
     console.log(`[CardPoolManager] 初始化完成，牌堆 ${this.deck.length} 张`);
   }

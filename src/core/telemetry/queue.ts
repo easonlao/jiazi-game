@@ -53,6 +53,7 @@ export class TelemetryQueue {
   private retryCount: number;
   private nextAttemptAt: number;
   private flushing: boolean;
+  private currentFlushPromise: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | null;
   private nextSequence: number;
 
@@ -174,34 +175,43 @@ export class TelemetryQueue {
   /** 立即尝试上传一批（供调用方主动调用；失败静默保留队列）。 */
   async flush(): Promise<void> {
     if (!this.enabled || !this.transport) return;
-    if (this.flushing) return;
+    if (this.currentFlushPromise) {
+      await this.currentFlushPromise;
+      if (this.queue.length === 0) return;
+    }
     if (this.now() < this.nextAttemptAt) return;
     if (this.queue.length === 0) return;
 
     this.flushing = true;
-    const batch = this.queue.slice(0, this.batchSize);
-    try {
-      await this.transport.upload(batch);
-      // 成功后按 id 从队列移除（按引用删除，顺序无关）
-      const ids = new Set(batch.map((e) => e.id));
-      this.queue = this.queue.filter((e) => !ids.has(e.id));
-      this.persist();
-      this.retryCount = 0;
-      this.nextAttemptAt = 0;
-      // 仍有积压则继续
-      if (this.queue.length > 0) this.scheduleTimer(this.initialRetryMs);
-    } catch (e) {
-      console.warn('[TelemetryQueue] 上传失败，稍后重试', e);
-      this.retryCount++;
-      const delay = Math.min(
-        this.maxRetryMs,
-        this.initialRetryMs * 2 ** Math.min(this.retryCount - 1, 8),
-      );
-      this.nextAttemptAt = this.now() + delay;
-      this.scheduleTimer(delay);
-    } finally {
+    this.currentFlushPromise = (async () => {
+      while (this.queue.length > 0) {
+        const batch = this.queue.slice(0, this.batchSize);
+        try {
+          await this.transport!.upload(batch);
+          // 成功后按 id 从队列移除（按引用删除，顺序无关）
+          const ids = new Set(batch.map((e) => e.id));
+          this.queue = this.queue.filter((e) => !ids.has(e.id));
+          this.persist();
+          this.retryCount = 0;
+          this.nextAttemptAt = 0;
+        } catch (e) {
+          console.warn('[TelemetryQueue] 上传失败，稍后重试', e);
+          this.retryCount++;
+          const delay = Math.min(
+            this.maxRetryMs,
+            this.initialRetryMs * 2 ** Math.min(this.retryCount - 1, 8),
+          );
+          this.nextAttemptAt = this.now() + delay;
+          this.scheduleTimer(delay);
+          break;
+        }
+      }
+    })().finally(() => {
       this.flushing = false;
-    }
+      this.currentFlushPromise = null;
+    });
+
+    await this.currentFlushPromise;
   }
 
   private scheduleTimer(delay: number | null): void {

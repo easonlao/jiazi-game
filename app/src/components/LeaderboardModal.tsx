@@ -27,7 +27,12 @@ export function LeaderboardModal() {
       }}
       className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
     >
-      <div className="w-full max-w-xs bg-parchment rounded-2xl shadow-2xl p-6 my-auto max-h-[90vh] overflow-y-auto">
+      <div
+        role="dialog"
+        aria-label="排行榜"
+        aria-modal="true"
+        className="w-full max-w-xs bg-parchment rounded-2xl shadow-2xl p-6 my-auto max-h-[90vh] overflow-y-auto"
+      >
         <h2 className="text-xl font-bold font-serif text-ink mb-4 text-center">排行榜</h2>
 
         <section>

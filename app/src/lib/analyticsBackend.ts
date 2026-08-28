@@ -49,6 +49,7 @@ export interface ProvisionResult extends PlayerIdentity {
 /** game_sessions 行（按 (player_id, client_session_id) upsert 收敛） */
 export interface SessionUpsert {
   session_id: string;
+  client_session_id?: string;
   /** 客户端原始会话开始时间；必须携带，避免 ended_at >= started_at 约束
    *  因数据库默认 now() 晚于客户端 ended_at 而失败（异步时序竞态）。 */
   started_at: string;
@@ -60,6 +61,17 @@ export interface SessionUpsert {
   app_version: string;
   consent_version: string;
   ended_at?: string | null;
+}
+
+export interface CloudActiveGameSession {
+  session_id: string;
+  client_session_id?: string;
+  started_at: string;
+  seed: number;
+  rules_snapshot: ReplayRulesSnapshot;
+  actions: ReplayAction[];
+  rounds_completed: number;
+  final_score: number;
 }
 
 export interface VerifiedSessionStart {
@@ -134,8 +146,8 @@ export interface AnalyticsBackend {
   startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null>;
   submitVerifiedScore(playerId: string, submission: VerifiedScoreSubmission): Promise<VerifiedScoreOutcome>;
   fetchLeaderboard(limit?: number, rulesVersion?: string): Promise<CloudLeaderboardEntry[]>;
+  fetchActiveGameSession(playerId: string): Promise<CloudActiveGameSession | null>;
   fetchCultivationLedger(playerId: string): Promise<CultivationLedgerSnapshot>;
-  claimCultivationLedger(playerId: string, records: readonly CultivationLedgerRecord[]): Promise<CultivationLedgerSnapshot>;
 }
 
 function normalizeError(error: unknown): Error {
@@ -370,7 +382,7 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     const { error } = await this.client.rpc('upsert_game_session', {
       p_player_id: playerId,
       p_session_id: session.session_id,
-      p_client_session_id: session.session_id,
+      p_client_session_id: session.client_session_id ?? session.session_id,
       p_started_at: session.started_at,
       p_status: session.status,
       p_rounds_completed: session.rounds_completed,
@@ -481,6 +493,69 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     });
   }
 
+  async fetchActiveGameSession(playerId: string): Promise<CloudActiveGameSession | null> {
+    try {
+      const { data, error } = await this.client
+        .from('game_sessions')
+        .select('id, client_session_id, started_at, replay_seed, rules_snapshot, status, rounds_completed, final_score')
+        .eq('player_id', playerId)
+        .in('status', ['started', 'running'])
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error || !data) return null;
+      const session_id = String(data.id ?? '');
+      const client_session_id = typeof data.client_session_id === 'string' ? data.client_session_id : undefined;
+      const seed = data.replay_seed;
+      const snapshot = data.rules_snapshot;
+      if (!session_id || typeof seed !== 'number' || !snapshot) return null;
+
+      let actions: ReplayAction[] = [];
+      try {
+        const { data: events } = await this.client
+          .from('game_events')
+          .select('event_type, sequence, payload, occurred_at')
+          .eq('player_id', playerId)
+          .eq('session_id', session_id)
+          .order('sequence', { ascending: true })
+          .order('occurred_at', { ascending: true });
+        if (Array.isArray(events)) {
+          for (const ev of events) {
+            const p = (ev.payload as Record<string, unknown>) ?? {};
+            if (p.replay_action && typeof (p.replay_action as { type?: unknown }).type === 'string') {
+              actions.push(p.replay_action as ReplayAction);
+            } else if (ev.event_type === 'action_buy' && typeof p.card_index === 'number') {
+              actions.push({ type: 'buy', cardIndex: p.card_index, leverage: Boolean(p.use_leverage) });
+            } else if (ev.event_type === 'action_sell' && typeof p.slot_index === 'number') {
+              actions.push({ type: 'sell', slotIndex: p.slot_index });
+            } else if (ev.event_type === 'action_wait') {
+              actions.push({ type: 'wait' });
+            } else if (ev.event_type === 'action_lock' && typeof p.card_index === 'number') {
+              actions.push({ type: 'lock', cardIndex: p.card_index });
+            } else if (ev.event_type === 'action_unlock' && typeof p.card_index === 'number') {
+              actions.push({ type: 'unlock', cardIndex: p.card_index });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[analytics] fetchActiveGameSession events failed', e);
+      }
+
+      return {
+        session_id,
+        client_session_id,
+        started_at: data.started_at,
+        seed,
+        rules_snapshot: snapshot as ReplayRulesSnapshot,
+        actions,
+        rounds_completed: data.rounds_completed ?? 0,
+        final_score: data.final_score ?? 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async fetchCultivationLedger(playerId: string): Promise<CultivationLedgerSnapshot> {
     const { data, error } = await this.client
       .from('cultivation_ledger_entries')
@@ -494,32 +569,7 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     };
   }
 
-  async claimCultivationLedger(
-    playerId: string,
-    records: readonly CultivationLedgerRecord[],
-  ): Promise<CultivationLedgerSnapshot> {
-    const terminalRecords = records.filter((record) => record.outcome !== 'active');
-    if (terminalRecords.length === 0) {
-      return this.fetchCultivationLedger(playerId);
-    }
-    const { data, error } = await this.client.functions.invoke('claim-cultivation-ledger', {
-      body: {
-        player_id: playerId,
-        records: terminalRecords.map((record) => ({
-          local_game_id: record.id,
-          rules_version: record.rulesVersion,
-          started_at: record.startedAt,
-          ended_at: record.endedAt,
-          outcome: record.outcome,
-          final_score: record.finalScore,
-        })),
-      },
-    });
-    if (error) throw normalizeError(error);
-    const snapshot = parseCultivationLedgerSnapshot(data);
-    if (!snapshot) throw new Error('claim-cultivation-ledger 返回异常');
-    return snapshot;
-  }
+
 }
 
 /**
@@ -570,11 +620,13 @@ export class NoopAnalyticsBackend implements AnalyticsBackend {
     return [];
   }
 
+  async fetchActiveGameSession(): Promise<CloudActiveGameSession | null> {
+    return null;
+  }
+
   async fetchCultivationLedger(): Promise<CultivationLedgerSnapshot> {
     return { records: [], summary: summarizeCultivationLedger([]) };
   }
 
-  async claimCultivationLedger(): Promise<CultivationLedgerSnapshot> {
-    return { records: [], summary: summarizeCultivationLedger([]) };
-  }
+
 }

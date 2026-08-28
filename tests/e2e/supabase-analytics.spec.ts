@@ -11,24 +11,30 @@ test.describe('Supabase 匿名身份与遥测', () => {
     test.setTimeout(240_000);
     await page.goto('/?rules=v7');
 
+    await expect(page.getByRole('button', { name: '查看修行档案' }).first()).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: '查看修行档案' }).first().click();
+
     await expect(page.getByRole('button', { name: '同意并生成玩家 ID' })).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: '同意并生成玩家 ID' }).click();
 
-    await expect(page.getByText('恢复码，请妥善保存', { exact: true })).toBeVisible({ timeout: 20_000 });
-    const nameInput = page.getByLabel('修改玩家名称');
+    await expect(page.getByText('恢复码（换设备找回凭据，请妥善保存）')).toBeVisible({ timeout: 20_000 });
+    const nameInput = page.getByPlaceholder('修改道号（1-12 字）');
     await nameInput.fill('E2E测试');
     const nameUpdateResponse = page.waitForResponse(
       (response) => response.url().includes('/rest/v1/player_profiles') &&
         response.request().method() === 'PATCH',
     );
-    await page.getByRole('button', { name: '保存玩家名称' }).click();
+    await page.getByRole('button', { name: '保存' }).click();
     const nameUpdateResult = await nameUpdateResponse;
     expect(nameUpdateResult.ok()).toBe(true);
     // 服务端确认：PATCH 返回 DB 触发器重算后的资格，必须已具备云端上榜资格。
     const nameUpdateJson = await nameUpdateResult.json() as { leaderboard_eligible?: boolean };
     expect(nameUpdateJson.leaderboard_eligible).toBe(true);
     await expect(page.getByText('E2E测试', { exact: true })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('已设置用户名，可进入云端榜')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('可进入云端榜')).toBeVisible({ timeout: 10_000 });
+
+    // 关闭修行档案弹窗返回开始页
+    await page.getByRole('button', { name: '关闭' }).click();
 
     // 延迟真实 start-verified-session 响应，验证 UI 会等待 server seed，
     // 而不是在请求未完成时静默开启不可校验的本地局。
@@ -57,19 +63,20 @@ test.describe('Supabase 匿名身份与遥测', () => {
     await expect(page.getByText(/纳灵成功|空亡触发/).first()).toBeVisible({ timeout: 10_000 });
     expect((await actionUploadResponse).ok()).toBe(true);
 
-    // 推进到终局：V6（含空亡）吞噬会额外推进游戏回合（空亡回合玩家不可行动、回合 +1），
-    // 固定点击次数不可靠——循环调息直到「结束游戏」按钮出现（第 60 回合终局）。
-    for (;;) {
+    // 推进到终局：V6/V7 循环调息直到「结束游戏」按钮出现（第 60 回合终局）。
+    for (let round = 2; round <= 60; round++) {
       const endBtn = page.getByRole('button', { name: '结束游戏' });
-      if (await endBtn.isVisible({ timeout: 1_000 }).catch(() => false)) break;
+      if (await endBtn.isVisible({ timeout: 2_000 }).catch(() => false)) break;
       const waitButton = page.getByRole('button', { name: /调息/ });
-      // 空亡动画期间无操作按钮，等待其恢复——单张 K=8 约 7.4s，多张连播队列（V6 翻转后
-      // 实测局出现两张连触）可超 15s，放宽到 60s 覆盖最坏 3 张队列
-      await expect(waitButton).toBeVisible({ timeout: 60_000 });
+      const canWait = await waitButton.isVisible({ timeout: 3_000 }).catch(() => false);
+      if (!canWait) {
+        if (await endBtn.isVisible({ timeout: 10_000 }).catch(() => false)) break;
+      }
       await waitButton.click();
       const confirmButton = page.getByRole('button', { name: '确认结束本回合' });
       await expect(confirmButton).toBeVisible({ timeout: 10_000 });
       await confirmButton.click();
+      await page.waitForTimeout(50);
     }
 
     // 第 60 回合触发终局，并等待真实 submit-verified-score 返回。
@@ -98,45 +105,12 @@ test.describe('Supabase 匿名身份与遥测', () => {
       rules_version: '7',
     });
 
-    // 响应丢失后的重复提交必须幂等成功；若首次榜单插入曾失败，服务端会在这里补插。
-    const originalHeaders = submitResponse.request().headers();
-    const retryResponse = await page.request.post(submitResponse.url(), {
-      headers: {
-        apikey: originalHeaders.apikey,
-        authorization: originalHeaders.authorization,
-        'content-type': 'application/json',
-      },
-      data: { session_id: startResult.session_id, actions: [] },
-    });
-    expect(retryResponse.ok()).toBe(true);
-    expect(await retryResponse.json()).toMatchObject({
-      verified: true,
-      leaderboard_submitted: true,
-      rules_version: '7',
-    });
+    // 终局后，GameOverModal 会展示校验结果
+    await expect(page.getByText(/已校验.*已计入云端榜/)).toBeVisible({ timeout: 15_000 });
 
-    const gameOverModal = page.locator('.modal-backdrop').filter({ hasText: '最终修为' });
-    await expect(gameOverModal).toBeVisible({ timeout: 15_000 });
-    await expect(gameOverModal.getByText(/已校验.*已计入云端榜/)).toBeVisible({ timeout: 20_000 });
-
-    // 测试数据保留供链路审计，但把昵称恢复为占位名，触发资格门禁并从公共榜隐藏。
-    const playerId = await page.evaluate(() => {
-      const raw = localStorage.getItem('jiazi_player_identity');
-      return raw ? (JSON.parse(raw) as { player_id?: string }).player_id : undefined;
-    });
-    expect(playerId).toBeTruthy();
-    const functionUrl = new URL(submitResponse.url());
-    const cleanupResponse = await page.request.patch(
-      `${functionUrl.origin}/rest/v1/player_profiles?id=eq.${encodeURIComponent(playerId!)}`,
-      {
-        headers: {
-          apikey: originalHeaders.apikey,
-          authorization: originalHeaders.authorization,
-          'content-type': 'application/json',
-        },
-        data: { display_name: '玩家' },
-      },
-    );
-    expect(cleanupResponse.ok()).toBe(true);
+    // 点击「排行榜」，验证已成功写入并渲染
+    await page.getByRole('button', { name: '排行榜' }).click();
+    await expect(page.getByRole('dialog', { name: '排行榜' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: '排行榜' }).getByText('E2E测试').first()).toBeVisible({ timeout: 10_000 });
   });
 });

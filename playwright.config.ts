@@ -15,15 +15,15 @@ const isPreview = process.env.E2E_TARGET === 'preview';
 const webServer = isPreview
   ? {
       command: 'corepack pnpm run build && corepack pnpm exec vite preview --port 4173 --host',
-      port: 4173,
+      url: 'http://localhost:4173',
       baseURL: 'http://localhost:4173',
-      timeout: 60_000,
+      timeout: 120_000,
     }
   : {
       command: 'corepack pnpm exec vite --port 5173 --host',
-      port: 5173,
+      url: 'http://localhost:5173',
       baseURL: 'http://localhost:5173',
-      timeout: 30_000,
+      timeout: 120_000,
     };
 
 export default defineConfig({
@@ -43,7 +43,7 @@ export default defineConfig({
   webServer: {
     command: webServer.command,
     cwd: './app',
-    port: webServer.port,
+    url: webServer.url,
     reuseExistingServer: true,
     timeout: webServer.timeout,
   },

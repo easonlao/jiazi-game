@@ -368,9 +368,12 @@ export class TurnManager {
   /** V5 空亡时间吞噬：K ~ uniform[2, 8]（含端点）定稿默认值，走注入的种子随机源。 */
   static readonly VOID_K_MIN = 2;
   static readonly VOID_K_MAX = 8;
+  /** 空亡牌张数上限（防止非法坏档导致牌堆异常膨胀） */
+  static readonly VOID_CARD_COUNT_MAX = 10;
 
-  /** 实际生效的空亡参数（options.voidConfig 覆盖，缺省 = 定稿值：3 张 / K 2~8）。 */
-  private readonly voidCardCount: number;
+  /** 实际生效的空亡参数（options.voidConfig 覆盖，缺省 = 2 张新局 / 3 张旧局 / K 2~8）。 */
+  private voidCardCount: number;
+  private readonly initialVoidCardCount: number;
   private readonly voidKMin: number;
   private readonly voidKMax: number;
   /** V5 空亡观测统计（纯只读，不改变任何行为）：触发次数 / 整季吞掉事件次数 / 单次最大吞噬 K。 */
@@ -483,7 +486,11 @@ export class TurnManager {
       options?.voidConfig?.voidKMin ?? TurnManager.VOID_K_MIN,
       options?.voidConfig?.voidKMax ?? TurnManager.VOID_K_MAX,
     );
-    this.voidCardCount = Math.max(0, Math.floor(options?.voidConfig?.voidCardCount ?? VOID_CARD_COUNT));
+    const defaultVoidCards = (this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL)
+      ? 3
+      : (this.rulesVersion >= RULES_VERSION_TREND_WINDOW ? VOID_CARD_COUNT : 0);
+    this.voidCardCount = Math.max(0, Math.floor(options?.voidConfig?.voidCardCount ?? defaultVoidCards));
+    this.initialVoidCardCount = this.voidCardCount;
     this.cardDataBank = new CardDataBank(this.voidCardCount);
     // V5/V6 空亡规则：SeasonCycle 走懒生成（换季时从种子随机源抽下一季长度）。
     this.seasonCycle = new SeasonCycle(
@@ -1681,6 +1688,7 @@ export class TurnManager {
         : undefined,
       // V6 地支波动状态：仅 rulesVersion=6 时写入；V5 及以下为 undefined（协议不变形）。
       branchRoll: this.getBranchRollState() ?? undefined,
+      voidCardCount: this.voidCardCount,
     };
   }
 
@@ -1747,7 +1755,23 @@ export class TurnManager {
     if (declaredRules === RULES_VERSION_TREND_WINDOW && !isValidBranchRollState(data.branchRoll)) {
       throw new Error('rulesVersion=7 存档的 branchRoll 快照非法，拒绝读档');
     }
+    if (data.voidCardCount !== undefined) {
+      if (
+        typeof data.voidCardCount !== 'number' ||
+        !Number.isSafeInteger(data.voidCardCount) ||
+        data.voidCardCount < 0 ||
+        data.voidCardCount > TurnManager.VOID_CARD_COUNT_MAX
+      ) {
+        throw new Error(`存档 voidCardCount 非法: ${data.voidCardCount}，拒绝读档`);
+      }
+    }
     this.rulesVersion = declaredRules;
+    const declaredVoidCardCount = data.voidCardCount !== undefined
+      ? data.voidCardCount
+      : (declaredRules >= RULES_VERSION_VOID ? 3 : 0);
+    this.voidCardCount = declaredVoidCardCount;
+    this.cardDataBank.setVoidCardCount(this.voidCardCount);
+
     // V5/V6 空亡规则：SeasonCycle 懒生成模式跟随存档声明（base 构造读 V5/V6 档也要懒生成）。
     this.seasonCycle.setLazy(
       declaredRules === RULES_VERSION_VOID || declaredRules === RULES_VERSION_BRANCH_ROLL || declaredRules === RULES_VERSION_TREND_WINDOW,
@@ -2161,6 +2185,11 @@ export class TurnManager {
   /** 获取总回合数 */
   getTotalRounds(): number {
     return TurnManager.TOTAL_ROUNDS;
+  }
+
+  /** 获取本局使用的空亡牌数量 */
+  getVoidCardCount(): number {
+    return this.voidCardCount;
   }
 
   /** 获取当前神识 */
@@ -2627,6 +2656,8 @@ export class TurnManager {
     this.scoreManager.reset();
     this.handManager.reset();
     this.lockManager.reset();
+    this.voidCardCount = this.initialVoidCardCount;
+    this.cardDataBank.setVoidCardCount(this.voidCardCount);
     // 重置牌池后必须重新装填全套卡牌：CardPoolManager.reset 只清空牌堆，
     // 若不重建，新一局 startGame → drawCards 会从空牌堆抽不出公共牌，
     // 导致界面只剩季节、无牌可买（游戏卡死）。

@@ -17,6 +17,7 @@ import { GameOverModal } from './components/GameOverModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { TradeDashboard } from './components/TradeDashboard';
 import { CultivationProfileModal } from './components/CultivationProfileModal';
+import { PauseModal } from './components/PauseModal';
 
 export default function App() {
   const gameState = useGameStore((s) => s.gameState);
@@ -25,6 +26,7 @@ export default function App() {
   const initialize = useGameStore((s) => s.initialize);
   const startGame = useGameStore((s) => s.startGame);
   const startLocalGame = useGameStore((s) => s.startLocalGame);
+  const continueGame = useGameStore((s) => s.continueGame);
   const loadGameFromSave = useGameStore((s) => s.loadGameFromSave);
   const openLeaderboard = useGameStore((s) => s.openLeaderboard);
   const openCultivationProfile = useGameStore((s) => s.openCultivationProfile);
@@ -73,9 +75,8 @@ export default function App() {
             onStartLocal={async () => {
               await startLocalGame();
             }}
-            onContinue={() => {
-              // 成功与失败提示都由 store 统一给出；成功时需明确这是本地续局、不会上云。
-              loadGameFromSave();
+            onContinue={async () => {
+              await continueGame();
             }}
             onLeaderboard={openLeaderboard}
             onOpenProfile={openCultivationProfile}
@@ -103,8 +104,6 @@ export default function App() {
                 低于 MarginCallOverlay z-80——反噬动画照常置顶） */}
             <VoidTriggerAnimation />
             <MarginCallOverlay />
-            <Toast />
-
             {gameState === 'game_over' && <GameOverModal />}
           </>
         )}
@@ -112,6 +111,8 @@ export default function App() {
         {leaderboardOpen && <LeaderboardModal />}
         <CultivationProfileModal />
         <TradeDashboard />
+        <PauseModal />
+        <Toast />
       </div>
     </div>
   );
