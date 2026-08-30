@@ -104,13 +104,13 @@ describe('LockManager 直接单测', () => {
       expect(lockManager.tryLock(makePublicCards(), 99, 80)).toEqual({ ok: false, reason: 'no_card' });
     });
 
-    it('解锁：移除锁定并回牌堆', () => {
+    it('解锁：移除锁定并在回合内保留在公共区（不提前回牌堆，避免牌堆污染）', () => {
       const { lockManager, getReturned } = makeDeps(80);
       const cards = makePublicCards();
       lockManager.tryLock(cards, 0, 80);
       expect(lockManager.tryUnlock(cards, 0)).toBe(true);
       expect(lockManager.getLockedCardIds()).toEqual([]);
-      expect(getReturned()).toEqual([cards[0]]); // 牌已回牌堆
+      expect(getReturned()).toEqual([]); // 牌留在公共区，回合结束才随其余未选牌统一回牌堆
     });
 
     it('解锁未锁定的牌：拒绝', () => {
@@ -184,7 +184,7 @@ describe('LockManager 直接单测', () => {
       // 扣 10 → 气 -2 → 未回正，解锁最低分牌(1 号)并返 5 气 → 气 3
       expect(getCardScore).toHaveBeenCalled();
       expect(lockManager.getLockedCardIds()).toEqual([1]); // 保留高分牌
-      expect(getReturned()).toEqual([cards[1]]); // 低分牌回牌堆
+      expect(getReturned().map((c) => c.id)).toEqual([2]); // 欠费自动解锁后从公共区移出并归还牌堆，确保抽牌不丢牌
       expect(qiManager.getQi()).toBe(3);
     });
 

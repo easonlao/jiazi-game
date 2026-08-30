@@ -15,11 +15,14 @@ import {
   RULES_BASE,
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_BRANCH_ROLL,
+  RULES_VERSION_TREND_WINDOW,
+  RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_TRADE,
   RULES_VERSION_VOLATILE,
 } from '../../src/core/GameSaveService';
 import { BAND_FACTOR } from '../../src/core/ScoreVolatility';
 import { createBranchRollState } from '../../src/core/BranchRoll';
+import { TREND_WINDOW_REPLAY_RULES, CLEAN_POOL_REPLAY_RULES } from '../../src/core/ReplayRules';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { GameSnapshot } from '../../src/core/GameSaveService';
@@ -117,6 +120,34 @@ async function makeBranchRollTm(seed = 42, rollSeed = 7) {
     },
     volatilityRandom: new SeededRandomSource(seed + 1),
     branchRollRandom: new SeededRandomSource(rollSeed),
+  });
+  await tm.initialize();
+  return tm;
+}
+
+/** 构造 V7 趋势窗口实验局：用于验证 V7 存档协议。 */
+async function makeTrendWindowTm(seed = 42) {
+  const cardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => cardData }));
+  const tm = new TurnManager(undefined, new SeededRandomSource(seed), {
+    rulesVersion: RULES_VERSION_TREND_WINDOW,
+    scoreRules: TREND_WINDOW_REPLAY_RULES.scoreRules,
+    volatility: TREND_WINDOW_REPLAY_RULES.volatility,
+    voidConfig: { voidCardCount: 3 },
+  });
+  await tm.initialize();
+  return tm;
+}
+
+/** 构造 V8 洁净牌池生产规则局：用于验证 V8 存档协议。 */
+async function makeCleanPoolTm(seed = 42) {
+  const cardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => cardData }));
+  const tm = new TurnManager(undefined, new SeededRandomSource(seed), {
+    rulesVersion: RULES_VERSION_CLEAN_POOL,
+    scoreRules: CLEAN_POOL_REPLAY_RULES.scoreRules,
+    volatility: CLEAN_POOL_REPLAY_RULES.volatility,
+    voidConfig: { voidCardCount: 3 },
   });
   await tm.initialize();
   return tm;
@@ -583,5 +614,59 @@ describe('存档 voidCardCount 校验与兼容（Standards P2）', () => {
     // 非数字
     const stringSave = makeValidSnapshot({ voidCardCount: '3' as any });
     expect(() => tm.importSnapshot(stringSave)).toThrowError(/voidCardCount 非法/);
+  });
+});
+
+describe('V8 洁净牌池存档（rulesVersion=8 / clean_pool，schemaVersion 保持 1）', () => {
+  it('V8 档完整往返：声明版本优先，正确还原牌池守恒、锁定状态与地支波动 branchRoll，二次导出可再读档', async () => {
+    const src = await makeCleanPoolTm();
+    src.startGame();
+    expect(src.executeLockCard(0).ok).toBe(true);
+    expect(src.executeWait()).toBe(true);
+
+    const snapshot = src.exportSnapshot();
+    expect(snapshot.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(snapshot.rulesVersion).toBe(RULES_VERSION_CLEAN_POOL);
+    expect(snapshot.lockedCardIds.length).toBeGreaterThan(0);
+    expect(snapshot.branchRoll).toBeDefined();
+    expect(snapshot.branchRoll).toEqual(src.getBranchRollState());
+
+    // base 构造读 V8 档：声明版本优先，正确还原为 V8
+    const tm = await makeTm();
+    expect(() => tm.importSnapshot(snapshot)).not.toThrow();
+    expect(tm.getRulesVersion()).toBe(RULES_VERSION_CLEAN_POOL);
+    expect(tm.validateCardPoolIntegrity()).toBe(true);
+    expect(tm.getLockedCardIds()).toEqual(src.getLockedCardIds());
+    // 关键断言 1：branchRoll 状态完整还原，地支评分不漂移
+    expect(tm.getBranchRollState()).toEqual(src.getBranchRollState());
+    const season = src.getCurrentSeason();
+    for (const card of src.getPublicCards()) {
+      expect(tm.getCardScore(card, season)).toBe(src.getCardScore(card, season));
+    }
+
+    // 重新导出：保持 V8 规则声明、branchRoll 与锁定牌 ID
+    const reExported = tm.exportSnapshot();
+    expect(reExported.rulesVersion).toBe(RULES_VERSION_CLEAN_POOL);
+    expect(reExported.branchRoll).toEqual(src.getBranchRollState());
+    expect(reExported.lockedCardIds).toEqual(src.getLockedCardIds());
+
+    // 关键断言 2：二次导出后的快照能被第三个实例无损再读档（不丢字段）
+    const tm3 = await makeTm();
+    expect(() => tm3.importSnapshot(reExported)).not.toThrow();
+    expect(tm3.getRulesVersion()).toBe(RULES_VERSION_CLEAN_POOL);
+    expect(tm3.getBranchRollState()).toEqual(src.getBranchRollState());
+    expect(tm3.validateCardPoolIntegrity()).toBe(true);
+  });
+
+  it('旧版 V7 档读入后保持 rulesVersion=7，不被篡改为 V8', async () => {
+    const srcV7 = await makeTrendWindowTm();
+    srcV7.startGame();
+    expect(srcV7.executeWait()).toBe(true);
+    const saveV7 = srcV7.exportSnapshot();
+
+    const tm = await makeTm();
+    expect(() => tm.importSnapshot(saveV7)).not.toThrow();
+    expect(tm.getRulesVersion()).toBe(RULES_VERSION_TREND_WINDOW);
+    expect(tm.exportSnapshot().rulesVersion).toBe(RULES_VERSION_TREND_WINDOW);
   });
 });

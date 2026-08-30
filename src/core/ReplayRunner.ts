@@ -23,12 +23,14 @@ export interface ReplayRequest {
   volatility?: Partial<ScoreVolatilityConfig>;
   scoreRules?: Partial<ScoreRules>;
   voidCardCount?: number;
+  /** 是否要求对局必须已完成 60 回合并进入 game_over。结算时为 true，进行中局受损校验时为 false。默认 true。 */
+  requireCompleted?: boolean;
 }
 
 export interface ReplayResult {
   score: number;
   state: GameState;
-  completed: true;
+  completed: boolean;
   rounds: number;
   rulesVersion: SupportedRulesVersion;
 }
@@ -142,15 +144,25 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
     applyAction(turnManager, request.actions[index], index);
   }
 
-  if (turnManager.getState() !== 'game_over') {
+  const requireCompleted = request.requireCompleted ?? true;
+  if (requireCompleted && turnManager.getState() !== 'game_over') {
     throw new ReplayValidationError('对局未完成 60 回合', null);
   }
 
   return {
     score: turnManager.getScore(),
     state: turnManager.getState(),
-    completed: true,
-    rounds: turnManager.getTotalRounds(),
+    completed: turnManager.getState() === 'game_over',
+    rounds: turnManager.getState() === 'game_over' ? turnManager.getTotalRounds() : Math.max(0, turnManager.getCurrentRound() - 1),
     rulesVersion: turnManager.getRulesVersion(),
   };
+}
+
+/**
+ * 校验已给出的动作前缀是否全部合法且符合游戏规则与牌池守恒，不要求对局必须结束（用于进行中会话技术损坏判定）。
+ */
+export async function replayGamePrefix(
+  request: Omit<ReplayRequest, 'requireCompleted'>,
+): Promise<ReplayResult> {
+  return replayGame({ ...request, requireCompleted: false });
 }

@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { SupabaseAnalyticsBackend } from '../../app/src/lib/analyticsBackend';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
 import { calculatePerseveranceSummary } from '../../app/src/lib/cultivationProfile';
-import { CURRENT_RULES_VERSION, CURRENT_REPLAY_RULES, cloneReplayRulesSnapshot } from '../../src/core/ReplayRules';
+import { CURRENT_RULES_VERSION, CURRENT_REPLAY_RULES, cloneReplayRulesSnapshot } from '../../src/core';
 import { TurnManager } from '../../src/core/TurnManager';
 import { SeededRandomSource } from '../../src/core/RandomSource';
 import { useGameStore, setTelemetryControllerForTesting } from '../../app/src/store';
@@ -62,7 +62,10 @@ class SimulatedSupabaseDatabase {
     }
 
     if (existing) {
-      if (['completed', 'abandoned', 'failed'].includes(existing.status)) {
+      if (['completed', 'failed', 'corrupted_recovery'].includes(existing.status)) {
+        return existing;
+      }
+      if (existing.status === 'abandoned' && args.p_status !== 'corrupted_recovery') {
         return existing;
       }
       if (['started', 'running'].includes(args.p_status)) {
@@ -216,6 +219,23 @@ class SimulatedSupabaseDatabase {
             return Promise.resolve({ data: null, error: e });
           }
         }
+        if (fn === 'append_game_events') {
+          const events = args.p_events || [];
+          for (const ev of events) {
+            db.gameEvents.push({
+              player_id: args.p_player_id,
+              ...ev,
+            });
+          }
+          return Promise.resolve({
+            data: [{
+              session_id: events[0]?.session_id,
+              session_revision: db.gameEvents.length,
+              inserted_count: events.length,
+            }],
+            error: null,
+          });
+        }
         return Promise.resolve({ data: null, error: null });
       }),
       auth: {
@@ -282,7 +302,7 @@ describe('Supabase 真实数据库迁移、RLS、触发器与续局全链路模�
 
   it('全链路生命周期：开局 -> 动作记录 -> 主动终止 -> 触发器写账本 -> 跨设备拉取与坚持度计算', async () => {
     // 1. 开第 1 局对局并上报事件
-    const meta = { rules_version: '7', game_mode: 'volatility_trade', volatility_enabled: true };
+    const meta = { rules_version: String(CURRENT_RULES_VERSION), game_mode: 'volatility_trade', volatility_enabled: true };
     const prepared1 = await controller.prepareVerifiedSession(meta);
     expect(prepared1).not.toBeNull();
     const started1 = controller.startSession(meta, prepared1);
@@ -300,6 +320,7 @@ describe('Supabase 真实数据库迁移、RLS、触发器与续局全链路模�
     // 2. 主动终止对局 -> 验证数据库 status 更新为 abandoned，触发器写入账本
     controller.abandonSession('voluntary_exit');
     await controller.flush();
+    await controller.syncPendingTerminations();
 
     expect(db.gameSessions.get(sessId1)?.status).toBe('abandoned');
     const ledgerKey1 = `player-p-100:${sessId1}`;
@@ -395,7 +416,7 @@ describe('Supabase 真实数据库迁移、RLS、触发器与续局全链路模�
       status: 'completed',
       rounds_completed: 60,
       final_score: 188.5,
-      rules_version: '7',
+      rules_version: String(CURRENT_RULES_VERSION),
       game_mode: 'volatility_trade',
       app_version: '1.0.0',
       consent_version: '1',

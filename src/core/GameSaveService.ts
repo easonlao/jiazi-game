@@ -73,12 +73,18 @@ export const RULES_VERSION_BRANCH_ROLL = 6;
 /**
  * 趋势窗口波动规则（V7）：V6 之上加 trend_window 波动模型 + 集中度溢价。
  * 语义门控见 docs/mechanics.md §11。仅在 rulesVersion=7 时激活；
- * V6 及以下路径逐字节不变。生产默认翻转为 V7。
+ * V6 及以下路径逐字节不变。
  */
 export const RULES_VERSION_TREND_WINDOW = 7 as const;
 
+/**
+ * 完整牌池守恒规则（V8）：V7 之上规范锁定/解锁与自动解锁的牌池单向守恒与全周期唯一归属。
+ * 生产默认翻转为 V8。
+ */
+export const RULES_VERSION_CLEAN_POOL = 8 as const;
+
 /** 新局默认规则版本；旧存档仍按自身 rulesVersion 继续运行。 */
-export const CURRENT_RULES_VERSION = RULES_VERSION_TREND_WINDOW;
+export const CURRENT_RULES_VERSION = RULES_VERSION_CLEAN_POOL;
 
 /** 当前代码可解释的规则版本集合；存档层与引擎层共用，避免两处规则门控漂移。 */
 export type SupportedRulesVersion =
@@ -88,7 +94,8 @@ export type SupportedRulesVersion =
   | typeof RULES_VERSION_BALANCED_TRADE
   | typeof RULES_VERSION_VOID
   | typeof RULES_VERSION_BRANCH_ROLL
-  | typeof RULES_VERSION_TREND_WINDOW;
+  | typeof RULES_VERSION_TREND_WINDOW
+  | typeof RULES_VERSION_CLEAN_POOL;
 
 export function isSupportedRulesVersion(version: unknown): version is SupportedRulesVersion {
   return version === RULES_BASE ||
@@ -97,22 +104,24 @@ export function isSupportedRulesVersion(version: unknown): version is SupportedR
     version === RULES_VERSION_BALANCED_TRADE ||
     version === RULES_VERSION_VOID ||
     version === RULES_VERSION_BRANCH_ROLL ||
-    version === RULES_VERSION_TREND_WINDOW;
+    version === RULES_VERSION_TREND_WINDOW ||
+    version === RULES_VERSION_CLEAN_POOL;
 }
 
 /**
- * 交易规则家族（V3/V4/V5/V6）：携带"持仓收益 + 释灵倍率 + conflict_banded 季内波动"计分语义。
+ * 交易规则家族（V3/V4/V5/V6/V7/V8）：携带"持仓收益 + 释灵倍率 + conflict_banded 季内波动"计分语义。
  * V5（空亡）继承 V4 计分——设计定案（一审 P1-①）；V6（地支波动）继承 V5 计分
  * 并在其上追加地支 roll 一层（mechanics.md §10）。
  */
 export function isTradeRulesVersion(
   version: unknown,
-): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE | typeof RULES_VERSION_VOID | typeof RULES_VERSION_BRANCH_ROLL | typeof RULES_VERSION_TREND_WINDOW {
+): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE | typeof RULES_VERSION_VOID | typeof RULES_VERSION_BRANCH_ROLL | typeof RULES_VERSION_TREND_WINDOW | typeof RULES_VERSION_CLEAN_POOL {
   return version === RULES_VERSION_TRADE ||
     version === RULES_VERSION_BALANCED_TRADE ||
     version === RULES_VERSION_VOID ||
     version === RULES_VERSION_BRANCH_ROLL ||
-    version === RULES_VERSION_TREND_WINDOW;
+    version === RULES_VERSION_TREND_WINDOW ||
+    version === RULES_VERSION_CLEAN_POOL;
 }
 
 /** 可序列化的手牌槽位快照。 */

@@ -13,7 +13,7 @@ import type {
 } from '../../app/src/lib/analyticsBackend';
 import { summarizeCultivationLedger, type CultivationLedgerRecord } from '../../app/src/lib/cultivationLedger';
 import type { StorageProvider } from '../../src/core/StorageProvider';
-import { cloneReplayRulesSnapshot, CURRENT_REPLAY_RULES } from '../../src/core';
+import { cloneReplayRulesSnapshot, CURRENT_REPLAY_RULES, CURRENT_RULES_VERSION } from '../../src/core';
 
 class MemoryStorage implements StorageProvider {
   private readonly values = new Map<string, string>();
@@ -455,7 +455,7 @@ describe('TelemetryController.updateDisplayName', () => {
 
 describe('TelemetryController 会话持久化与刷新恢复 (Session Persistence)', () => {
   const verifiedMeta: ActiveSessionMeta = {
-    rules_version: '7',
+    rules_version: String(CURRENT_RULES_VERSION),
     game_mode: 'volatility_trade',
     volatility_enabled: true,
   };

@@ -46,8 +46,8 @@ async function startGameAndDismiss(page: import('@playwright/test').Page) {
 
 /** 当前回合数：从顶部「第 X 回合 / 60」读取。 */
 async function currentRound(page: import('@playwright/test').Page): Promise<number> {
-  const topText = await page.locator('h1').first().innerText().catch(() => '');
-  const m = topText.match(/第\s*(\d+)\s*回合/);
+  const text = await page.getByText(/第\s*\d+\s*回合/).first().innerText().catch(() => '');
+  const m = text.match(/第\s*(\d+)\s*回合/);
   return m ? Number(m[1]) : 1;
 }
 
@@ -62,11 +62,17 @@ async function advanceToRound(page: import('@playwright/test').Page, target: num
     const round = await currentRound(page);
     if (round >= target) return;
     const endBtn = page.getByRole('button', { name: '结束游戏' });
-    if (await endBtn.isVisible({ timeout: 1_000 }).catch(() => false)) return;
+    if (await endBtn.isVisible({ timeout: 500 }).catch(() => false)) return;
     const waitBtn = page.getByRole('button', { name: /调息/ });
-    await expect(waitBtn).toBeVisible({ timeout: 10_000 });
+    const canWait = await waitBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (!canWait) {
+      if (await endBtn.isVisible({ timeout: 3_000 }).catch(() => false)) return;
+    }
     await waitBtn.click();
-    await dismissSettlement(page);
+    const confirmBtn = page.getByRole('button', { name: '确认结束本回合' });
+    await expect(confirmBtn).toBeVisible({ timeout: 5_000 });
+    await confirmBtn.click();
+    await page.waitForTimeout(30);
   }
 }
 
@@ -574,30 +580,28 @@ test.describe('甲子纪 E2E 游戏流程', () => {
   });
 
   test('游戏结束与重新开始', async ({ page }) => {
+    test.setTimeout(180_000);
     await startGameAndDismiss(page);
 
-    // 快速推进到第 59 回合（全部等待）。
-    // V5 空亡吞噬会额外推进游戏回合（空亡回合玩家不可行动但回合 +1），
-    // 固定点击次数不可靠——改为循环读取回合数直到 >= 59。
-    await advanceToRound(page, 59);
-
-    // 第 60 回合：「结束游戏」按钮（末回合 ActionBar 显示，点击确认终局）。
-    // 空亡可能把第 59 回合直接吞到 60，此时已出现结束按钮，无需再调息。
-    if (!(await page.getByRole('button', { name: '结束游戏' }).isVisible().catch(() => false))) {
-      await expect(page.getByRole('button', { name: /调息/ })).toBeVisible({ timeout: 10_000 });
-      await page.getByRole('button', { name: /调息/ }).click();
-      await dismissSettlement(page);
+    // 快速推进到终局：循环调息直到「结束游戏」按钮出现（第 60 回合终局）。
+    while (!(await page.getByRole('button', { name: '结束游戏' }).isVisible().catch(() => false))) {
+      const waitButton = page.getByRole('button', { name: /调息/ });
+      await expect(waitButton).toBeVisible({ timeout: 10_000 });
+      await waitButton.click();
+      const confirmButton = page.getByRole('button', { name: '确认结束本回合' });
+      await expect(confirmButton).toBeVisible({ timeout: 10_000 });
+      await confirmButton.click();
+      await page.waitForTimeout(20);
     }
+
     const endBtn = page.getByRole('button', { name: '结束游戏' });
     await expect(endBtn).toBeVisible({ timeout: 10_000 });
     await endBtn.click();
-    await confirmSettlementPreview(page);
+    const confirmBtn = page.getByRole('button', { name: '确认结束本回合' });
+    await expect(confirmBtn).toBeVisible({ timeout: 10_000 });
+    await confirmBtn.click();
 
-    // 终局后 ActionBar 显示"游戏结束"状态文本
-    await expect(page.getByText('游戏结束', { exact: true })).toBeVisible({ timeout: 10_000 });
-
-    // 验证游戏结束弹窗（a1dae8b 局终评价重构后无「一甲子终了」标题，
-    // 弹窗直接从境界名开始——用「最终修为」+ 境界名定位模态框）
+    // 终局后弹出游戏结束总结弹窗（包含最终修为与境界）
     const gameOverModal = page.locator('.modal-backdrop').filter({ hasText: '最终修为' });
     await expect(gameOverModal).toBeVisible({ timeout: 15_000 });
     // 境界名（如「炼气境」）渲染

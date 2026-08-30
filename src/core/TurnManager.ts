@@ -24,6 +24,7 @@ import {
   RULES_BASE,
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_BRANCH_ROLL,
+  RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOLATILE,
   RULES_VERSION_TRADE,
@@ -464,11 +465,8 @@ export class TurnManager {
       ?? (this.scoreVolatilityConfig.enabled ? RULES_VERSION_VOLATILE : RULES_BASE);
     const defaultScoreRules = this.rulesVersion === RULES_VERSION_TRADE
       ? TRADE_SCORE_RULES
-      : (this.rulesVersion === RULES_VERSION_BALANCED_TRADE
-          || this.rulesVersion === RULES_VERSION_VOID
-          || this.rulesVersion === RULES_VERSION_BRANCH_ROLL
-          || this.rulesVersion === RULES_VERSION_TREND_WINDOW)
-        ? BALANCED_TRADE_SCORE_RULES // V5 继承 V4 计分（一审 P1-① 定案）；V6/V7 继承 V5 计分 + 地支 roll 一层
+      : this.rulesVersion >= RULES_VERSION_BALANCED_TRADE
+        ? BALANCED_TRADE_SCORE_RULES // V5 继承 V4 计分（一审 P1-① 定案）；V6/V7/V8 继承 V5 计分 + 地支 roll 一层
         : DEFAULT_SCORE_RULES;
     this.initialRulesVersion = this.rulesVersion;
     this.initialScoreRules = {
@@ -492,17 +490,17 @@ export class TurnManager {
     this.voidCardCount = Math.max(0, Math.floor(options?.voidConfig?.voidCardCount ?? defaultVoidCards));
     this.initialVoidCardCount = this.voidCardCount;
     this.cardDataBank = new CardDataBank(this.voidCardCount);
-    // V5/V6 空亡规则：SeasonCycle 走懒生成（换季时从种子随机源抽下一季长度）。
+    // V5/V6/V7/V8 空亡规则：SeasonCycle 走懒生成（换季时从种子随机源抽下一季长度）。
     this.seasonCycle = new SeasonCycle(
       randomSource,
-      this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL || this.rulesVersion === RULES_VERSION_TREND_WINDOW
+      this.rulesVersion >= RULES_VERSION_VOID
         ? { lazy: true, skipGenerate: options?.skipSeasonGenerate ?? false }
         : (options?.skipSeasonGenerate ?? false),
     );
-    // V6/V7 地支波动：构造即生成首季 roll（仿 V5 懒生成季长"构造即生成"，使随机消耗时机
+    // V6/V7/V8 地支波动：构造即生成首季 roll（仿 V5 懒生成季长"构造即生成"，使随机消耗时机
     // 由引擎推进决定而非外部首次访问——防客户端 UI 局与服务端纯引擎重放随机流分叉）。
-    // 仅 rulesVersion=6/7 创建；V5 及以下不消耗 branchRollRandom（路径逐字节不变）。
-    this.branchRollState = this.rulesVersion === RULES_VERSION_BRANCH_ROLL || this.rulesVersion === RULES_VERSION_TREND_WINDOW
+    // 仅 rulesVersion>=6 创建；V5 及以下不消耗 branchRollRandom（路径逐字节不变）。
+    this.branchRollState = this.rulesVersion >= RULES_VERSION_BRANCH_ROLL
       ? createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex())
       : null;
     this.qiManager = new QiManager(undefined, balanceConfig);
@@ -564,12 +562,12 @@ export class TurnManager {
    * V7（趋势窗口）继承 V6 空亡机制（mechanics.md §11：V7 = V6 + trend_window 波动）。
    */
   private isVoidRulesVersion(): boolean {
-    return this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL || this.rulesVersion === RULES_VERSION_TREND_WINDOW;
+    return this.rulesVersion >= RULES_VERSION_VOID;
   }
 
   /** V6/V7 地支波动门控：rulesVersion=6/7 时激活；V5 及以下路径逐字节不变。 */
   private isBranchRollRulesVersion(): boolean {
-    return this.rulesVersion === RULES_VERSION_BRANCH_ROLL || this.rulesVersion === RULES_VERSION_TREND_WINDOW;
+    return this.rulesVersion >= RULES_VERSION_BRANCH_ROLL;
   }
 
   /** trend_window 波动模型门控：活跃波动配置 model === 'trend_window' 且波动已启用。 */
@@ -742,9 +740,12 @@ export class TurnManager {
     };
     const model = this.scoreVolatilityState.model ?? 'uniform';
     if (model === 'trend_window') {
+      const bandFactors = this.scoreVolatilityState.bandFactors ?? this.activeVolatilityConfig.bandFactors;
       return {
         ...base,
         model: 'trend_window',
+        scale: this.scoreVolatilityState.scale ?? this.activeVolatilityConfig.scale ?? DEFAULT_SCORE_VOLATILITY_CONFIG.scale ?? 2,
+        ...(bandFactors ? { bandFactors: { ...bandFactors } } : {}),
         ...(this.scoreVolatilityState.trendWindowByCardId
           ? { trendWindowByCardId: { ...this.scoreVolatilityState.trendWindowByCardId } }
           : {}),
@@ -881,34 +882,47 @@ export class TurnManager {
       finalScore: 0,
     };
 
-    // V5 空亡规则：先抽牌并检测空亡触发。触发回合由 processVoidRound 接管（结算落在
-    // 跳跃后的季节），不进入玩家行动。
-    if (this.isVoidRulesVersion()) {
-      this.drawPublicCards();
-      const voidCards = this.collectVoidTriggers();
-      if (voidCards.length > 0) {
-        this.processVoidRound(voidCards);
-        return;
+    if (this.rulesVersion >= RULES_VERSION_CLEAN_POOL) {
+      // V8+ 牌池守恒规则：
+      // 1. 先结算锁定费（若欠费自动解锁，牌立即回堆）
+      const autoUnlockedIds = this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason(), true);
+      if (autoUnlockedIds.length > 0) {
+        this.onLockAutoUnlocked?.(autoUnlockedIds);
       }
-    }
-
-    // 1. 持仓结算
-    this.settleHoldings();
-
-    // 1.5 锁定费结算：每张锁定牌每回合扣 LOCK_COST，神识不足自动解锁（先解评分最低的）。
-    // 被自动解锁的牌要通知 UI 弹 Toast，否则玩家会以为锁定牌"无故消失"（卖出/等待低神识导火索）。
-    const autoUnlockedIds = this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason());
-    if (autoUnlockedIds.length > 0) {
-      this.onLockAutoUnlocked?.(autoUnlockedIds);
-    }
-
-    // 2. 抽牌（V5 已在上面抽过；锁定牌保留在公共区，抽 drawCount - 锁定数 张新牌）
-    if (!this.isVoidRulesVersion()) {
+      // 2. 抽牌（锁定牌保留在公共区，其余空位由牌堆新牌填充）
       this.drawPublicCards();
+      // 3. 空亡规则：检测抽出的公共牌是否含空亡触发
+      if (this.isVoidRulesVersion()) {
+        const voidCards = this.collectVoidTriggers();
+        if (voidCards.length > 0) {
+          this.processVoidRound(voidCards);
+          return;
+        }
+      }
+      // 4. 持仓结算
+      this.settleHoldings();
+      // 5. 神识回复
+      this.recoverQi();
+    } else {
+      // V7 及更早规则：严格保留历史执行时序与回放语义
+      if (this.isVoidRulesVersion()) {
+        this.drawPublicCards();
+        const voidCards = this.collectVoidTriggers();
+        if (voidCards.length > 0) {
+          this.processVoidRound(voidCards);
+          return;
+        }
+      }
+      this.settleHoldings();
+      const autoUnlockedIds = this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason(), false);
+      if (autoUnlockedIds.length > 0) {
+        this.onLockAutoUnlocked?.(autoUnlockedIds);
+      }
+      if (!this.isVoidRulesVersion()) {
+        this.drawPublicCards();
+      }
+      this.recoverQi();
     }
-
-    // 3. 神识回复
-    this.recoverQi();
 
     // 记录本回合最终分和神识数值
     if (this.lastSettlementDetail) {
@@ -1019,10 +1033,14 @@ export class TurnManager {
     }
     this.settleHoldings();
 
-    // 3. 锁定费照常结算（吞噬回合仍是一个游戏回合）。
-    const autoUnlockedIds = this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason());
-    if (autoUnlockedIds.length > 0) {
-      this.onLockAutoUnlocked?.(autoUnlockedIds);
+    // 3. 锁定费结算：
+    // - V8+ 规则已在 processRound 开头扣除锁定费并处理回堆，此处跳过；
+    // - V7 及更早规则在空亡分支未经历 processRound 锁定费结算，需在此处保留原有时序结算锁定费（保持历史对局重放一致性）。
+    if (this.rulesVersion < RULES_VERSION_CLEAN_POOL) {
+      const autoUnlockedIds = this.lockManager.settleLockCost(this.seasonCycle.getCurrentSeason(), false);
+      if (autoUnlockedIds.length > 0) {
+        this.onLockAutoUnlocked?.(autoUnlockedIds);
+      }
     }
 
     // 4. 仅自然回复 +10，无调息加成（该回合玩家不可行动）。
@@ -1502,6 +1520,7 @@ export class TurnManager {
     const ok = this.lockManager.tryUnlock(
       this.cardPoolManager.getPublicCards(),
       cardIndex,
+      this.rulesVersion >= RULES_VERSION_CLEAN_POOL,
     );
     if (ok) {
       this.lastAction = 'unlock';
@@ -1628,6 +1647,14 @@ export class TurnManager {
     // 终局强制平仓：所有未卖出持仓统一结算（用户设计决策 2026-08-07）
     this.settleEndgameHoldings();
 
+    // 终局回收所有公共区剩余锁定牌至牌堆，并清空公共展示区，保证全牌组完整归还牌堆
+    const remainingLocked = this.cardPoolManager.getPublicCards().filter((c) => c && this.lockManager.isCardLocked(c.id));
+    if (remainingLocked.length > 0) {
+      this.cardPoolManager.returnCards(remainingLocked);
+    }
+    this.lockManager.reset();
+    this.cardPoolManager.loadState(this.cardPoolManager.getDeck(), []);
+
     this.state = 'game_over';
     this.onStateChange?.('game_over');
     this.onGameEnd?.(this.scoreManager.getScore());
@@ -1743,17 +1770,11 @@ export class TurnManager {
     // V6 地支波动门控（在任何状态改动之前）：rulesVersion=6 档必须携带完整合法的
     // branchRoll 快照，否则明确拒绝——缺失/非法会让读档后的评分注入漂移。
     // 非 6 版本忽略该字段（V5 及以下路径逐字节不变）。
-    if (declaredRules === RULES_VERSION_BRANCH_ROLL && !data.branchRoll) {
-      throw new Error('rulesVersion=6 存档缺少 branchRoll，拒绝读档');
+    if (declaredRules >= RULES_VERSION_BRANCH_ROLL && !data.branchRoll) {
+      throw new Error(`rulesVersion=${declaredRules} 存档缺少 branchRoll，拒绝读档`);
     }
-    if (declaredRules === RULES_VERSION_TREND_WINDOW && !data.branchRoll) {
-      throw new Error('rulesVersion=7 存档缺少 branchRoll，拒绝读档');
-    }
-    if (declaredRules === RULES_VERSION_BRANCH_ROLL && !isValidBranchRollState(data.branchRoll)) {
-      throw new Error('rulesVersion=6 存档的 branchRoll 快照非法，拒绝读档');
-    }
-    if (declaredRules === RULES_VERSION_TREND_WINDOW && !isValidBranchRollState(data.branchRoll)) {
-      throw new Error('rulesVersion=7 存档的 branchRoll 快照非法，拒绝读档');
+    if (declaredRules >= RULES_VERSION_BRANCH_ROLL && !isValidBranchRollState(data.branchRoll)) {
+      throw new Error(`rulesVersion=${declaredRules} 存档的 branchRoll 快照非法，拒绝读档`);
     }
     if (data.voidCardCount !== undefined) {
       if (
@@ -1772,10 +1793,8 @@ export class TurnManager {
     this.voidCardCount = declaredVoidCardCount;
     this.cardDataBank.setVoidCardCount(this.voidCardCount);
 
-    // V5/V6 空亡规则：SeasonCycle 懒生成模式跟随存档声明（base 构造读 V5/V6 档也要懒生成）。
-    this.seasonCycle.setLazy(
-      declaredRules === RULES_VERSION_VOID || declaredRules === RULES_VERSION_BRANCH_ROLL || declaredRules === RULES_VERSION_TREND_WINDOW,
-    );
+    // V5+ 空亡规则：SeasonCycle 懒生成模式跟随存档声明（base 构造读 V5+ 档也要懒生成）。
+    this.seasonCycle.setLazy(declaredRules >= RULES_VERSION_VOID);
     this.scoreManager.setRules(
       isTradeRulesVersion(declaredRules) ? data.scoreRules! : DEFAULT_SCORE_RULES,
     );
@@ -1821,12 +1840,8 @@ export class TurnManager {
         ...this.scoreVolatilityConfig,
         enabled: true,
         model: savedModel,
-        scale: savedModel === 'conflict_banded'
-          ? data.scoreVolatility.scale
-          : this.scoreVolatilityConfig.scale,
-        bandFactors: savedModel === 'conflict_banded'
-          ? data.scoreVolatility.bandFactors
-          : this.scoreVolatilityConfig.bandFactors,
+        scale: data.scoreVolatility.scale ?? this.scoreVolatilityConfig.scale,
+        bandFactors: data.scoreVolatility.bandFactors ?? this.scoreVolatilityConfig.bandFactors,
       };
       this.scoreVolatilityState = {
         remainingRounds: data.scoreVolatility.remainingRounds,
@@ -1844,6 +1859,10 @@ export class TurnManager {
         ...(savedModel === 'trend_window' && data.scoreVolatility.trendWindowByCardId
           ? {
             model: 'trend_window' as const,
+            scale: data.scoreVolatility.scale,
+            bandFactors: data.scoreVolatility.bandFactors
+              ? { ...data.scoreVolatility.bandFactors }
+              : undefined,
             trendWindowByCardId: Object.fromEntries(
               Object.entries(data.scoreVolatility.trendWindowByCardId).map(([id, entry]) => [
                 Number(id),
@@ -1865,7 +1884,7 @@ export class TurnManager {
     // 3.6 地支波动还原：仅 rulesVersion=6 且存档携带合法 branchRoll 时还原；
     //    其余一律置 null——V5 及以下不创建不消耗 roll 随机数，换季/空亡跨季
     //    也不会被 refreshBranchRoll 错误重建（门控按当前生效规则版本）。
-    this.branchRollState = (declaredRules === RULES_VERSION_BRANCH_ROLL || declaredRules === RULES_VERSION_TREND_WINDOW) && isValidBranchRollState(data.branchRoll)
+    this.branchRollState = declaredRules >= RULES_VERSION_BRANCH_ROLL && isValidBranchRollState(data.branchRoll)
       ? {
           rulesVersion: RULES_VERSION_BRANCH_ROLL,
           rollByDiZhi: { ...data.branchRoll!.rollByDiZhi },
@@ -2639,7 +2658,7 @@ export class TurnManager {
     this.rulesVersion = this.initialRulesVersion;
     // 懒生成跟随规则版本：读档切到 V5/V6 后 reset 开新局，需先还原季节模式再重排。
     this.seasonCycle.setLazy(
-      this.initialRulesVersion === RULES_VERSION_VOID || this.initialRulesVersion === RULES_VERSION_BRANCH_ROLL || this.initialRulesVersion === RULES_VERSION_TREND_WINDOW,
+      this.initialRulesVersion >= RULES_VERSION_VOID,
     );
     this.seasonCycle.reset();
     this.scoreManager.setRules(this.initialScoreRules);
@@ -2648,8 +2667,8 @@ export class TurnManager {
           ? createTrendWindowState(this.volatilityRandom, this.cardDataBank.getAllCards().map(c => c.id))
           : createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig))
       : null;
-    // V6 开新局：按构造默认规则重掷首季 roll（V5 及以下置 null，不消耗 roll 随机数）。
-    this.branchRollState = this.initialRulesVersion === RULES_VERSION_BRANCH_ROLL || this.initialRulesVersion === RULES_VERSION_TREND_WINDOW
+    // V6+ 开新局：按构造默认规则重掷首季 roll（V5 及以下置 null，不消耗 roll 随机数）。
+    this.branchRollState = this.initialRulesVersion >= RULES_VERSION_BRANCH_ROLL
       ? createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex())
       : null;
     this.qiManager.reset();
@@ -2729,5 +2748,49 @@ export class TurnManager {
   private refreshBranchRoll(): void {
     if (!this.isBranchRollRulesVersion()) return;
     this.branchRollState = createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex());
+  }
+
+  /**
+   * 校验当前卡牌池完整性与守恒律。
+   * 检查：
+   * 1. publicCards 中无重复卡牌 ID；
+   * 2. deck 中无重复卡牌 ID；
+   * 3. hand 中持仓卡牌无重复 ID；
+   * 4. deck, publicCards, hand 三者卡牌 ID 集合严格互斥且无交集；
+   * 5. 总卡牌数与预期卡牌总数严格相等（基础 60 张 + 空亡卡牌数）。
+   * @returns 校验是否完全守恒
+   */
+  validateCardPoolIntegrity(): boolean {
+    const expectedTotal = 60 + this.getVoidCardCount();
+    const publicCards = this.cardPoolManager.getPublicCards().filter((c): c is JiaziCard => Boolean(c));
+    const deckCards = this.cardPoolManager.getDeck();
+    const handCards = this.handManager.getHand().filter((s): s is HandSlot => Boolean(s)).map((s) => s.card);
+
+    const seenIds = new Set<number>();
+
+    // 检查 publicCards 内部无重复
+    for (const card of publicCards) {
+      if (seenIds.has(card.id)) return false;
+      seenIds.add(card.id);
+    }
+
+    // 检查 deck 内部无重复且与 publicCards 不重叠
+    for (const card of deckCards) {
+      if (seenIds.has(card.id)) return false;
+      seenIds.add(card.id);
+    }
+
+    // 检查 hand 内部无重复且与 deck/publicCards 不重叠
+    for (const card of handCards) {
+      if (seenIds.has(card.id)) return false;
+      seenIds.add(card.id);
+    }
+
+    // 检查总牌数严格守恒
+    if (seenIds.size !== expectedTotal) {
+      return false;
+    }
+
+    return true;
   }
 }

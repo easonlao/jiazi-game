@@ -330,6 +330,21 @@ export class CultivationLedgerService {
     return { ...active, outcome: 'abandoned', endedAt, finalScore: null };
   }
 
+  /**
+   * 免惩罚清理当前进行中对局（用于技术异常恢复、受损存档重置等场景）。
+   * 从记录中移除当前未完成的 active 记录，不标记为 abandoned，不计入坚持度未完成惩罚。
+   */
+  discardActiveGameWithoutPenalty(): void {
+    const state = this.readState();
+    if (!state.activeGameId) return;
+    const nextRecords = state.records.filter((record) => record.id !== state.activeGameId);
+    this.writeState({
+      ...state,
+      activeGameId: null,
+      records: nextRecords,
+    });
+  }
+
   getSummary(): CultivationLedgerSummary {
     return summarizeCultivationLedger(this.readState().records);
   }

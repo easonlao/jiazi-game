@@ -34,11 +34,71 @@ import {
   VerificationStateController,
   type VerificationRecord,
 } from './verificationState';
+import {
+  readPendingTerminations,
+  writePendingTermination,
+  removePendingTermination,
+  type PendingTerminationRecord,
+} from './pendingTerminationStorage';
 
 const CONSENT_KEY = 'jiazi_consent';
 const IDENTITY_KEY = 'jiazi_player_identity';
 const RECOVERY_SESSION_KEY = 'jiazi_recovery_code_session';
 const ACTIVE_SESSION_STORAGE_KEY = 'jiazi_active_verified_session';
+export const PENDING_CORRUPTED_RECOVERY_STORAGE_KEY = 'jiazi_pending_corrupted_recovery';
+
+export interface PendingCorruptedRecoveryRecord {
+  sessionId: string;
+  playerId?: string;
+  source: 'local_save' | 'cloud_session';
+  createdAt: string;
+}
+
+export function readAllPendingCorruptedRecoveries(storage: StorageProvider): Record<string, PendingCorruptedRecoveryRecord> {
+  const raw = storage.getItem(PENDING_CORRUPTED_RECOVERY_STORAGE_KEY);
+  if (!raw) return {};
+  try {
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return {};
+    if (typeof data.sessionId === 'string') {
+      const key = data.playerId ?? '__default__';
+      return { [key]: data };
+    }
+    return data as Record<string, PendingCorruptedRecoveryRecord>;
+  } catch {
+    return {};
+  }
+}
+
+export function writePendingCorruptedRecovery(storage: StorageProvider, payload: PendingCorruptedRecoveryRecord | null): void {
+  if (!payload) {
+    storage.removeItem(PENDING_CORRUPTED_RECOVERY_STORAGE_KEY);
+    return;
+  }
+  const all = readAllPendingCorruptedRecoveries(storage);
+  const key = payload.playerId ?? '__default__';
+  all[key] = payload;
+  storage.setItem(PENDING_CORRUPTED_RECOVERY_STORAGE_KEY, JSON.stringify(all));
+}
+
+export function clearPendingCorruptedRecovery(storage: StorageProvider, playerId?: string | null): void {
+  const all = readAllPendingCorruptedRecoveries(storage);
+  const key = playerId ?? '__default__';
+  delete all[key];
+  if (Object.keys(all).length === 0) {
+    storage.removeItem(PENDING_CORRUPTED_RECOVERY_STORAGE_KEY);
+  } else {
+    storage.setItem(PENDING_CORRUPTED_RECOVERY_STORAGE_KEY, JSON.stringify(all));
+  }
+}
+
+export function readPendingCorruptedRecovery(storage: StorageProvider, currentPlayerId?: string | null): PendingCorruptedRecoveryRecord | null {
+  const all = readAllPendingCorruptedRecoveries(storage);
+  if (currentPlayerId) {
+    return all[currentPlayerId] ?? null;
+  }
+  return all['__default__'] ?? null;
+}
 
 /** 与 package.json 版本保持一致（发版时同步修改） */
 export const APP_VERSION = '0.2.0';
@@ -112,7 +172,7 @@ export interface SessionProgress {
 }
 
 export interface SessionEndResult extends SessionProgress {
-  reason: 'game_over' | 'voluntary_termination' | 'new_game_override' | 'reset' | 'pagehide';
+  reason: 'game_over' | 'voluntary_termination' | 'new_game_override' | 'reset' | 'pagehide' | 'corrupted_recovery';
 }
 
 export interface PersistedVerifiedSession {
@@ -124,6 +184,8 @@ export interface PersistedVerifiedSession {
   replayActions: ReplayAction[];
   playerId: string;
   progress: SessionProgress;
+  sessionRevision?: number;
+  lastEventSequence?: number;
 }
 
 function readActiveSession(storage: StorageProvider): PersistedVerifiedSession | null {
@@ -144,6 +206,13 @@ function writeActiveSession(storage: StorageProvider, session: PersistedVerified
   }
 }
 
+export interface TerminationConflict {
+  sessionId: string;
+  kind: 'voluntary_termination' | 'corrupted_recovery';
+  localTermination: PendingTerminationRecord;
+  cloudSession: CloudActiveGameSession;
+}
+
 export interface TelemetryControllerState {
   consent: ConsentState | null;
   identity: PlayerIdentity | null;
@@ -157,6 +226,7 @@ export interface TelemetryControllerState {
   cultivationLedgerError: string | null;
   activeCloudSession: CloudActiveGameSession | null;
   activeCloudSessionBusy: boolean;
+  terminationConflict: TerminationConflict | null;
 }
 
 export interface TelemetryControllerDeps {
@@ -248,12 +318,16 @@ function writeSessionRecoveryCode(code: string | null): void {
 function createTransport(
   backend: AnalyticsBackend,
   getPlayerId: () => string | null,
+  onUploaded?: (results: Array<{ session_id: string; session_revision: number; inserted_count: number }>) => void,
 ): TelemetryTransport {
   return {
     async upload(batch) {
       const playerId = getPlayerId();
       if (!playerId) throw new Error('identity-not-ready');
-      await backend.uploadEvents(playerId, batch);
+      const results = await backend.uploadEvents(playerId, batch);
+      if (Array.isArray(results) && results.length > 0) {
+        onUploaded?.(results);
+      }
     },
   };
 }
@@ -280,6 +354,8 @@ export class TelemetryController {
     replayActions: ReplayAction[];
     /** 该局开始时的 player_id（固定，身份切换不影响提交归属）。 */
     playerId: string;
+    sessionRevision?: number;
+    lastEventSequence?: number;
   } | null = null;
   private sessionProgress: SessionProgress = { rounds: 0, final_score: 0, margin_call_count: 0 };
   private pagehideBound = false;
@@ -302,10 +378,15 @@ export class TelemetryController {
       cultivationLedgerError: null,
       activeCloudSession: null,
       activeCloudSessionBusy: false,
+      terminationConflict: null,
     };
     this.queue = new TelemetryQueue({
       storage: deps.storage,
-      transport: createTransport(this.backend, () => this.state.identity?.player_id ?? null),
+      transport: createTransport(
+        this.backend,
+        () => this.state.identity?.player_id ?? null,
+        (results) => this.handleEventsUploaded(results),
+      ),
       now: deps.now,
     });
     this.verification = new VerificationStateController({ backend: deps.backend, storage: deps.storage });
@@ -323,8 +404,29 @@ export class TelemetryController {
         verified: savedSession.verified,
         replayActions: [...savedSession.replayActions],
         playerId: savedSession.playerId,
+        sessionRevision: savedSession.sessionRevision ?? 0,
+        lastEventSequence: savedSession.lastEventSequence,
       };
       this.sessionProgress = { ...savedSession.progress };
+    }
+  }
+
+  /** 服务端事件入库确认回调：更新活跃会话 revision，并为待同步记录累加本端已确认上传的事件数（不直接替换基础因果 revision）。 */
+  private handleEventsUploaded(results: Array<{ session_id: string; session_revision: number; inserted_count: number }>): void {
+    const identity = this.state.identity;
+    for (const res of results) {
+      if (this.session && this.session.session_id === res.session_id) {
+        this.session.sessionRevision = Math.max(this.session.sessionRevision ?? 0, res.session_revision);
+        this.persistCurrentSession();
+      }
+      if (identity && res.inserted_count > 0) {
+        const pendingList = readPendingTerminations(this.storage, identity.player_id);
+        const match = pendingList.find((p) => p.sessionId === res.session_id);
+        if (match) {
+          match.localEventsUploaded = (match.localEventsUploaded ?? 0) + res.inserted_count;
+          writePendingTermination(this.storage, match);
+        }
+      }
     }
   }
 
@@ -392,6 +494,7 @@ export class TelemetryController {
         await this.provision(this.defaultDisplayName());
       }
       if (ok && this.state.identity) {
+        await this.syncPendingTerminations();
         await this.verification.resumePending();
         await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
       }
@@ -413,6 +516,7 @@ export class TelemetryController {
     if (ok) {
       if (recoveryCode?.trim()) await this.recoverIdentity(recoveryCode);
       else await this.provision(this.defaultDisplayName());
+      await this.syncPendingTerminations();
       await this.verification.resumePending();
       await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
     } else {
@@ -450,6 +554,7 @@ export class TelemetryController {
       writeSessionRecoveryCode(result.recovery_code);
       this.setState({ identity, recovery_code: result.recovery_code, error: null });
       void this.queue.flush();
+      await this.syncPendingTerminations();
       await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
       return identity;
     } catch (e) {
@@ -468,6 +573,7 @@ export class TelemetryController {
       writeSessionRecoveryCode(null);
       this.setState({ identity, recovery_code: null, error: null });
       void this.queue.flush();
+      await this.syncPendingTerminations();
       await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
       return identity;
     } catch (e) {
@@ -529,22 +635,11 @@ export class TelemetryController {
       replayActions: [],
       // 固定该局开始时的 player_id：身份切换后旧局提交仍归属原始身份。
       playerId: this.state.identity.player_id,
+      sessionRevision: verified ? ((verified as { session_revision?: number }).session_revision ?? 0) : 0,
     };
     this.sessionProgress = { rounds: 0, final_score: 0, margin_call_count: 0 };
-    if (verified) {
-      writeActiveSession(this.storage, {
-        session_id: this.session.session_id,
-        client_session_id: this.session.client_session_id,
-        started_at: this.session.started_at,
-        meta: this.session.meta,
-        verified: this.session.verified,
-        replayActions: this.session.replayActions,
-        playerId: this.session.playerId,
-        progress: this.sessionProgress,
-      });
-    } else {
-      writeActiveSession(this.storage, null);
-    }
+    this.persistCurrentSession();
+
     this.track('session_start', {
       session_id,
       rules_version: meta.rules_version,
@@ -562,10 +657,32 @@ export class TelemetryController {
     return true;
   }
 
+  /** 统一持久化当前活跃会话状态，保证所有写回路径字段完整且不丢失 sessionRevision。 */
+  private persistCurrentSession(): void {
+    if (!this.session || this.session.ended) {
+      writeActiveSession(this.storage, null);
+      return;
+    }
+    if (this.session.verified) {
+      writeActiveSession(this.storage, {
+        session_id: this.session.session_id,
+        client_session_id: this.session.client_session_id,
+        started_at: this.session.started_at,
+        meta: this.session.meta,
+        verified: this.session.verified,
+        replayActions: [...this.session.replayActions],
+        playerId: this.session.playerId,
+        progress: { ...this.sessionProgress },
+        sessionRevision: this.session.sessionRevision ?? 0,
+        lastEventSequence: this.session.lastEventSequence,
+      });
+    }
+  }
+
   /** 跨设备恢复或续局时重新绑定已有会话并接续动作链。 */
   resumeVerifiedSession(
     meta: ActiveSessionMeta,
-    verified: VerifiedSessionStart & { client_session_id?: string },
+    verified: VerifiedSessionStart & { client_session_id?: string; session_revision?: number },
     actions: readonly ReplayAction[],
     progress: SessionProgress,
   ): boolean {
@@ -593,6 +710,10 @@ export class TelemetryController {
       effectiveActions = merge.actions;
     }
 
+    const revision = typeof verified.session_revision === 'number'
+      ? verified.session_revision
+      : (persisted?.sessionRevision ?? 0);
+
     this.session = {
       session_id: verified.session_id,
       client_session_id: verified.client_session_id ?? verified.session_id,
@@ -602,18 +723,10 @@ export class TelemetryController {
       verified,
       replayActions: effectiveActions,
       playerId: this.state.identity.player_id,
+      sessionRevision: revision,
     };
     this.sessionProgress = { ...progress };
-    writeActiveSession(this.storage, {
-      session_id: this.session.session_id,
-      client_session_id: this.session.client_session_id,
-      started_at: this.session.started_at,
-      meta: this.session.meta,
-      verified: this.session.verified,
-      replayActions: effectiveActions,
-      playerId: this.session.playerId,
-      progress: this.sessionProgress,
-    });
+    this.persistCurrentSession();
     return true;
   }
 
@@ -621,65 +734,36 @@ export class TelemetryController {
   recordReplayAction(action: ReplayAction): void {
     if (!this.session || this.session.ended || !this.session.verified) return;
     this.session.replayActions.push(action);
-    writeActiveSession(this.storage, {
-      session_id: this.session.session_id,
-      client_session_id: this.session.client_session_id,
-      started_at: this.session.started_at,
-      meta: this.session.meta,
-      verified: this.session.verified,
-      replayActions: this.session.replayActions,
-      playerId: this.session.playerId,
-      progress: this.sessionProgress,
-    });
+    this.persistCurrentSession();
   }
 
   /** 执行动作失败时撤销预先登记的动作。 */
   removeLastReplayAction(): void {
     if (!this.session || this.session.ended || !this.session.verified) return;
     this.session.replayActions.pop();
-    writeActiveSession(this.storage, {
-      session_id: this.session.session_id,
-      client_session_id: this.session.client_session_id,
-      started_at: this.session.started_at,
-      meta: this.session.meta,
-      verified: this.session.verified,
-      replayActions: this.session.replayActions,
-      playerId: this.session.playerId,
-      progress: this.sessionProgress,
-    });
+    this.persistCurrentSession();
   }
 
   /** 游戏过程中持续刷新当前进度（页面关闭/放弃时带走真实数值）。 */
   updateSessionProgress(progress: SessionProgress): void {
     if (!this.session || this.session.ended) return;
     this.sessionProgress = { ...progress };
-    if (this.session.verified) {
-      writeActiveSession(this.storage, {
-        session_id: this.session.session_id,
-        client_session_id: this.session.client_session_id,
-        started_at: this.session.started_at,
-        meta: this.session.meta,
-        verified: this.session.verified,
-        replayActions: this.session.replayActions,
-        playerId: this.session.playerId,
-        progress: this.sessionProgress,
-      });
-    }
+    this.persistCurrentSession();
   }
 
-  /** 结束会话：正常结束上报 session_end；放弃上报 session_abandon。 */
+  /** 结束会话：正常结束/技术重置上报 session_end（附带 reason）；主动放弃上报 session_abandon。 */
   endSession(result: SessionEndResult): void {
     const session = this.session;
     if (!session || session.ended) return;
     session.ended = true;
-    writeActiveSession(this.storage, null);
     const progress = {
       rounds: result.rounds,
       final_score: result.final_score,
       margin_call_count: result.margin_call_count,
     };
     this.sessionProgress = { ...progress };
-    const abandoned = result.reason !== 'game_over';
+    const isCorruptedRecovery = result.reason === 'corrupted_recovery';
+    const abandoned = !isCorruptedRecovery && result.reason !== 'game_over';
     this.track(abandoned ? 'session_abandon' : 'session_end', {
       session_id: session.session_id,
       final_score: result.final_score,
@@ -688,19 +772,366 @@ export class TelemetryController {
       margin_call_count: result.margin_call_count,
       reason: result.reason,
     });
-    void this.finalizeSession(session, result, abandoned).catch(() => {});
+    void this.finalizeSession(session, result, abandoned, isCorruptedRecovery ? 'corrupted_recovery' : undefined).catch(() => {});
     this.session = null;
+    this.persistCurrentSession();
   }
 
-  /** 放弃当前会话（主动终止、开新局覆盖等；由队列重试保证送达）。 */
+  /** 放弃当前会话（主动终止、开新局覆盖等；由队列与待同步记录保证送达）。 */
   abandonSession(reason: 'voluntary_termination' | 'new_game_override' | 'reset' | 'pagehide' = 'voluntary_termination'): void {
-    this.endSession({
-      reason,
-      ...this.sessionProgress,
-    });
+    const identity = this.state.identity;
+    const sessId = this.session?.session_id ?? this.state.activeCloudSession?.session_id;
+    const clientSessId = this.session?.client_session_id ?? this.state.activeCloudSession?.client_session_id ?? sessId;
+
+    const hasLocalActiveSession = Boolean(this.session && !this.session.ended);
+    const rounds = hasLocalActiveSession
+      ? (this.sessionProgress.rounds ?? 0)
+      : (this.state.activeCloudSession?.rounds_completed ?? 0);
+    const finalScore = hasLocalActiveSession
+      ? (this.sessionProgress.final_score ?? 0)
+      : (this.state.activeCloudSession?.final_score ?? 0);
+    const clientActionCount = hasLocalActiveSession
+      ? (this.session?.replayActions.length ?? 0)
+      : (this.state.activeCloudSession?.actions?.length ?? 0);
+    const expectedSessionRevision = hasLocalActiveSession
+      ? (this.session?.sessionRevision ?? 0)
+      : (this.state.activeCloudSession?.session_revision ?? this.state.activeCloudSession?.last_event_sequence ?? this.state.activeCloudSession?.actions?.length ?? 0);
+
+    // 1. 已立档玩家且有关联云端会话时，先将 session_abandon 事件入队
+    const session = this.session;
+    if (session && !session.ended) {
+      session.ended = true;
+      this.track('session_abandon', {
+        session_id: session.session_id,
+        final_score: finalScore,
+        rounds,
+        abandoned: true,
+        margin_call_count: this.sessionProgress.margin_call_count,
+        reason,
+      });
+    }
+
+    // 2. 写入终止待同步意图（防断网丢失，使用最后已确认的服务端 revision）
+    if (identity && sessId) {
+      writePendingTermination(this.storage, {
+        sessionId: sessId,
+        playerId: identity.player_id,
+        clientSessionId: clientSessId,
+        reason,
+        roundsCompleted: rounds,
+        finalScore,
+        occurredAt: new Date().toISOString(),
+        status: 'pending',
+        clientActionCount,
+        kind: 'voluntary_termination',
+        expectedSessionRevision,
+        expectedLastEventSequence: expectedSessionRevision,
+      });
+    }
+
+    // 3. 清除活跃会话
+    this.session = null;
     this.setState({ activeCloudSession: null });
-    void this.queue.flush();
-    void this.refreshCultivationLedger();
+    this.persistCurrentSession();
+
+    // 4. 串行执行：先上传队列已积压事件，再同步终止记录至云端
+    void this.flushAndSyncTerminations();
+  }
+
+  private async flushAndSyncTerminations(): Promise<void> {
+    try {
+      await this.queue.flush();
+    } catch (e) {
+      console.warn('[telemetry] queue.flush 失败 (可能离线):', e);
+    }
+    await this.syncPendingTerminations();
+  }
+
+  /** 同步暂存的离线主动终止记录至云端。识别并挂起跨设备较新行动冲突。 */
+  async syncPendingTerminations(): Promise<void> {
+    const identity = this.state.identity;
+    if (!identity || !this.state.telemetryEnabled || !this.state.consent?.granted) return;
+    const list = readPendingTerminations(this.storage, identity.player_id);
+    if (list.length === 0) return;
+
+    let syncedAny = false;
+    for (const record of list) {
+      try {
+        const activeCloud = await this.backend.fetchActiveGameSession(identity.player_id);
+        const baseRevision = record.expectedSessionRevision ?? record.expectedLastEventSequence ?? 0;
+        const uploadedByMe = record.localEventsUploaded ?? 0;
+        const maxAllowedRevision = baseRevision + uploadedByMe;
+        if (activeCloud && activeCloud.session_id === record.sessionId) {
+          const cloudRounds = activeCloud.rounds_completed;
+          const cloudActionsCount = activeCloud.actions?.length ?? 0;
+          const localActionsCount = record.clientActionCount ?? 0;
+          const cloudRevision = activeCloud.session_revision ?? 0;
+
+          if (cloudRevision > maxAllowedRevision || cloudRounds > record.roundsCompleted || cloudActionsCount > localActionsCount) {
+            // 发现跨设备终止冲突：云端已有更新 revision、轮次或动作，阻止静默覆盖并提示玩家选择
+            console.warn(`[telemetry] 检测到跨设备终止冲突 [session: ${record.sessionId}]: 云端 revision=${cloudRevision}, round=${cloudRounds}, actions=${cloudActionsCount} > 允许最大 revision=${maxAllowedRevision}(base=${baseRevision}+uploaded=${uploadedByMe}), round=${record.roundsCompleted}, actions=${localActionsCount}`);
+            this.setState({
+              terminationConflict: {
+                sessionId: record.sessionId,
+                kind: record.kind ?? 'voluntary_termination',
+                localTermination: record,
+                cloudSession: activeCloud,
+              },
+            });
+            continue;
+          }
+        }
+
+        await this.backend.upsertSession(identity.player_id, {
+          session_id: record.sessionId,
+          client_session_id: record.clientSessionId,
+          started_at: record.occurredAt,
+          status: 'abandoned',
+          rounds_completed: record.roundsCompleted,
+          final_score: record.finalScore,
+          rules_version: String(CURRENT_RULES_VERSION),
+          game_mode: 'volatility_trade',
+          app_version: this.appVersion,
+          consent_version: String(this.state.consent?.version ?? 1),
+          ended_at: record.occurredAt,
+          expected_session_revision: maxAllowedRevision,
+        });
+        removePendingTermination(this.storage, identity.player_id, record.sessionId);
+        syncedAny = true;
+      } catch (e: any) {
+        if (e?.isConflict || e?.message?.includes('conflict')) {
+          console.warn(`[telemetry] syncPendingTerminations 服务端并发冲突 [session: ${record.sessionId}]`, e);
+          const latestCloud = await this.backend.fetchActiveGameSession(identity.player_id);
+          if (latestCloud) {
+            this.setState({
+              terminationConflict: {
+                sessionId: record.sessionId,
+                kind: record.kind ?? 'voluntary_termination',
+                localTermination: record,
+                cloudSession: latestCloud,
+              },
+            });
+          }
+        } else {
+          console.warn(`[telemetry] syncPendingTerminations 失败 [session: ${record.sessionId}]`, e);
+        }
+      }
+    }
+
+    if (syncedAny) {
+      await this.refreshCultivationLedger();
+    }
+  }
+
+  /**
+   * 解决跨设备终止/受损冲突：
+   * - resume_cloud: 撤销本机离线意图，保留并恢复云端最新对局
+   * - terminate_latest: 确认终止该局最新状态，按云端最新回合与分数落库 abandoned
+   * - reset_corrupted: 确认免惩罚技术重置，走服务端重放验证后写入 corrupted_recovery（绝不转为 abandoned）
+   */
+  async resolveTerminationConflict(
+    sessionId: string,
+    choice: 'resume_cloud' | 'terminate_latest' | 'reset_corrupted',
+  ): Promise<boolean> {
+    const identity = this.state.identity;
+    const conflict = this.state.terminationConflict;
+    if (!identity || !conflict || conflict.sessionId !== sessionId) return false;
+
+    if (choice === 'resume_cloud') {
+      removePendingTermination(this.storage, identity.player_id, sessionId);
+      this.setState({
+        terminationConflict: null,
+        activeCloudSession: conflict.cloudSession,
+      });
+      return true;
+    }
+
+    if (choice === 'reset_corrupted') {
+      const expectedRevision = conflict.cloudSession.session_revision ?? conflict.cloudSession.last_event_sequence ?? conflict.cloudSession.actions?.length ?? 0;
+      const res = await this.backend.recoverCorruptedSession(sessionId, expectedRevision);
+      if (res.success) {
+        removePendingTermination(this.storage, identity.player_id, sessionId);
+        this.setState({
+          terminationConflict: null,
+          activeCloudSession: null,
+        });
+        await this.refreshCultivationLedger();
+        return true;
+      } else {
+        if (res.isConflict) {
+          const latestCloud = await this.backend.fetchActiveGameSession(identity.player_id);
+          if (latestCloud) {
+            this.setState({
+              terminationConflict: {
+                ...conflict,
+                cloudSession: latestCloud,
+              },
+            });
+          }
+        }
+        console.warn('[telemetry] resolveTerminationConflict reset_corrupted 服务端验证失败', res.error);
+        return false;
+      }
+    }
+
+    if (choice === 'terminate_latest') {
+      try {
+        await this.backend.upsertSession(identity.player_id, {
+          session_id: sessionId,
+          client_session_id: conflict.cloudSession.client_session_id ?? sessionId,
+          started_at: conflict.cloudSession.started_at,
+          status: 'abandoned',
+          rounds_completed: conflict.cloudSession.rounds_completed,
+          final_score: conflict.cloudSession.final_score,
+          rules_version: String(conflict.cloudSession.rules_snapshot?.rulesVersion ?? CURRENT_RULES_VERSION),
+          game_mode: 'volatility_trade',
+          app_version: this.appVersion,
+          consent_version: String(this.state.consent?.version ?? 1),
+          ended_at: new Date().toISOString(),
+          expected_session_revision: conflict.cloudSession.session_revision ?? conflict.cloudSession.last_event_sequence ?? conflict.cloudSession.actions?.length ?? 0,
+        });
+        removePendingTermination(this.storage, identity.player_id, sessionId);
+        this.setState({
+          terminationConflict: null,
+          activeCloudSession: null,
+        });
+        await this.refreshCultivationLedger();
+        return true;
+      } catch (e: any) {
+        if (e?.isConflict || e?.message?.includes('conflict')) {
+          const latestCloud = await this.backend.fetchActiveGameSession(identity.player_id);
+          if (latestCloud) {
+            this.setState({
+              terminationConflict: {
+                ...conflict,
+                cloudSession: latestCloud,
+              },
+            });
+          }
+        }
+        console.warn('[telemetry] resolveTerminationConflict terminate_latest 失败', e);
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  /** 免惩罚技术放弃当前受损会话（经服务端重放验证后写入 corrupted_recovery，不写入 abandoned，不计入坚持度未完成惩罚）。返回是否成功确认落库。 */
+  async discardSessionWithoutPenalty(
+    reason: 'corrupted_recovery' = 'corrupted_recovery',
+    targetSessionId?: string,
+  ): Promise<boolean> {
+    const sessId = targetSessionId ?? this.session?.session_id ?? this.state.activeCloudSession?.session_id;
+    const identity = this.state.identity;
+
+    // 若本地纯离线试玩且无任何在线会话关联，视为成功
+    if (!sessId && !this.session) {
+      return true;
+    }
+
+    // 若有关联在线会话但玩家身份未就绪（如离线/未初始化），严禁假装成功
+    if (!identity) {
+      console.warn('[telemetry] discardSessionWithoutPenalty 失败：玩家身份尚未就绪');
+      return false;
+    }
+
+    // 跨设备冲突检查：若本地正在进行活跃会话，且云端存在比本地受损上下文更晚的有效对局，识别为冲突并交由玩家决策
+    if (this.session) {
+      try {
+        const activeCloud = await this.backend.fetchActiveGameSession(identity.player_id);
+        if (activeCloud && activeCloud.session_id === sessId) {
+          const cloudRounds = activeCloud.rounds_completed;
+          const cloudActions = activeCloud.actions?.length ?? 0;
+          const localRounds = this.sessionProgress.rounds ?? 0;
+          const localActions = this.session?.replayActions?.length ?? 0;
+
+          if (cloudRounds > localRounds || cloudActions > localActions) {
+            console.warn(`[telemetry] discardSessionWithoutPenalty 检测到跨设备冲突: 云端第 ${cloudRounds} 轮 > 本地受损第 ${localRounds} 轮`);
+            this.setState({
+              terminationConflict: {
+                sessionId: sessId,
+                kind: 'corrupted_recovery',
+                localTermination: {
+                  sessionId: sessId,
+                  playerId: identity.player_id,
+                  reason: 'corrupted_recovery' as any,
+                  roundsCompleted: localRounds,
+                  finalScore: this.sessionProgress.final_score ?? 0,
+                  occurredAt: new Date().toISOString(),
+                  status: 'pending',
+                  clientActionCount: localActions,
+                  kind: 'corrupted_recovery',
+                  expectedSessionRevision: this.session?.sessionRevision ?? this.session?.lastEventSequence ?? localActions,
+                  expectedLastEventSequence: this.session?.sessionRevision ?? this.session?.lastEventSequence ?? localActions,
+                },
+                cloudSession: activeCloud,
+              },
+            });
+            return false;
+          }
+        }
+      } catch (e) {
+        // 忽略检查异常，继续执行
+      }
+    }
+
+    // 服务端受控验证并原子写入 corrupted_recovery
+    let ok = false;
+    if (sessId) {
+      const expectedRevision = this.session?.sessionRevision ?? this.state.activeCloudSession?.session_revision ?? this.session?.lastEventSequence ?? this.state.activeCloudSession?.last_event_sequence ?? 0;
+      const res = await this.backend.recoverCorruptedSession(sessId, expectedRevision);
+      ok = res.success;
+      if (!ok) {
+        if (res.isConflict) {
+          const latestCloud = await this.backend.fetchActiveGameSession(identity.player_id);
+          if (latestCloud) {
+            this.setState({
+              terminationConflict: {
+                sessionId: sessId,
+                kind: 'corrupted_recovery',
+                localTermination: {
+                  sessionId: sessId,
+                  playerId: identity.player_id,
+                  reason: 'corrupted_recovery' as any,
+                  roundsCompleted: this.sessionProgress.rounds ?? 0,
+                  finalScore: this.sessionProgress.final_score ?? 0,
+                  occurredAt: new Date().toISOString(),
+                  status: 'pending',
+                  clientActionCount: this.session?.replayActions?.length ?? 0,
+                  kind: 'corrupted_recovery',
+                  expectedSessionRevision: expectedRevision,
+                  expectedLastEventSequence: expectedRevision,
+                },
+                cloudSession: latestCloud,
+              },
+            });
+          }
+        }
+        console.warn('[telemetry] discardSessionWithoutPenalty recoverCorruptedSession 失败', res.error);
+      }
+    }
+
+    if (ok) {
+      if (this.session) {
+        this.session.ended = true;
+        this.track('session_end', {
+          session_id: this.session.session_id,
+          final_score: this.sessionProgress.final_score ?? 0,
+          rounds: this.sessionProgress.rounds ?? 0,
+          abandoned: false,
+          margin_call_count: this.sessionProgress.margin_call_count ?? 0,
+          reason,
+        });
+        writeActiveSession(this.storage, null);
+        this.session = null;
+      }
+      this.storage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      this.setState({ activeCloudSession: null });
+      await this.queue.flush();
+      await this.refreshCultivationLedger();
+    }
+    return ok;
   }
 
   // ── 事件上报 ──────────────────────────────────────────────
@@ -708,7 +1139,12 @@ export class TelemetryController {
   /** 入队一条白名单遥测事件；未启用/非法载荷时返回 false（不影响调用方）。 */
   track(type: TelemetryEventType, payload: Record<string, unknown>): boolean {
     if (!this.state.identity) return false;
-    return this.queue.track({ type, payload });
+    const event = this.queue.track({ type, payload });
+    if (event && this.session && !this.session.ended && payload.session_id === this.session.session_id) {
+      this.session.lastEventSequence = event.sequence;
+      this.persistCurrentSession();
+    }
+    return Boolean(event);
   }
 
   /** 立即尝试上传队列（供关键节点主动触发；失败静默保留重试）。 */
@@ -732,6 +1168,16 @@ export class TelemetryController {
     this.setState({ activeCloudSessionBusy: true });
     try {
       const session = await this.backend.fetchActiveGameSession(identity.player_id);
+      const pendingTerminations = readPendingTerminations(this.storage, identity.player_id);
+      if (session && pendingTerminations.some((p) => p.sessionId === session.session_id)) {
+        // 本地已主动终止该局，防止同一设备展示已终止局为可继续
+        this.setState({
+          activeCloudSession: null,
+          activeCloudSessionBusy: false,
+        });
+        void this.syncPendingTerminations();
+        return null;
+      }
       this.setState({
         activeCloudSession: session,
         activeCloudSessionBusy: false,
@@ -786,12 +1232,22 @@ export class TelemetryController {
   }
 
   private async upsertSessionNow(
-    session: { session_id: string; client_session_id?: string; started_at: string; meta: ActiveSessionMeta; playerId: string },
-    end?: { ended: boolean; abandoned: boolean; rounds: number; final_score: number },
+    session: { session_id: string; client_session_id?: string; started_at: string; meta: ActiveSessionMeta; playerId: string; sessionRevision?: number; lastEventSequence?: number },
+    end?: { ended: boolean; abandoned: boolean; status?: 'corrupted_recovery'; rounds: number; final_score: number },
   ): Promise<void> {
     const playerId = session.playerId;
     if (!playerId) return;
-    const status = !end?.ended ? 'started' : end.abandoned ? 'abandoned' : 'completed';
+    const status = !end?.ended
+      ? 'started'
+      : end.status === 'corrupted_recovery'
+        ? 'corrupted_recovery'
+        : end.abandoned
+          ? 'abandoned'
+          : 'completed';
+    const expectedRevision = (status === 'abandoned')
+      ? (session.sessionRevision ?? session.lastEventSequence ?? 0)
+      : undefined;
+
     await this.backend.upsertSession(playerId, {
       session_id: session.session_id,
       client_session_id: session.client_session_id,
@@ -808,6 +1264,7 @@ export class TelemetryController {
       app_version: this.appVersion,
       consent_version: String(this.state.consent?.version ?? 0),
       ended_at: end?.ended ? new Date().toISOString() : null,
+      expected_session_revision: expectedRevision,
     });
   }
 
@@ -823,8 +1280,9 @@ export class TelemetryController {
     },
     result: SessionEndResult,
     abandoned: boolean,
+    explicitStatus?: 'corrupted_recovery',
   ): Promise<void> {
-    if (session.verified && !abandoned) {
+    if (session.verified && !abandoned && !explicitStatus) {
       // 云端服务端重放校验后台执行：登记为 pending 并异步提交。
       // 记录按 session_id 隔离、playerId 为该局开始时的固定值，不阻塞开始下一局。
       this.verification.submit({
@@ -834,16 +1292,14 @@ export class TelemetryController {
       });
       return;
     }
-    try {
-      await this.upsertSessionNow(session, {
-        ended: true,
-        abandoned,
-        rounds: result.rounds,
-        final_score: result.final_score,
-      });
-    } catch (e) {
-      console.warn('[telemetry] game_sessions upsert 失败，仍尝试提交排行榜', e);
-    }
+
+    await this.upsertSessionNow(session, {
+      ended: true,
+      abandoned,
+      status: explicitStatus,
+      rounds: result.rounds,
+      final_score: result.final_score,
+    });
   }
 
 
@@ -853,6 +1309,7 @@ export class TelemetryController {
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener('online', () => {
         void this.verification.resumePending();
+        void this.syncPendingTerminations();
       });
     }
   }

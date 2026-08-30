@@ -12,6 +12,7 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
   const selectPublicCard = useGameStore((s) => s.selectPublicCard);
   const gameState = useGameStore((s) => s.gameState);
   const turnManager = useGameStore((s) => s.turnManager);
+  const season = useGameStore((s) => s.season);
   const lockedCardIds = useGameStore((s) => s.lockedCardIds);
   const toggleLockCard = useGameStore((s) => s.toggleLockCard);
   // 空亡触发动画期间：空亡牌展示在真实公共牌池的该槽位（与真实公共牌并列），
@@ -58,16 +59,11 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
       </div>
       {/* 当季提示 */}
       <SeasonHint
-        season={useGameStore((s) => s.season)}
+        season={season}
         volatilityActive={turnManager?.getScoreVolatilityState() !== null}
       />
       <div className="grid grid-cols-3 gap-1.5">
-        {poolCards
-          // 2026-08-07 防「影子牌」：同一种牌只渲染一张（重复 id 是底层残留/异常，
-          // 直接渲染会出现无法选中操作的幽灵卡——用户实测公共区 4 张、5 张且有重复乙卯）。
-          // key 用「位置-名字」复合，避免 React 同 id 冲突导致重复卡渲染异常。
-          .filter((card, i, arr) => card === 'void' || arr.findIndex((c) => c !== 'void' && c.id === card.id) === i)
-          .map((card: JiaziCard | 'void', i: number) => {
+        {poolCards.map((card: JiaziCard | 'void', i: number) => {
           if (card === 'void') {
             // 空亡牌：不可买入、不可锁定的纯事件牌（动画阶段由覆盖层负责吞噬特效）
             return (

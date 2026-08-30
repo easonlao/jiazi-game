@@ -18,6 +18,7 @@ import {
   BRANCH_ROLL_REPLAY_RULES,
   TREND_WINDOW_REPLAY_RULES,
   CURRENT_REPLAY_RULES,
+  CLEAN_POOL_REPLAY_RULES,
   VOID_REPLAY_RULES,
   CURRENT_RULES_VERSION,
 } from '@core/index';
@@ -45,6 +46,10 @@ import {
 import {
   TelemetryController,
   type TelemetryControllerState,
+  type PendingCorruptedRecoveryRecord,
+  writePendingCorruptedRecovery,
+  clearPendingCorruptedRecovery,
+  readPendingCorruptedRecovery,
 } from './lib/telemetryController';
 import {
   CultivationLedgerService,
@@ -69,6 +74,7 @@ let _telemetryInitPromise: Promise<void> | null = null;
 
 export function setTelemetryControllerForTesting(controller: TelemetryController | null): void {
   _telemetryController = controller;
+  _telemetryInitPromise = null;
 }
 
 const _leaderboardRefreshGate = new LeaderboardRefreshGate();
@@ -299,7 +305,7 @@ interface GameStore {
   // 存档恢复
   hasSave: boolean;
   continueGame: () => Promise<boolean>;
-  loadGameFromSave: () => boolean;
+  loadGameFromSave: () => Promise<boolean>;
   resumeCloudSession: (session?: CloudActiveGameSession | null) => Promise<boolean>;
   startNewGame: () => Promise<boolean>;
 
@@ -308,6 +314,9 @@ interface GameStore {
   leaderboardOpen: boolean;
   openLeaderboard: () => void;
   closeLeaderboard: () => void;
+
+  // 跨设备终止冲突处理
+  resolveTerminationConflict: (choice: 'resume_cloud' | 'terminate_latest' | 'reset_corrupted') => Promise<boolean>;
 
   // 遥测（consent/identity；云端未配置时走 no-op，不影响本地游玩）
   telemetryState: TelemetryControllerState | null;
@@ -321,6 +330,13 @@ interface GameStore {
   verificationState: VerificationRecord | null;
   /** 最近一局结束的会话 id；用于显示守卫，隔离旧局异步回调不污染当前结算展示 */
   _endedSessionId: string | null;
+  /** 受损对局免惩罚技术恢复状态 */
+  recoveringCorruptedGame: boolean;
+  corruptedRecoveryError: string | null;
+  pendingCorruptedSessionId: string | null;
+  pendingCorruptedRecord: PendingCorruptedRecoveryRecord | null;
+  retryCorruptedRecovery: () => Promise<boolean>;
+
   grantTelemetryConsent: (recoveryCode?: string) => Promise<void>;
   declineTelemetryConsent: () => void;
   provisionPlayer: () => Promise<void>;
@@ -531,6 +547,95 @@ function recordActionTelemetry(
 
 type StoreSetter = (patch: Partial<GameStore> | ((state: GameStore) => Partial<GameStore>)) => void;
 
+/** 统一受损对局技术恢复入口：清除存档、立即重置局面并异步等待云端免惩罚确认。 */
+export async function handleCorruptedGameRecoveryHelper(
+  set: StoreSetter,
+  get: () => GameStore,
+  source: 'local_save' | 'cloud_session',
+  sessionId?: string,
+): Promise<false> {
+  const tm = get().turnManager;
+  const targetSessionId = sessionId
+    ?? _telemetryController?.getActiveSessionId()
+    ?? _telemetryController?.getState().activeCloudSession?.session_id
+    ?? get().telemetryState?.activeCloudSession?.session_id
+    ?? null;
+
+  // 1. 同步立即清除坏档、重置引擎与本地状态，使界面立刻回到安全初始状态并展示恢复中，严禁停留在已导入的损坏局！
+  tm?.clearSave();
+  tm?.reset();
+  _cultivationLedger.discardActiveGameWithoutPenalty();
+  refreshCultivationLedgerOverview(set, get);
+
+  // 关键持久化：若存在在线会话，写入持久化 pending 标记，确保即使刷新/重进也绝不丢失阻断状态
+  const currentIdentity = _telemetryController?.getState().identity ?? get().telemetryState?.identity;
+  const playerId = currentIdentity?.player_id;
+  const pendingRecord: PendingCorruptedRecoveryRecord | null = targetSessionId
+    ? {
+        sessionId: targetSessionId,
+        playerId,
+        source,
+        createdAt: new Date().toISOString(),
+      }
+    : null;
+
+  if (pendingRecord) {
+    writePendingCorruptedRecovery(localStorageProvider, pendingRecord);
+  }
+
+  set({
+    hasSave: false,
+    gameState: 'init',
+    _endedSessionId: null,
+    selectedPublicCard: -1,
+    selectedHandCard: -1,
+    pendingAction: null,
+    settlementPreview: null,
+    buySettlementEvent: null,
+    voidTriggerQueue: [],
+    _voidAnimationTrueState: null,
+    recoveringCorruptedGame: true,
+    corruptedRecoveryError: null,
+    pendingCorruptedSessionId: targetSessionId,
+    pendingCorruptedRecord: pendingRecord,
+  });
+  get()._sync();
+
+  // 2. 异步等待云端确认为 corrupted_recovery 终态
+  let ok = false;
+  if (!targetSessionId) {
+    // 纯离线未立档局，无需云端同步
+    ok = true;
+  } else if (_telemetryController) {
+    await ensureTelemetryInit();
+    ok = await _telemetryController.discardSessionWithoutPenalty('corrupted_recovery', targetSessionId);
+  }
+
+  if (ok) {
+    clearPendingCorruptedRecovery(localStorageProvider, playerId);
+    set({
+      recoveringCorruptedGame: false,
+      corruptedRecoveryError: null,
+      pendingCorruptedSessionId: null,
+      pendingCorruptedRecord: null,
+    });
+    const msg = source === 'local_save'
+      ? '检测到历史存档牌池数据异常，已为您安全重置（本次技术恢复不计入坚持度）'
+      : '检测到历史对局牌池数据异常，已为您安全重置（本次技术恢复不计入坚持度）';
+    get().showToast(msg);
+  } else {
+    // 关键防护：若云端更新失败，保留可重试状态与持久化标记，阻断静默进入正常开局
+    set({
+      recoveringCorruptedGame: false,
+      corruptedRecoveryError: '受损对局云端免惩罚确认失败，请重试以保护修行坚持度。',
+      pendingCorruptedSessionId: targetSessionId,
+      pendingCorruptedRecord: pendingRecord,
+    });
+    get().showToast('云端对局状态同步失败，请点击重试');
+  }
+  return false;
+}
+
 /** 将游戏生命周期回调绑定到任意 TurnManager，供普通局与服务端 seed 局共用。 */
 export function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get: () => GameStore): void {
   tm.setOnStateChange(() => {
@@ -658,6 +763,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   cloudLeaderboardError: null,
   verificationState: null,
   _endedSessionId: null,
+  recoveringCorruptedGame: false,
+  corruptedRecoveryError: null,
+  pendingCorruptedSessionId: null,
+  pendingCorruptedRecord: null,
   dashboardOpen: false,
   cultivationProfileOpen: false,
   pauseModalOpen: false,
@@ -762,14 +871,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     _initializing = true;
     try {
       // 本地规则版本选择（配置驱动，符合「环境差异只通过配置驱动」铁律）：
-      // 1. `?rules=v4|v5` URL 参数——E2E 用 `?rules=v4` 跑确定性流程回归
-      //    （V5 空亡随机推进回合，固定流程断言需要 V4 确定性；空亡机制由引擎单测
-      //    与浏览器行为验证覆盖）；也用于手动对比。
-      // 2. `?rules=v7` URL 参数——本地预览 V7（趋势窗口 + 浓度溢价，2026-08-23 加入，
-      //    因 .env.local 的 VITE_RULES_VERSION=5 会让缺省走 V5，需显式 v7 预览）。
-      // 3. `VITE_RULES_VERSION=5` env——本地预览 V5 空亡（不进 git 的 .env.local）。
-      // 4. 缺省 = 生产默认 CURRENT_REPLAY_RULES（V7，2026-08-17 用户拍板翻转）。
-      const urlRules = new URLSearchParams(window.location.search).get('rules');
+      // 1. `?rules=v4|v5|v6|v7|v8` URL 参数——E2E 用 `?rules=v4` 跑确定性流程回归；E2E / 调试用 `?rules=v8` 显式走 V8 洁净牌池。
+      // 2. `VITE_RULES_VERSION=5` env——本地预览 V5 空亡（不进 git 的 .env.local）。
+      // 3. 缺省 = 生产默认 CURRENT_REPLAY_RULES（V8，2026-08-28 用户拍板翻转）。
+      const urlRules = typeof window !== 'undefined' && window.location
+        ? new URLSearchParams(window.location.search).get('rules')
+        : null;
       const previewRules = urlRules === 'v4'
         ? BALANCED_TRADE_REPLAY_RULES
         : urlRules === 'v5'
@@ -778,9 +885,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
             ? BRANCH_ROLL_REPLAY_RULES
             : urlRules === 'v7'
               ? TREND_WINDOW_REPLAY_RULES
-              : import.meta.env.VITE_RULES_VERSION === '5'
-                ? VOID_REPLAY_RULES
-                : CURRENT_REPLAY_RULES;
+              : urlRules === 'v8'
+                ? CLEAN_POOL_REPLAY_RULES
+                : import.meta.env.VITE_RULES_VERSION === '5'
+                  ? VOID_REPLAY_RULES
+                  : CURRENT_REPLAY_RULES;
       const tm = new TurnManager(undefined, undefined, {
         storage: localStorageProvider,
         rulesVersion: previewRules.rulesVersion,
@@ -809,8 +918,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
           storage: localStorageProvider,
           backend,
           onStateChange: (state) => {
+            const prevIdentity = get().telemetryState?.identity;
+            const nextIdentity = state.identity;
             set({ telemetryState: state });
             refreshCultivationLedgerOverview(set, get);
+            if (prevIdentity?.player_id !== nextIdentity?.player_id) {
+              const pending = readPendingCorruptedRecovery(localStorageProvider, nextIdentity?.player_id);
+              if (pending) {
+                set({
+                  recoveringCorruptedGame: false,
+                  corruptedRecoveryError: '检测到未完成的受损对局云端免惩罚确认，请重试同步以保护修行坚持度。',
+                  pendingCorruptedSessionId: pending.sessionId,
+                  pendingCorruptedRecord: pending,
+                });
+              } else if (get().corruptedRecoveryError && get().pendingCorruptedSessionId) {
+                set({
+                  corruptedRecoveryError: null,
+                  pendingCorruptedSessionId: null,
+                  pendingCorruptedRecord: null,
+                });
+              }
+            }
           },
           // 显示守卫：只展示"当前已结束会话"的校验记录，旧局异步回调不污染新局展示。
           onVerificationChange: (record) => {
@@ -826,6 +954,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
         refreshCultivationLedgerOverview(set, get);
         void ensureTelemetryInit();
       }
+
+      // 检查是否有未完成的受损对局技术恢复（按当前已立档/默认玩家隔离读取）
+      const currentIdentity = _telemetryController?.getState().identity;
+      const pendingRecovery = readPendingCorruptedRecovery(localStorageProvider, currentIdentity?.player_id);
+      if (pendingRecovery) {
+        set({
+          recoveringCorruptedGame: false,
+          corruptedRecoveryError: '检测到未完成的受损对局云端免惩罚确认，请重试同步以保护修行坚持度。',
+          pendingCorruptedSessionId: pendingRecovery.sessionId,
+          pendingCorruptedRecord: pendingRecovery,
+        });
+      }
     } catch (e) {
       console.error('[store] 初始化失败:', e);
     } finally {
@@ -834,6 +974,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   async startGame(localOnly = false) {
+    const currentIdentity = _telemetryController?.getState().identity ?? get().telemetryState?.identity;
+    const pendingRecovery = readPendingCorruptedRecovery(localStorageProvider, currentIdentity?.player_id);
+    if (get().recoveringCorruptedGame) {
+      get().showToast('正在进行异常对局安全恢复，请稍候...');
+      return false;
+    }
+    if (pendingRecovery || Boolean(get().corruptedRecoveryError)) {
+      get().showToast('存在未完成的技术恢复，请先重试同步以保护坚持度');
+      return false;
+    }
     const tm = get().turnManager;
     if (!tm || get().startingGame) return false;
 
@@ -895,22 +1045,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
           pendingAction: null,
           settlementPreview: null,
           buySettlementEvent: null,
-          // 注意：此处不再清空 voidTriggerQueue（P2-2）——开局首回合被空亡吞噬时，
-          // onVoidTrigger 在本同步调用栈内 push 的事件必须存活到组件消费，否则动画播不出。
-          // 跨局残留由 reset() 清空 + 组件 player 按 id 去重兜底。
         });
-        // P1-1：首回合可能被空亡吞噬（startGame 内同步完成），开局后统一 flush 空亡 toast
         flushPendingVoidToasts(get);
         return true;
       }
 
-      // 开始新游戏前清除旧存档
       tm.clearSave();
       set({ hasSave: false, _endedSessionId: null, verificationState: null });
-      // 重置引擎（清空上一局的 roundLog/decisionLog/手牌/牌池等），再开新局。
-      // 否则复用同一 TurnManager 实例时，新局会残留上一局的回合记录（行迹可见旧数据）。
-      // 注意：不能在重置后清空 FX 事件——首回合合法回神（+10）是正常事件，
-      // 清除会导致开局回神动画丢失；上一局的残留动画已在 reset() 中清空。
       tm.reset();
       tm.startGame();
       _cultivationLedger.startNewGame(tm.getRulesVersion());
@@ -919,12 +1060,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({
         selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
         pendingAction: null, settlementPreview: null, buySettlementEvent: null,
-        // 同 verified 分支：不清空 voidTriggerQueue（P2-2），让开局空亡信号存活到组件。
       });
       if (localOnly && telemetryState?.consent?.granted) {
         get().showToast('已开始本地对局，本局不上云端榜');
       }
-      // P1-1：首回合可能被空亡吞噬（startGame 内同步完成），空亡 toast 最后写入
       flushPendingVoidToasts(get);
       return true;
     } catch (error) {
@@ -985,6 +1124,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
 
+    // 关键守恒检查：若云端重放后发现牌池重复或守恒破坏，执行免惩罚技术重置
+    if (!tm.validateCardPoolIntegrity()) {
+      return await handleCorruptedGameRecoveryHelper(set, get, 'cloud_session', cloudSession.session_id);
+    }
+
     tm.saveGame();
     _cultivationLedger.resumeActiveGame(tm.getRulesVersion(), cloudSession.session_id);
     refreshCultivationLedgerOverview(set, get);
@@ -995,6 +1139,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       started_at: cloudSession.started_at,
       seed: cloudSession.seed,
       rules_snapshot: cloudSession.rules_snapshot,
+      session_revision: cloudSession.session_revision,
     };
     _telemetryController?.resumeVerifiedSession(
       getTelemetryGameMeta(tm),
@@ -1024,6 +1169,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   async continueGame(): Promise<boolean> {
+    const currentIdentity = _telemetryController?.getState().identity ?? get().telemetryState?.identity;
+    const pendingRecovery = readPendingCorruptedRecovery(localStorageProvider, currentIdentity?.player_id);
+    if (pendingRecovery || get().recoveringCorruptedGame || Boolean(get().corruptedRecoveryError)) return false;
     const tm = get().turnManager;
     const controller = _telemetryController;
     const identity = controller?.getState().identity;
@@ -1034,7 +1182,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 1. 同设备即时存档优先：若本地存在该局最新存档，直接读档继续，
     // 确保包含尚未 flush 到云端的最新回合与手牌状态，避免从落后的云端动作链重放发生回滚。
     if (tm && tm.hasSave()) {
-      const loaded = get().loadGameFromSave();
+      const loaded = await get().loadGameFromSave();
       if (loaded && hasCloudIdentity && controller && !controller.getActiveSessionId()) {
         // 关键重绑：页面刷新后 controller.session 为空，若存在活跃云端局，必须重绑云端会话！
         let cloudSession = controller.getState().activeCloudSession;
@@ -1048,6 +1196,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             started_at: cloudSession.started_at,
             seed: cloudSession.seed,
             rules_snapshot: cloudSession.rules_snapshot,
+            session_revision: cloudSession.session_revision,
           };
           const ok = controller.resumeVerifiedSession(
             getTelemetryGameMeta(tm),
@@ -1078,15 +1227,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return get().resumeCloudSession(cloudSession);
       }
     }
-    return get().loadGameFromSave();
+    return await get().loadGameFromSave();
   },
 
-  loadGameFromSave(): boolean {
+  async loadGameFromSave(): Promise<boolean> {
     const tm = get().turnManager;
     if (!tm) return false;
     if (tm.hasSave()) {
       const ok = tm.loadGame();
       if (ok) {
+        // 关键守恒检查：若历史存档已被旧版本 bug 污染导致牌池重复或守恒破坏，执行免惩罚技术重置
+        if (!tm.validateCardPoolIntegrity()) {
+          const cloudSession = get().telemetryState?.activeCloudSession;
+          return await handleCorruptedGameRecoveryHelper(set, get, 'local_save', cloudSession?.session_id);
+        }
+
         // 先同步当前状态到加载后的值，避免 diffFxEvents 误触发季节/回合动画
         set({
           season: tm.getCurrentSeason(),
@@ -1226,6 +1381,111 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!sessionId) return;
     // 状态由 onVerificationChange 回写（重新进入 pending），这里无需手动 set。
     _telemetryController?.retryVerification(sessionId);
+  },
+
+  async retryCorruptedRecovery(): Promise<boolean> {
+    const preIdentity = _telemetryController?.getState().identity ?? get().telemetryState?.identity;
+    const stateRecord = get().pendingCorruptedRecord;
+
+    // 关键前置防护：若当前记录绑定了特定玩家，且当前已有身份但不是该玩家，直接拒绝
+    if (stateRecord?.playerId && preIdentity?.player_id && stateRecord.playerId !== preIdentity.player_id) {
+      set({
+        recoveringCorruptedGame: false,
+        corruptedRecoveryError: '此受损对局归属于其他修士，请切换回原身份后再行重试。',
+      });
+      get().showToast('身份不匹配，请切换原修士身份重试');
+      return false;
+    }
+
+    set({ recoveringCorruptedGame: true, corruptedRecoveryError: null });
+    await ensureTelemetryInit();
+
+    const controller = _telemetryController;
+    const currentIdentity = controller?.getState().identity ?? get().telemetryState?.identity;
+
+    // 关键修正：必须在 ensureTelemetryInit 后，重新根据当前身份从 storage 读取对应的 pending 记录
+    const pending = readPendingCorruptedRecovery(localStorageProvider, currentIdentity?.player_id)
+      ?? (stateRecord && (!stateRecord.playerId || stateRecord.playerId === currentIdentity?.player_id) ? stateRecord : null);
+
+    // 关键隔离防护：若待恢复记录属于玩家 A，但初始化后身份为玩家 B（或无身份），绝不能拿玩家 B 身份去提交玩家 A 的 session！
+    if (stateRecord?.playerId && (!currentIdentity?.player_id || stateRecord.playerId !== currentIdentity.player_id)) {
+      set({
+        recoveringCorruptedGame: false,
+        corruptedRecoveryError: '此受损对局归属于其他修士，请切换回原身份后再行重试。',
+        pendingCorruptedRecord: stateRecord,
+        pendingCorruptedSessionId: stateRecord.sessionId,
+      });
+      get().showToast('身份不匹配，请切换原修士身份重试');
+      return false;
+    }
+
+    if (!pending) {
+      clearPendingCorruptedRecovery(localStorageProvider, currentIdentity?.player_id);
+      set({
+        corruptedRecoveryError: null,
+        pendingCorruptedSessionId: null,
+        pendingCorruptedRecord: null,
+        recoveringCorruptedGame: false,
+      });
+      return true;
+    }
+
+    if (!controller || !currentIdentity) {
+      set({
+        recoveringCorruptedGame: false,
+        corruptedRecoveryError: '玩家身份尚未就绪，请检查网络后重试。',
+        pendingCorruptedRecord: pending,
+        pendingCorruptedSessionId: pending.sessionId,
+      });
+      get().showToast('玩家身份未就绪，请重试');
+      return false;
+    }
+
+    const ok = await controller.discardSessionWithoutPenalty('corrupted_recovery', pending.sessionId);
+    if (ok) {
+      clearPendingCorruptedRecovery(localStorageProvider, currentIdentity.player_id);
+      set({
+        recoveringCorruptedGame: false,
+        corruptedRecoveryError: null,
+        pendingCorruptedSessionId: null,
+        pendingCorruptedRecord: null,
+      });
+      get().showToast('受损对局已成功免惩罚重置');
+      return true;
+    } else {
+      set({
+        recoveringCorruptedGame: false,
+        corruptedRecoveryError: '受损对局云端免惩罚确认失败，请重试以保护修行坚持度。',
+        pendingCorruptedSessionId: pending.sessionId,
+        pendingCorruptedRecord: pending,
+      });
+      get().showToast('云端重试失败，请稍后重试');
+      return false;
+    }
+  },
+
+  async resolveTerminationConflict(choice: 'resume_cloud' | 'terminate_latest' | 'reset_corrupted') {
+    const controller = _telemetryController;
+    const conflict = controller?.getState().terminationConflict ?? get().telemetryState?.terminationConflict;
+    if (!controller || !conflict) return false;
+
+    const targetSession = conflict.cloudSession;
+    const ok = await controller.resolveTerminationConflict(conflict.sessionId, choice);
+    if (!ok) {
+      get().showToast('解决冲突失败，请重试');
+      return false;
+    }
+
+    if (choice === 'resume_cloud') {
+      get().showToast('已恢复其他设备的最新对局进度');
+      return await get().resumeCloudSession(targetSession);
+    } else if (choice === 'reset_corrupted') {
+      get().showToast('已安全重置受损对局（免惩罚）');
+      return true;
+    } else {
+      get().showToast('已确认终止最新对局');
+      return true;
+    }
   },
 
   openDashboard() {

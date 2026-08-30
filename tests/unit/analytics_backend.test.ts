@@ -35,6 +35,7 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
       p_app_version: '0.2.0',
       p_consent_version: '1',
       p_ended_at: null,
+      p_expected_session_revision: null,
     });
   });
 
@@ -307,5 +308,130 @@ describe('SupabaseAnalyticsBackend.updateDisplayName', () => {
     await expect(backend.updateDisplayName('player-1', '测试玩家')).rejects.toThrow(
       'updateDisplayName 未命中档案或返回异常',
     );
+  });
+});
+
+describe('SupabaseAnalyticsBackend recoverCorruptedSession & activeSession revision', () => {
+  it('recoverCorruptedSession 携带 expected_session_revision 调用 Edge Function', async () => {
+    const invoke = vi.fn(async () => ({
+      data: { success: true, status: 'corrupted_recovery', session_id: 'sess-1' },
+      error: null,
+    }));
+    const client = { functions: { invoke } } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const res = await backend.recoverCorruptedSession('sess-1', 42);
+    expect(invoke).toHaveBeenCalledWith('recover-corrupted-session', {
+      body: { session_id: 'sess-1', expected_session_revision: 42 },
+    });
+    expect(res).toEqual({ success: true, error: undefined, isConflict: false });
+  });
+
+  it('recoverCorruptedSession 遇到 FunctionsHttpError 409 冲突时可靠识别并回传 isConflict: true', async () => {
+    const httpError = {
+      message: 'Edge Function returned a non-2xx status code',
+      context: {
+        status: 409,
+        json: async () => ({ error: 'conflict', message: 'Concurrent session update detected' }),
+      },
+    };
+    const invoke = vi.fn(async () => ({
+      data: null,
+      error: httpError,
+    }));
+    const client = { functions: { invoke } } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const res = await backend.recoverCorruptedSession('sess-1', 10);
+    expect(res.success).toBe(false);
+    expect(res.isConflict).toBe(true);
+    expect(res.error).toBe('conflict');
+  });
+
+  it('fetchActiveGameSession 正确提取 session_revision 与事件列表', async () => {
+    const events = [
+      { event_type: 'session_start', sequence: 0, payload: {}, occurred_at: '2026-08-10T00:00:00.000Z' },
+      { event_type: 'action_buy', sequence: 1, payload: { card_index: 0, use_leverage: false }, occurred_at: '2026-08-10T00:00:01.000Z' },
+      { event_type: 'round_settled', sequence: 2, payload: {}, occurred_at: '2026-08-10T00:00:02.000Z' },
+      { event_type: 'action_wait', sequence: 5, payload: {}, occurred_at: '2026-08-10T00:00:03.000Z' },
+      { event_type: 'round_settled', sequence: 6, payload: {}, occurred_at: '2026-08-10T00:00:04.000Z' },
+    ];
+    const eventsOrder2 = vi.fn(async () => ({ data: events, error: null }));
+    const eventsOrder1 = vi.fn(() => ({ order: eventsOrder2 }));
+    const eventsEq2 = vi.fn(() => ({ order: eventsOrder1 }));
+    const eventsEq1 = vi.fn(() => ({ eq: eventsEq2 }));
+    const eventsSelect = vi.fn(() => ({ eq: eventsEq1 }));
+
+    const sessionRow = {
+      id: 'sess-1',
+      started_at: '2026-08-10T00:00:00.000Z',
+      replay_seed: 123,
+      rules_snapshot: { rulesVersion: 8, volatility: true },
+      rounds_completed: 2,
+      final_score: 50,
+      session_revision: 5,
+    };
+    const sessionLimit = vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: sessionRow, error: null })) }));
+    const sessionOrder = vi.fn(() => ({ limit: sessionLimit }));
+    const sessionIn = vi.fn(() => ({ order: sessionOrder }));
+    const sessionEq = vi.fn(() => ({ in: sessionIn }));
+    const sessionSelect = vi.fn(() => ({ eq: sessionEq }));
+
+    const from = vi.fn((table: string) => {
+      if (table === 'game_sessions') return { select: sessionSelect };
+      if (table === 'game_events') return { select: eventsSelect };
+      return {} as any;
+    });
+    const client = { from } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const active = await backend.fetchActiveGameSession('player-1');
+    expect(active).not.toBeNull();
+    expect(active?.session_revision).toBe(5);
+    expect(active?.last_event_sequence).toBe(6);
+    expect(active?.actions).toHaveLength(2); // action_buy, action_wait
+  });
+
+  it('uploadEvents 通过 append_game_events RPC 进行受控追加写并返回 revision', async () => {
+    const rpc = vi.fn(async (_name: string, _args: any) => ({
+      data: [{ session_id: 'sess-1', session_revision: 3, inserted_count: 2 }],
+      error: null,
+    }));
+    const client = { rpc } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const result = await backend.uploadEvents('player-1', [
+      { id: 'ev-1', type: 'action_buy', payload: { session_id: 'sess-1', round: 1 }, sequence: 1, ts: '2026-08-10T00:00:00.000Z' },
+      { id: 'ev-2', type: 'round_settled', payload: { session_id: 'sess-1', round: 1 }, sequence: 2, ts: '2026-08-10T00:00:01.000Z' },
+    ]);
+
+    expect(rpc).toHaveBeenCalledWith('append_game_events', {
+      p_player_id: 'player-1',
+      p_events: [
+        {
+          session_id: 'sess-1',
+          client_event_id: 'ev-1',
+          sequence: 1,
+          event_type: 'action_buy',
+          round: 1,
+          season: null,
+          action: 'buy',
+          payload: { session_id: 'sess-1', round: 1 },
+          occurred_at: '2026-08-10T00:00:00.000Z',
+        },
+        {
+          session_id: 'sess-1',
+          client_event_id: 'ev-2',
+          sequence: 2,
+          event_type: 'round_settled',
+          round: 1,
+          season: null,
+          action: null,
+          payload: { session_id: 'sess-1', round: 1 },
+          occurred_at: '2026-08-10T00:00:01.000Z',
+        },
+      ],
+    });
+    expect(result).toEqual([{ session_id: 'sess-1', session_revision: 3, inserted_count: 2 }]);
   });
 });

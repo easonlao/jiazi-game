@@ -121,7 +121,7 @@ describe('本机修行账本与 store 接线', () => {
       records: Array<{ id: string; outcome: string }>;
     };
 
-    expect(useGameStore.getState().loadGameFromSave()).toBe(true);
+    expect(await useGameStore.getState().loadGameFromSave()).toBe(true);
     expect(useGameStore.getState().cultivationLedgerSummary.totalGames).toBe(1);
 
     useGameStore.getState().reset();
@@ -150,7 +150,7 @@ describe('本机修行账本与 store 接线', () => {
     expect(useGameStore.getState().cultivationLedgerSummary.totalGames).toBe(0);
 
     // 本地存档依然正常存在并可继续
-    expect(useGameStore.getState().loadGameFromSave()).toBe(true);
+    expect(await useGameStore.getState().loadGameFromSave()).toBe(true);
     expect(useGameStore.getState().cultivationLedgerSummary.totalGames).toBe(0);
     void tm;
   });

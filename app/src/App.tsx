@@ -18,6 +18,7 @@ import { LeaderboardModal } from './components/LeaderboardModal';
 import { TradeDashboard } from './components/TradeDashboard';
 import { CultivationProfileModal } from './components/CultivationProfileModal';
 import { PauseModal } from './components/PauseModal';
+import { TerminationConflictModal } from './components/TerminationConflictModal';
 
 export default function App() {
   const gameState = useGameStore((s) => s.gameState);
@@ -112,6 +113,7 @@ export default function App() {
         <CultivationProfileModal />
         <TradeDashboard />
         <PauseModal />
+        <TerminationConflictModal />
         <Toast />
       </div>
     </div>

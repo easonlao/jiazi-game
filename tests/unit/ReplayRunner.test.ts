@@ -100,4 +100,27 @@ describe('ReplayRunner', () => {
       actions: Array.from({ length: MAX_REPLAY_ACTIONS + 1 }, () => ({ type: 'wait' as const })),
     })).rejects.toMatchObject({ name: 'ReplayValidationError', actionIndex: null });
   });
+
+  it('支持合法前缀重放模式（requireCompleted: false / replayGamePrefix），用于进行中局校验而不抛出未完成错误', async () => {
+    // 正常进行至第 5 回合（5 次 wait 动作）
+    const prefixActions = waits(5);
+    const result = await replayGame({
+      ...request(prefixActions),
+      requireCompleted: false,
+    });
+
+    expect(result.completed).toBe(false);
+    expect(result.rounds).toBe(5);
+    expect(result.state).toBe('player_action');
+  });
+
+  it('前缀重放模式下依然严格校验非法动作或规则破坏', async () => {
+    // 非法卡牌买入动作
+    await expect(
+      replayGame({
+        ...request([{ type: 'buy', cardIndex: 999, leverage: false }]),
+        requireCompleted: false,
+      }),
+    ).rejects.toBeInstanceOf(ReplayValidationError);
+  });
 });

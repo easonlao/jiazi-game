@@ -13,7 +13,7 @@ export type {
   VoidStep,
 } from './TurnManager';
 
-export { replayGame, ReplayValidationError, MAX_REPLAY_ACTIONS } from './ReplayRunner';
+export { replayGame, replayGamePrefix, ReplayValidationError, MAX_REPLAY_ACTIONS } from './ReplayRunner';
 export type { ReplayAction, ReplayRequest, ReplayResult } from './ReplayRunner';
 
 export { normalizeVerifiedScore } from './VerifiedScore';
@@ -24,12 +24,21 @@ export {
   VOID_REPLAY_RULES,
   BRANCH_ROLL_REPLAY_RULES,
   TREND_WINDOW_REPLAY_RULES,
+  CLEAN_POOL_REPLAY_RULES,
   SUPPORTED_REPLAY_RULES,
   getReplayRulesByVersion,
   CURRENT_REPLAY_RULES,
   cloneReplayRulesSnapshot,
 } from './ReplayRules';
-export type { ReplayRulesSnapshot, VoidReplayRulesSnapshot, VoidReplayFields, BranchRollReplayRulesSnapshot, BranchRollReplayConfig, TrendWindowReplayRulesSnapshot } from './ReplayRules';
+export type {
+  ReplayRulesSnapshot,
+  VoidReplayRulesSnapshot,
+  VoidReplayFields,
+  BranchRollReplayRulesSnapshot,
+  BranchRollReplayConfig,
+  TrendWindowReplayRulesSnapshot,
+  CleanPoolReplayRulesSnapshot,
+} from './ReplayRules';
 
 export { SeasonCycle, LAZY_SEASON_LENGTH_DISTRIBUTION } from './SeasonCycle';
 export type { Season, SeasonCycleOptions } from './SeasonCycle';
@@ -82,6 +91,7 @@ export {
   GameSaveService,
   CURRENT_SCHEMA_VERSION,
   CURRENT_RULES_VERSION,
+  RULES_VERSION_CLEAN_POOL,
   isSupportedRulesVersion,
   isTradeRulesVersion,
   RULES_BASE,
@@ -92,7 +102,15 @@ export {
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_TREND_WINDOW,
 } from './GameSaveService';
-export type { GameSnapshot, GameSaveLoadError, SupportedRulesVersion, HandSlotSnapshot, SeasonSnapshot, CardPoolSnapshot, PublicCardHistorySnapshot } from './GameSaveService';
+export type {
+  GameSnapshot,
+  GameSaveLoadError,
+  SupportedRulesVersion,
+  HandSlotSnapshot,
+  SeasonSnapshot,
+  CardPoolSnapshot,
+  PublicCardHistorySnapshot,
+} from './GameSaveService';
 
 export {
   BRANCH_ROLL_DI_ZHI,

@@ -150,26 +150,31 @@ export class TelemetryQueue {
     return this.retryCount;
   }
 
+  getLastSequence(): number {
+    return Math.max(0, this.nextSequence - 1);
+  }
+
   /**
-   * 入队一条事件。未启用/载荷非法时丢弃并返回 false（不影响调用方）。
-   * 返回 true 表示已入队。
+   * 入队一条事件。未启用/载荷非法时丢弃并返回 null（不影响调用方）。
+   * 成功返回分配有单调 sequence 序号的 TelemetryEvent。
    */
-  track(input: TrackedEventInput): boolean {
-    if (!this.enabled) return false;
-    if (!this.transport) return false;
+  track(input: TrackedEventInput): TelemetryEvent | null {
+    if (!this.enabled) return null;
+    if (!this.transport) return null;
     const payload = sanitizePayload(input.type, input.payload);
-    if (!payload) return false;
+    if (!payload) return null;
     const event = makeEvent({ type: input.type, payload }, () => new Date(this.now()).toISOString(), this.nextSequence++);
     this.persistNextSequence();
     // 幂等：同 id 不重复入队
-    if (this.queue.some((e) => e.id === event.id)) return true;
+    const existing = this.queue.find((e) => e.id === event.id);
+    if (existing) return existing;
     this.queue.push(event);
     if (this.queue.length > this.maxQueueSize) {
       this.queue = this.queue.slice(-this.maxQueueSize);
     }
     this.persist();
     void this.flush();
-    return true;
+    return event;
   }
 
   /** 立即尝试上传一批（供调用方主动调用；失败静默保留队列）。 */

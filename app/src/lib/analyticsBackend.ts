@@ -53,7 +53,7 @@ export interface SessionUpsert {
   /** 客户端原始会话开始时间；必须携带，避免 ended_at >= started_at 约束
    *  因数据库默认 now() 晚于客户端 ended_at 而失败（异步时序竞态）。 */
   started_at: string;
-  status: 'started' | 'running' | 'completed' | 'abandoned';
+  status: 'started' | 'running' | 'completed' | 'abandoned' | 'failed' | 'corrupted_recovery';
   rounds_completed: number;
   final_score: number;
   rules_version: string;
@@ -61,6 +61,8 @@ export interface SessionUpsert {
   app_version: string;
   consent_version: string;
   ended_at?: string | null;
+  expected_session_revision?: number;
+  expected_last_event_sequence?: number;
 }
 
 export interface CloudActiveGameSession {
@@ -72,6 +74,8 @@ export interface CloudActiveGameSession {
   actions: ReplayAction[];
   rounds_completed: number;
   final_score: number;
+  session_revision: number;
+  last_event_sequence?: number;
 }
 
 export interface VerifiedSessionStart {
@@ -141,13 +145,26 @@ export interface AnalyticsBackend {
    * 只有服务端确认返回的行才算成功（含 RLS/未命中拒绝）；实现不得静默成功。
    */
   updateDisplayName(playerId: string, name: string): Promise<PlayerIdentity>;
-  uploadEvents(playerId: string, events: TelemetryEvent[]): Promise<void>;
+  uploadEvents(playerId: string, events: TelemetryEvent[]): Promise<Array<{ session_id: string; session_revision: number; inserted_count: number }>>;
   upsertSession(playerId: string, session: SessionUpsert): Promise<void>;
   startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null>;
   submitVerifiedScore(playerId: string, submission: VerifiedScoreSubmission): Promise<VerifiedScoreOutcome>;
   fetchLeaderboard(limit?: number, rulesVersion?: string): Promise<CloudLeaderboardEntry[]>;
   fetchActiveGameSession(playerId: string): Promise<CloudActiveGameSession | null>;
   fetchCultivationLedger(playerId: string): Promise<CultivationLedgerSnapshot>;
+  /** 服务端重放验证受损对局并执行免惩罚恢复 */
+  recoverCorruptedSession(
+    sessionId: string,
+    expectedLastEventSequence?: number,
+  ): Promise<{ success: boolean; error?: string; isConflict?: boolean }>;
+}
+
+export class SessionConflictError extends Error {
+  readonly isConflict = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionConflictError';
+  }
 }
 
 function normalizeError(error: unknown): Error {
@@ -354,13 +371,12 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     return identity;
   }
 
-  /** 上传事件到 game_events（追加只写，按客户端事件 ID 幂等去重）。 */
-  async uploadEvents(playerId: string, events: TelemetryEvent[]): Promise<void> {
-    if (events.length === 0) return;
+  /** 上传事件到 game_events（通过受控 append-only RPC 幂等追加并返回最新 session_revision）。 */
+  async uploadEvents(playerId: string, events: TelemetryEvent[]): Promise<Array<{ session_id: string; session_revision: number; inserted_count: number }>> {
+    if (events.length === 0) return [];
     const rows = events.map((e, index) => {
       const payload = e.payload as { session_id?: unknown; round?: unknown; season?: unknown };
       return {
-        player_id: playerId,
         session_id: String(payload.session_id ?? ''),
         client_event_id: e.id,
         sequence: e.sequence ?? index,
@@ -372,13 +388,16 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
         occurred_at: e.ts,
       };
     });
-    const { error } = await this.client
-      .from('game_events')
-      .upsert(rows, { onConflict: 'player_id,client_event_id', ignoreDuplicates: true });
+    const { data, error } = await this.client.rpc('append_game_events', {
+      p_player_id: playerId,
+      p_events: rows,
+    });
     if (error) throw normalizeError(error);
+    return Array.isArray(data) ? (data as Array<{ session_id: string; session_revision: number; inserted_count: number }>) : [];
   }
 
   async upsertSession(playerId: string, session: SessionUpsert): Promise<void> {
+    const revision = session.expected_session_revision ?? session.expected_last_event_sequence ?? null;
     const { error } = await this.client.rpc('upsert_game_session', {
       p_player_id: playerId,
       p_session_id: session.session_id,
@@ -392,8 +411,54 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
       p_app_version: session.app_version,
       p_consent_version: session.consent_version,
       p_ended_at: session.ended_at ?? null,
+      p_expected_session_revision: revision,
     });
-    if (error) throw normalizeError(error);
+    if (error) {
+      const msg = error.message ?? '';
+      const code = (error as any).code ?? '';
+      const details = (error as any).details ?? '';
+      if (msg.includes('conflict') || code === '40900' || details.includes('40900')) {
+        throw new SessionConflictError(msg || 'newer session revision exists on cloud session');
+      }
+      throw normalizeError(error);
+    }
+  }
+
+  async recoverCorruptedSession(
+    sessionId: string,
+    expectedSessionRevision?: number,
+  ): Promise<{ success: boolean; error?: string; isConflict?: boolean }> {
+    try {
+      const { data, error } = await this.client.functions.invoke('recover-corrupted-session', {
+        body: {
+          session_id: sessionId,
+          expected_session_revision: expectedSessionRevision ?? null,
+        },
+      });
+      if (error) {
+        const parsed = await extractFunctionError(error);
+        const isConflict =
+          parsed.statusCode === 409 ||
+          parsed.message === 'conflict' ||
+          parsed.message.includes('conflict') ||
+          parsed.message === 'session_already_finalized' ||
+          parsed.message.includes('session_already_finalized');
+        return { success: false, error: parsed.message, isConflict };
+      }
+      const ok = isRecord(data) && data.success === true;
+      const err = ok ? undefined : String(data?.error ?? 'recovery_failed');
+      const isConflict = !ok && (err === 'conflict' || err === 'session_already_finalized');
+      return { success: ok, error: err, isConflict };
+    } catch (e) {
+      const parsed = await extractFunctionError(e);
+      const isConflict =
+        parsed.statusCode === 409 ||
+        parsed.message === 'conflict' ||
+        parsed.message.includes('conflict') ||
+        parsed.message === 'session_already_finalized' ||
+        parsed.message.includes('session_already_finalized');
+      return { success: false, error: parsed.message, isConflict };
+    }
   }
 
   async startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null> {
@@ -497,7 +562,7 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     try {
       const { data, error } = await this.client
         .from('game_sessions')
-        .select('id, client_session_id, started_at, replay_seed, rules_snapshot, status, rounds_completed, final_score')
+        .select('id, client_session_id, started_at, replay_seed, rules_snapshot, status, rounds_completed, final_score, session_revision')
         .eq('player_id', playerId)
         .in('status', ['started', 'running'])
         .order('started_at', { ascending: false })
@@ -511,6 +576,8 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
       if (!session_id || typeof seed !== 'number' || !snapshot) return null;
 
       let actions: ReplayAction[] = [];
+      let last_event_sequence = 0;
+      let eventCount = 0;
       try {
         const { data: events } = await this.client
           .from('game_events')
@@ -520,7 +587,11 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
           .order('sequence', { ascending: true })
           .order('occurred_at', { ascending: true });
         if (Array.isArray(events)) {
+          eventCount = events.length;
           for (const ev of events) {
+            if (typeof ev.sequence === 'number' && ev.sequence > last_event_sequence) {
+              last_event_sequence = ev.sequence;
+            }
             const p = (ev.payload as Record<string, unknown>) ?? {};
             if (p.replay_action && typeof (p.replay_action as { type?: unknown }).type === 'string') {
               actions.push(p.replay_action as ReplayAction);
@@ -541,6 +612,9 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
         console.warn('[analytics] fetchActiveGameSession events failed', e);
       }
 
+      const dbRevision = typeof data.session_revision === 'number' ? data.session_revision : 0;
+      const session_revision = Math.max(dbRevision, eventCount);
+
       return {
         session_id,
         client_session_id,
@@ -550,6 +624,8 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
         actions,
         rounds_completed: data.rounds_completed ?? 0,
         final_score: data.final_score ?? 0,
+        session_revision,
+        last_event_sequence,
       };
     } catch {
       return null;
@@ -594,8 +670,8 @@ export class NoopAnalyticsBackend implements AnalyticsBackend {
     throw new Error('云端未配置');
   }
 
-  async uploadEvents(): Promise<void> {
-    return undefined;
+  async uploadEvents(): Promise<Array<{ session_id: string; session_revision: number; inserted_count: number }>> {
+    return [];
   }
 
   async upsertSession(): Promise<void> {
@@ -628,5 +704,7 @@ export class NoopAnalyticsBackend implements AnalyticsBackend {
     return { records: [], summary: summarizeCultivationLedger([]) };
   }
 
-
+  async recoverCorruptedSession(): Promise<{ success: boolean; error?: string; isConflict?: boolean }> {
+    return { success: true };
+  }
 }

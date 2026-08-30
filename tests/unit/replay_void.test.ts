@@ -24,7 +24,9 @@ import {
   RULES_VERSION_VOID,
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_TREND_WINDOW,
+  RULES_VERSION_CLEAN_POOL,
   TREND_WINDOW_REPLAY_RULES,
+  CLEAN_POOL_REPLAY_RULES,
   SeededRandomSource,
   SUPPORTED_REPLAY_RULES,
   TurnManager,
@@ -217,17 +219,18 @@ describe('V5 重放确定性（同种子）', () => {
 });
 
 describe('函数层 V5 路径（共享核心；Edge Function 无法在 vitest 中导入 Deno/esm.sh 模块）', () => {
-  it('版本门控：V4/V5/V6/V7 接受，未注册版本（含 V1-V3、NaN）拒绝', () => {
+  it('版本门控：V4/V5/V6/V7/V8 接受，未注册版本（含 V1-V3、NaN）拒绝', () => {
     expect(getReplayRulesByVersion(4)).toBe(BALANCED_TRADE_REPLAY_RULES);
     expect(getReplayRulesByVersion(5)).toBe(VOID_REPLAY_RULES);
     expect(getReplayRulesByVersion(6)).toBe(BRANCH_ROLL_REPLAY_RULES);
     expect(getReplayRulesByVersion(7)).toBe(TREND_WINDOW_REPLAY_RULES);
+    expect(getReplayRulesByVersion(8)).toBe(CLEAN_POOL_REPLAY_RULES);
     expect(getReplayRulesByVersion(3)).toBeUndefined();
     expect(getReplayRulesByVersion(2)).toBeUndefined();
     expect(getReplayRulesByVersion(NaN)).toBeUndefined();
-    expect(SUPPORTED_REPLAY_RULES.map((rules) => rules.rulesVersion)).toEqual([4, 5, 6, 7]);
-    // 2026-08-17 翻转：生产默认 V7（trend_window = V6 + 窗口波动 + 集中度溢价）。
-    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_TREND_WINDOW);
+    expect(SUPPORTED_REPLAY_RULES.map((rules) => rules.rulesVersion)).toEqual([4, 5, 6, 7, 8]);
+    // 2026-08-28 翻转：生产默认 V8（clean_pool）。
+    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_CLEAN_POOL);
     expect(SUPPORTED_REPLAY_RULES[0]).toBe(BALANCED_TRADE_REPLAY_RULES);
   });
 
@@ -253,5 +256,74 @@ describe('函数层 V5 路径（共享核心；Edge Function 无法在 vitest �
       scoreRules: snapshot.scoreRules,
     });
     expect(result).toMatchObject({ state: 'game_over', completed: true, rounds: 60, rulesVersion: 5 });
+  });
+
+  it('V7 历史对局回归锁定：覆盖锁牌、解锁、纳灵、释灵与空亡吞噬的复杂动作链，重放确定性完全隔离', async () => {
+    const snapshotV7 = cloneReplayRulesSnapshot(getReplayRulesByVersion(7)!);
+    const seed = 999;
+    const cardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
+    (globalThis as any).fetch = async () => ({ json: async () => cardData });
+    const random = new SeededRandomSource(seed);
+    const tm = new TurnManager(undefined, random, {
+      rulesVersion: 7,
+      volatility: snapshotV7.volatility,
+      scoreRules: snapshotV7.scoreRules,
+      volatilityRandom: random,
+      branchRollRandom: random,
+      voidConfig: { voidCardCount: 3 },
+    });
+    await tm.initialize();
+    tm.startGame();
+
+    const actions: ReplayAction[] = [];
+    let step = 0;
+    let guard = 0;
+    while (tm.getState() === 'player_action' && guard < 200) {
+      step++;
+      if (step === 1) {
+        // 回合 1：锁定第 0 张牌并调息
+        actions.push({ type: 'lock', cardIndex: 0 });
+        expect(tm.executeLockCard(0).ok).toBe(true);
+        actions.push({ type: 'wait' });
+        expect(tm.executeWait()).toBe(true);
+      } else if (step === 2) {
+        // 回合 2：纳灵第 1 张牌（推进回合）
+        actions.push({ type: 'buy', cardIndex: 1, leverage: false });
+        expect(tm.executeBuy(1, false)).toBe(true);
+      } else if (step === 3 && tm.getHand().length > 0) {
+        // 回合 3：释灵手牌并调息
+        actions.push({ type: 'sell', slotIndex: 0 });
+        expect(tm.executeSell(0)).toBe(true);
+        actions.push({ type: 'wait' });
+        expect(tm.executeWait()).toBe(true);
+      } else if (step === 4) {
+        // 回合 4：解锁第 0 张牌并调息
+        actions.push({ type: 'unlock', cardIndex: 0 });
+        expect(tm.executeUnlockCard(0)).toBe(true);
+        actions.push({ type: 'wait' });
+        expect(tm.executeWait()).toBe(true);
+      } else {
+        actions.push({ type: 'wait' });
+        expect(tm.executeWait()).toBe(true);
+      }
+      guard++;
+    }
+    expect(tm.getState()).toBe('game_over');
+    expect((tm as any).voidTriggers).toBeGreaterThan(0); // 确保确实遭遇并触发了空亡吞噬
+    const localFinalScore = tm.getScore();
+
+    // 服务端重放
+    const resultV7 = await replayGame({
+      seed,
+      actions,
+      rulesVersion: snapshotV7.rulesVersion,
+      volatility: snapshotV7.volatility,
+      scoreRules: snapshotV7.scoreRules,
+    });
+
+    expect(resultV7.rulesVersion).toBe(7);
+    expect(resultV7.completed).toBe(true);
+    expect(resultV7.rounds).toBe(60);
+    expect(resultV7.score).toBe(localFinalScore);
   });
 });

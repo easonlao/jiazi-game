@@ -6,6 +6,7 @@ import {
   type CultivationProfileMilestone,
   type CultivationProfileRecord,
 } from '../lib/cultivationProfile';
+import { readPendingTerminations } from '../lib/pendingTerminationStorage';
 
 function formatDate(value: string | null): string {
   if (!value) return '';
@@ -183,6 +184,12 @@ export function CultivationProfileModal() {
     [localRecords, cloudRecords, currentRulesVersion, hasCloudIdentity],
   );
 
+  const pendingTerminations = useMemo(() => {
+    if (!hasCloudIdentity || typeof window === 'undefined' || !identity?.player_id) return [];
+    return readPendingTerminations(localStorage, identity.player_id);
+  }, [hasCloudIdentity, identity?.player_id, telemetryState]);
+  const pendingCount = pendingTerminations.length;
+
   if (!open) return null;
 
   const currentRuleSummary = profile.combinedSummary.byRulesVersion.find(
@@ -270,14 +277,28 @@ export function CultivationProfileModal() {
             <div className="mt-1 font-serif text-3xl sm:text-4xl font-black tabular-nums">{totalGames} 局</div>
             {hasCloudIdentity ? (
               totalGames > 0 ? (
-                <p className="mt-2 text-xs leading-relaxed text-parchment/80">
-                  已完整走完 {completedGames} 局
-                  {abandonedGames > 0 ? `，另有 ${abandonedGames} 局未走到结算` : ''}。
-                </p>
+                <div className="mt-2 text-xs leading-relaxed text-parchment/80">
+                  <p>
+                    已完整走完 {completedGames} 局
+                    {abandonedGames > 0 ? `，另有 ${abandonedGames} 局未走到结算` : ''}。
+                  </p>
+                  {pendingCount > 0 && (
+                    <p className="mt-1 text-[11px] text-parchment/60 font-mono">
+                      （有 {pendingCount} 局中断待同步，网络就绪后自动确认）
+                    </p>
+                  )}
+                </div>
               ) : (
-                <p className="mt-2 text-xs leading-relaxed text-parchment/80">
-                  新开对局将自动计入此账号，并在所有设备同步修行轨迹与印记。
-                </p>
+                <div className="mt-2 text-xs leading-relaxed text-parchment/80">
+                  <p>
+                    新开对局将自动计入此账号，并在所有设备同步修行轨迹与印记。
+                  </p>
+                  {pendingCount > 0 && (
+                    <p className="mt-1 text-[11px] text-parchment/60 font-mono">
+                      （有 {pendingCount} 局中断待同步，网络就绪后自动确认）
+                    </p>
+                  )}
+                </div>
               )
             ) : (
               <p className="mt-2 text-xs leading-relaxed text-parchment/80">

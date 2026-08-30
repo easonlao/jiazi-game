@@ -32,5 +32,8 @@ export function getSupabaseClient(): SupabaseClient | null {
       autoRefreshToken: true,
     },
   });
+  if (typeof window !== 'undefined' && (window as any).__JIAZI_E2E__) {
+    (window as any).__SUPABASE_CLIENT__ = cached;
+  }
   return cached;
 }

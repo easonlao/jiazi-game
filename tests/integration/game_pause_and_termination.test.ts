@@ -154,7 +154,7 @@ describe('02 暂停修行与主动终止生命周期测试', () => {
     expect(useGameStore.getState().cultivationLedgerSummary.abandonedGames).toBe(0);
 
     // 读档继续
-    const loaded = useGameStore.getState().loadGameFromSave();
+    const loaded = await useGameStore.getState().loadGameFromSave();
     expect(loaded).toBe(true);
     expect(useGameStore.getState().gameState).toBe('player_action');
     expect(useGameStore.getState().currentRound).toBe(1);

@@ -130,7 +130,7 @@ describe('TelemetryQueue', () => {
     });
 
     expect(queue.isEnabled()).toBe(false);
-    expect(queue.track({ type: 'action_buy', payload: validActionBuy })).toBe(false);
+    expect(queue.track({ type: 'action_buy', payload: validActionBuy })).toBeNull();
     expect(queue.pendingCount()).toBe(0);
     expect(storage.getItem(QUEUE_KEY)).toBeNull();
     expect(upload).not.toHaveBeenCalled();
@@ -152,7 +152,9 @@ describe('TelemetryQueue', () => {
 
     queue.setEnabled(true);
     expect(queue.isEnabled()).toBe(true);
-    expect(queue.track({ type: 'action_buy', payload: validActionBuy })).toBe(true);
+    const tracked = queue.track({ type: 'action_buy', payload: validActionBuy });
+    expect(tracked).not.toBeNull();
+    expect(tracked?.sequence).toBe(0);
     expect(queue.pendingCount()).toBe(1);
 
     await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
@@ -178,7 +180,7 @@ describe('TelemetryQueue', () => {
     });
 
     queue.setEnabled(true);
-    expect(queue.track({ type: 'round_settled', payload: validRoundSettled })).toBe(true);
+    expect(queue.track({ type: 'round_settled', payload: validRoundSettled })).not.toBeNull();
 
     await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(queue.getRetryCount()).toBe(1));

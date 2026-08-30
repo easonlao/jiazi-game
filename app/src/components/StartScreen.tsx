@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameStore } from '../store';
 import type { CultivationLedgerSummary } from '../lib/cultivationLedger';
+import { CURRENT_RULES_VERSION } from '@core/index';
 
 interface StartScreenProps {
   turnManager: ReturnType<typeof useGameStore.getState>['turnManager'];
@@ -34,9 +35,12 @@ export function StartScreen({
   onLeaderboard,
   onOpenProfile,
 }: StartScreenProps) {
-  const rulesVersion = turnManager?.getRulesVersion() ?? 7;
+  const rulesVersion = turnManager?.getRulesVersion() ?? CURRENT_RULES_VERSION;
   const telemetryState = useGameStore((s) => s.telemetryState);
   const terminateGame = useGameStore((s) => s.terminateGame);
+  const recoveringCorruptedGame = useGameStore((s) => s.recoveringCorruptedGame);
+  const corruptedRecoveryError = useGameStore((s) => s.corruptedRecoveryError);
+  const retryCorruptedRecovery = useGameStore((s) => s.retryCorruptedRecovery);
   const identity = telemetryState?.identity ?? null;
   const consent = telemetryState?.consent ?? null;
   const consentGranted = consent?.granted ?? false;
@@ -53,6 +57,7 @@ export function StartScreen({
   const [pendingAction, setPendingAction] = useState<'cloud' | 'local'>('cloud');
 
   const handleStartClick = (action: 'cloud' | 'local') => {
+    if (recoveringCorruptedGame || corruptedRecoveryError) return;
     if (hasContinuableGame) {
       setPendingAction(action);
       setConfirmOverrideOpen(true);
@@ -123,30 +128,51 @@ export function StartScreen({
       {/* 操作按钮区 */}
       {turnManager ? (
         <div className="flex flex-col gap-2.5 w-full max-w-xs mt-1">
+          {/* 异常恢复告警：常驻 role="alert" 与 aria-live 区域，确保动态错误与重试入口被屏幕阅读器播报 */}
+          <div
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            className={corruptedRecoveryError ? 'w-full rounded-xl border border-qi-critical/30 bg-[#fbf0ee] p-3 text-center mb-1' : 'hidden'}
+          >
+            {corruptedRecoveryError && (
+              <>
+                <p className="text-xs text-qi-critical mb-2 leading-relaxed">{corruptedRecoveryError}</p>
+                <button
+                  onClick={() => void retryCorruptedRecovery()}
+                  disabled={recoveringCorruptedGame}
+                  className="py-1.5 px-4 rounded-lg bg-qi-critical text-parchment text-xs font-bold font-serif hover:opacity-90 active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  {recoveringCorruptedGame ? '正在重试…' : '重试同步'}
+                </button>
+              </>
+            )}
+          </div>
+
           {hasContinuableGame ? (
             <>
               <button
                 onClick={onContinue}
-                disabled={startingGame}
+                disabled={startingGame || recoveringCorruptedGame || Boolean(corruptedRecoveryError)}
                 className="w-full py-3.5 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 disabled:cursor-wait disabled:opacity-50 shadow-md cursor-pointer"
               >
-                继续修行
+                {recoveringCorruptedGame ? '正在安全恢复对局…' : '继续修行'}
               </button>
               <button
                 onClick={() => handleStartClick('cloud')}
-                disabled={startingGame}
+                disabled={startingGame || recoveringCorruptedGame || Boolean(corruptedRecoveryError)}
                 className="w-full py-3 rounded-xl border-2 border-wood-mid text-ink text-base font-bold font-serif hover:bg-wood-light transition-colors active:scale-95 disabled:cursor-wait disabled:opacity-50 cursor-pointer"
               >
-                {startingGame ? '正在连接云端…' : '新游戏'}
+                {recoveringCorruptedGame ? '正在安全恢复对局…' : startingGame ? '正在连接云端…' : '新游戏'}
               </button>
             </>
           ) : (
             <button
               onClick={() => handleStartClick('cloud')}
-              disabled={startingGame}
+              disabled={startingGame || recoveringCorruptedGame || Boolean(corruptedRecoveryError)}
               className="w-full py-3.5 rounded-xl bg-ink text-parchment text-lg font-bold font-serif hover:bg-wood-dark transition-colors active:scale-95 disabled:cursor-wait disabled:opacity-50 shadow-md cursor-pointer"
             >
-              {startingGame ? '正在连接云端…' : '开始游戏'}
+              {recoveringCorruptedGame ? '正在安全恢复对局…' : startingGame ? '正在连接云端…' : '开始游戏'}
             </button>
           )}
 
@@ -157,7 +183,7 @@ export function StartScreen({
               </p>
               <button
                 onClick={() => handleStartClick('local')}
-                disabled={startingGame}
+                disabled={startingGame || recoveringCorruptedGame || Boolean(corruptedRecoveryError)}
                 className="w-full py-2.5 rounded-xl border border-wood-mid text-ink-light text-sm font-serif hover:bg-wood-light transition-colors active:scale-95 disabled:cursor-wait disabled:opacity-50 cursor-pointer"
               >
                 本地开局（不上云端榜）

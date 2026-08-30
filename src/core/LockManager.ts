@@ -86,17 +86,20 @@ export class LockManager {
   }
 
   /**
-   * 尝试解锁一张公共牌（牌回牌堆）。
-   * 本动作不扣神识也不退神识（锁定费只在回合结束结算，锁→解锁无费用）。
-   * @returns 是否解锁成功；解锁时牌回牌堆由本方法处理
+   * 尝试解锁一张公共牌（移除锁定标记）。
+   * V8+ (isCleanPool=true)：牌在回合结束时随其余未锁定牌正常回堆；
+   * V7 及历史规则 (isCleanPool=false)：保持历史缺陷行为立即回堆，以确保历史对局重放确定性一致。
+   * @returns 是否解锁成功
    */
-  tryUnlock(publicCards: JiaziCard[], cardIndex: number): boolean {
+  tryUnlock(publicCards: JiaziCard[], cardIndex: number, isCleanPool: boolean = true): boolean {
     const card = publicCards[cardIndex];
     if (!card) return false;
     if (!this.lockedCardIds.includes(card.id)) return false;
 
     this.lockedCardIds = this.lockedCardIds.filter((id) => id !== card.id);
-    this.deps.cardPoolManager.returnCards([card]);
+    if (!isCleanPool) {
+      this.deps.cardPoolManager.returnCards([card]);
+    }
     return true;
   }
 
@@ -122,11 +125,12 @@ export class LockManager {
 
   /**
    * 锁定费结算：每张锁定牌每回合扣 LOCK_COST_PER_CARD 神识。
-   * 神识不足时自动解锁（先解评分最低的），锁定牌回牌堆。
+   * 神识不足时自动解锁（先解评分最低的）。
+   * V8+ (returnCardsOnAutoUnlock=true)：欠费自动解锁的牌在抽牌前归还牌堆，后续抽牌补齐槽位；
+   * V7 及更早规则 (returnCardsOnAutoUnlock=false)：不回堆，保留 V7 历史时序。
    * @returns 被自动解锁的牌 ID 列表（未触发自动解锁时为空数组）。
-   *           调用方应据此向玩家给出明确提示，避免"锁定牌无故消失"的体验。
    */
-  settleLockCost(currentSeason: string): number[] {
+  settleLockCost(currentSeason: string, returnCardsOnAutoUnlock: boolean = true): number[] {
     if (this.lockedCardIds.length === 0) return [];
     const totalCost = this.lockedCardIds.length * LockManager.LOCK_COST_PER_CARD;
 
@@ -153,8 +157,10 @@ export class LockManager {
       if (worstId === null) break;
       this.lockedCardIds = this.lockedCardIds.filter((id) => id !== worstId);
       autoUnlockedIds.push(worstId);
-      const card = publicCards.find((c) => c && c.id === worstId);
-      if (card) this.deps.cardPoolManager.returnCards([card]);
+      if (returnCardsOnAutoUnlock) {
+        const card = publicCards.find((c) => c && c.id === worstId);
+        if (card) this.deps.cardPoolManager.returnCards([card]);
+      }
       this.deps.qiManager.recover(LockManager.LOCK_COST_PER_CARD);
     }
     return autoUnlockedIds;

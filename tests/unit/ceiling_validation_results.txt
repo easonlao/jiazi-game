@@ -1,22 +1,22 @@
 === ceiling_validation (4 modes × 1500 games, same seeds) ===
 mode	scoreP50	scoreP90	scoreMAX	newQ_P50	newQ_P90
-OPT	score P50=3439 P90=4472 MAX=6087 | newQ P50=78 P90=86 | best(score=6087 newQ=83)
-LATE	score P50=3000 P90=3878 MAX=5260 | newQ P50=82 P90=92 | best(score=5260 newQ=88)
+OPT	score P50=3409 P90=4449 MAX=6087 | newQ P50=78 P90=86 | best(score=6087 newQ=83)
+LATE	score P50=2988 P90=3843 MAX=5260 | newQ P50=81 P90=92 | best(score=5260 newQ=88)
 CONS	score P50=1087 P90=2179 MAX=3455 | newQ P50=50 P90=57 | best(score=3455 newQ=59)
 PASSIVE	score P50=-311 P90=61 MAX=645 | newQ P50=16 P90=20 | best(score=645 newQ=27)
 
 badCard 命中:
-  OPT	badCard局=171/1500(11%) avg条目=0.12 stopP50=0.50 stop均值=0.56
+  OPT	badCard局=173/1500(12%) avg条目=0.12 stopP50=0.50 stop均值=0.56
   LATE	badCard局=0/1500(0%) avg条目=0.00 stopP50=0.50 stop均值=0.50
   CONS	badCard局=0/1500(0%) avg条目=0.00 stopP50=0.50 stop均值=0.50
   PASSIVE	badCard局=1497/1500(100%) avg条目=14.10 stopP50=0.00 stop均值=0.00
 
-Spearman(score, NEW ceiling) = 0.871
-Spearman(score, OLD decisionQuality) = 0.826
-dim rho: hold=0.810  leverage=0.748  timing=0.398  mc=0.818  stop=0.722  lock=0.685
+Spearman(score, NEW ceiling) = 0.872
+Spearman(score, OLD decisionQuality) = 0.821
+dim rho: hold=0.810  leverage=0.751  timing=0.390  mc=0.819  stop=0.720  lock=0.678
 
 weight combos:
-  current: rho=0.870 | hold=0.3 leverage=0.2 timing=0.15 mc=0.15 stop=0.1 lock=0.1
-  weak-down: rho=0.870 | hold=0.36 leverage=0.24 timing=0.08 mc=0.08 stop=0.12 lock=0.12
-  aggressive: rho=0.871 | hold=0.4 leverage=0.25 timing=0.05 mc=0.05 stop=0.13 lock=0.12
-  mild: rho=0.868 | hold=0.32 leverage=0.22 timing=0.1 mc=0.1 stop=0.13 lock=0.13
+  current: rho=0.872 | hold=0.3 leverage=0.2 timing=0.15 mc=0.15 stop=0.1 lock=0.1
+  weak-down: rho=0.872 | hold=0.36 leverage=0.24 timing=0.08 mc=0.08 stop=0.12 lock=0.12
+  aggressive: rho=0.872 | hold=0.4 leverage=0.25 timing=0.05 mc=0.05 stop=0.13 lock=0.12
+  mild: rho=0.869 | hold=0.32 leverage=0.22 timing=0.1 mc=0.1 stop=0.13 lock=0.13
