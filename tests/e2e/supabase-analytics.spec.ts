@@ -9,10 +9,16 @@ test.describe('Supabase 匿名身份与遥测', () => {
     '需要设置 E2E_SUPABASE=1，并提供 app/.env.local 后运行真实云端验收',
   );
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context }) => {
     // 注入 E2E 标记以允许客户端测试钩子暴露 window.__SUPABASE_CLIENT__
     await page.addInitScript(() => {
       (window as any).__JIAZI_E2E__ = true;
+    });
+    await context.clearCookies();
+    await page.goto('/?rules=v8');
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
     });
   });
 
@@ -66,22 +72,23 @@ test.describe('Supabase 匿名身份与遥测', () => {
     await selectPublicCard(page);
     await page.getByRole('button', { name: /纳灵/ }).click();
     const actionUploadResponse = page.waitForResponse(
-      (response) => response.url().includes('/rest/v1/game_events') && response.request().method() === 'POST',
+      (response) => (response.url().includes('append_game_events') || response.url().includes('/game_events')) && response.request().method() === 'POST',
     );
     await page.getByRole('button', { name: '确认结束本回合' }).click();
     // V5/V6/V7/V8：若本回合恰好抽入空亡，空亡 Toast 覆盖纳灵 Toast（P1-1 语义空亡最后写入）
     await expect(page.getByText(/纳灵成功|空亡触发/).first()).toBeVisible({ timeout: 10_000 });
-    expect((await actionUploadResponse).ok()).toBe(true);
+    const uploadRes = await actionUploadResponse;
+    if (!uploadRes.ok()) {
+      console.error('actionUploadResponse failed:', uploadRes.status(), await uploadRes.text());
+    }
+    expect(uploadRes.ok()).toBe(true);
 
     // 推进到终局：V8 循环调息直到「结束游戏」按钮出现（第 60 回合终局）。
-    for (let round = 2; round <= 60; round++) {
+    while (true) {
       const endBtn = page.getByRole('button', { name: '结束游戏' });
-      if (await endBtn.isVisible({ timeout: 2_000 }).catch(() => false)) break;
+      if (await endBtn.isVisible().catch(() => false)) break;
       const waitButton = page.getByRole('button', { name: /调息/ });
-      const canWait = await waitButton.isVisible({ timeout: 3_000 }).catch(() => false);
-      if (!canWait) {
-        if (await endBtn.isVisible({ timeout: 10_000 }).catch(() => false)) break;
-      }
+      await expect(waitButton).toBeVisible({ timeout: 15_000 });
       await waitButton.click();
       const confirmButton = page.getByRole('button', { name: '确认结束本回合' });
       await expect(confirmButton).toBeVisible({ timeout: 10_000 });
@@ -186,9 +193,9 @@ test.describe('Supabase 匿名身份与遥测', () => {
       { timeout: 30_000 },
     );
 
-    // 4. 刷新页面，从真实 Supabase 拉取该活跃云端局，并点击「继续游戏」
+    // 4. 刷新页面，从真实 Supabase 拉取该活跃云端局，并点击「继续修行」
     await page.reload();
-    const continueBtn = page.getByRole('button', { name: '继续游戏' });
+    const continueBtn = page.getByRole('button', { name: /继续(修行|游戏)/ });
     await expect(continueBtn).toBeVisible({ timeout: 15_000 });
     await continueBtn.click();
 
@@ -363,27 +370,23 @@ test.describe('Supabase 匿名身份与遥测', () => {
     await expect(page.getByText('恢复码（换设备找回凭据，请妥善保存）')).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: '关闭' }).click();
 
-    const sessionId = randomUUID();
-    // 写入 session 并写入 3 条事件（sequence 1, 2, 3）
-    await page.evaluate(async (sessId) => {
+    const setupResult = await page.evaluate(async () => {
       const client = (window as any).__SUPABASE_CLIENT__;
       const identityStr = localStorage.getItem('jiazi_player_identity');
       const identity = identityStr ? JSON.parse(identityStr) : null;
       const playerId = identity.player_id;
 
-      await client.rpc('upsert_game_session', {
-        p_player_id: playerId,
-        p_session_id: sessId,
-        p_client_session_id: `client-${Date.now()}`,
-        p_started_at: new Date(Date.now() - 60000).toISOString(),
-        p_status: 'started',
-        p_rounds_completed: 3,
-        p_final_score: 30,
-        p_rules_version: '8',
-        p_game_mode: 'clean_pool',
-        p_app_version: '0.2.0',
-        p_consent_version: '1',
+      // 真实调用 start-verified-session 服务端接口创建会话
+      const { data: startData, error: startError } = await client.functions.invoke('start-verified-session', {
+        body: {
+          client_session_id: `client-v8-${Date.now()}`,
+          requested_rules_version: '8',
+          app_version: '0.2.0',
+          consent_version: '1',
+        },
       });
+      if (startError || !startData?.session_id) throw (startError || new Error('start-verified-session failed'));
+      const sessId = startData.session_id;
 
       await client.rpc('append_game_events', {
         p_player_id: playerId,
@@ -412,7 +415,10 @@ test.describe('Supabase 匿名身份与遥测', () => {
         },
       ];
       localStorage.setItem('jiazi_pending_terminations', JSON.stringify({ [playerId]: pendingList }));
-    }, sessionId);
+      return { sessId };
+    });
+
+    const sessionId = setupResult.sessId;
 
     // 刷新页面，触发同步检测到冲突
     await page.reload();
@@ -420,7 +426,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     // 验证冲突弹窗展示
     await expect(page.getByRole('alertdialog')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('对局进度冲突')).toBeVisible();
-    await expect(page.getByText(/云端最新进度：.*第 3 回合/)).toBeVisible();
+    await expect(page.getByText(/云端最新进度：.*3 步行动/)).toBeVisible();
 
     // 点击「继续最新云端对局」
     await page.getByRole('button', { name: '继续最新云端对局' }).click();

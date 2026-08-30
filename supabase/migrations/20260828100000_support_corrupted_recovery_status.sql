@@ -119,15 +119,15 @@ begin
     from raw_events r
     join public.game_sessions s on s.id = r.session_id and s.player_id = r.player_id
     on conflict (player_id, client_event_id) do nothing
-    returning session_id
+    returning 1
   )
   select count(*)::integer into v_inserted from ins;
 
   return query
   select
-    s.id as session_id,
+    s.id,
     s.session_revision,
-    v_inserted as inserted_count
+    v_inserted
   from public.game_sessions s
   where s.id in (
     select distinct (e->>'session_id')::uuid

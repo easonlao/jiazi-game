@@ -236,3 +236,69 @@ export function cloneReplayRulesSnapshot<T extends ReplayRulesSnapshot = ReplayR
     scoreRules: { ...source.scoreRules },
   } as T;
 }
+
+/**
+ * 校验规则快照是否严格符合服务端冻结契约（防止同版本参数配置漂移或坏数据静默进入）。
+ */
+export function validateRulesSnapshotContract(snapshot: unknown): { valid: boolean; reason?: string } {
+  if (typeof snapshot !== 'object' || snapshot === null) {
+    return { valid: false, reason: 'Snapshot must be a non-null object' };
+  }
+  const s = snapshot as Record<string, unknown>;
+  const version = s.rulesVersion;
+  if (typeof version !== 'number' || !Number.isInteger(version)) {
+    return { valid: false, reason: 'Invalid or missing rulesVersion' };
+  }
+  const frozen = getReplayRulesByVersion(version);
+  if (!frozen) {
+    return { valid: false, reason: `Unsupported rulesVersion ${version}` };
+  }
+  if (s.gameMode !== frozen.gameMode) {
+    return { valid: false, reason: `gameMode mismatch: expected ${frozen.gameMode}, got ${s.gameMode}` };
+  }
+  if (s.volatilityEnabled !== frozen.volatilityEnabled) {
+    return { valid: false, reason: `volatilityEnabled mismatch: expected ${frozen.volatilityEnabled}, got ${s.volatilityEnabled}` };
+  }
+  const vol = s.volatility as Record<string, unknown> | undefined;
+  if (!vol || typeof vol !== 'object') {
+    return { valid: false, reason: 'Missing or invalid volatility object' };
+  }
+  if (vol.model !== frozen.volatility.model) {
+    return { valid: false, reason: `volatility.model mismatch: expected ${frozen.volatility.model}, got ${vol.model}` };
+  }
+  if (vol.scale !== frozen.volatility.scale) {
+    return { valid: false, reason: `volatility.scale mismatch: expected ${frozen.volatility.scale}, got ${vol.scale}` };
+  }
+  const scoreRules = s.scoreRules as Record<string, unknown> | undefined;
+  if (!scoreRules || typeof scoreRules !== 'object') {
+    return { valid: false, reason: 'Missing or invalid scoreRules object' };
+  }
+  if (scoreRules.holdBonus !== frozen.scoreRules.holdBonus) {
+    return { valid: false, reason: `scoreRules.holdBonus mismatch: expected ${frozen.scoreRules.holdBonus}, got ${scoreRules.holdBonus}` };
+  }
+  if (scoreRules.sellMultiplier !== frozen.scoreRules.sellMultiplier) {
+    return { valid: false, reason: `scoreRules.sellMultiplier mismatch: expected ${frozen.scoreRules.sellMultiplier}, got ${scoreRules.sellMultiplier}` };
+  }
+  if (version >= 5) {
+    const voidCount = s.voidCardCount;
+    if (voidCount !== undefined && (typeof voidCount !== 'number' || !Number.isInteger(voidCount) || voidCount < 0 || voidCount > 10)) {
+      return { valid: false, reason: `Invalid voidCardCount: ${voidCount}` };
+    }
+  }
+  if (version === 6 || version === 7 || version === 8) {
+    const br = s.branchRoll as Record<string, unknown> | undefined;
+    if (!br || br.delta !== BRANCH_ROLL_DELTA || br.enabled !== true) {
+      return { valid: false, reason: `branchRoll contract violation: expected delta=${BRANCH_ROLL_DELTA} enabled=true` };
+    }
+  }
+  if (version === 7 || version === 8) {
+    const tw = s.trendWindow as Record<string, unknown> | undefined;
+    if (!tw || tw.enabled !== true) {
+      return { valid: false, reason: 'trendWindow contract violation: expected enabled=true' };
+    }
+    if (s.concentrationPremiumFactor !== 1) {
+      return { valid: false, reason: `concentrationPremiumFactor mismatch: expected 1, got ${s.concentrationPremiumFactor}` };
+    }
+  }
+  return { valid: true };
+}

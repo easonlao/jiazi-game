@@ -670,3 +670,44 @@ describe('V8 洁净牌池存档（rulesVersion=8 / clean_pool，schemaVersion �
     expect(tm.exportSnapshot().rulesVersion).toBe(RULES_VERSION_TREND_WINDOW);
   });
 });
+
+describe('isLocalOnly 本地试玩存档兼容性与往返（GameSnapshot 字段级扩展）', () => {
+  it('1. 旧存档缺 isLocalOnly 字段时安全回退为 false，二次导出不产生冗余键', async () => {
+    const legacySave = makeValidSnapshot();
+    delete legacySave.isLocalOnly;
+
+    const tm = await makeTm();
+    expect(() => tm.importSnapshot(legacySave)).not.toThrow();
+    expect(tm.getIsLocalOnly()).toBe(false);
+
+    const exported = tm.exportSnapshot();
+    expect(exported.isLocalOnly).toBeUndefined();
+  });
+
+  it('2. 新本地试玩存档 (isLocalOnly: true) 准确读回为 true，并可在往返中保持', async () => {
+    const trialSave = makeValidSnapshot({ isLocalOnly: true });
+
+    const tm = await makeTm();
+    expect(() => tm.importSnapshot(trialSave)).not.toThrow();
+    expect(tm.getIsLocalOnly()).toBe(true);
+
+    const exported = tm.exportSnapshot();
+    expect(exported.isLocalOnly).toBe(true);
+
+    // 二次读档
+    const tm2 = await makeTm();
+    expect(() => tm2.importSnapshot(exported)).not.toThrow();
+    expect(tm2.getIsLocalOnly()).toBe(true);
+  });
+
+  it('3. 普通云端/正常存档 (isLocalOnly: false) 准确读回为 false', async () => {
+    const cloudSave = makeValidSnapshot({ isLocalOnly: false });
+
+    const tm = await makeTm();
+    expect(() => tm.importSnapshot(cloudSave)).not.toThrow();
+    expect(tm.getIsLocalOnly()).toBe(false);
+
+    const exported = tm.exportSnapshot();
+    expect(exported.isLocalOnly).toBeUndefined();
+  });
+});

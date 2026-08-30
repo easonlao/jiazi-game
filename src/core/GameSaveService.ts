@@ -196,6 +196,8 @@ export interface GameSnapshot {
   branchRoll?: BranchRollState;
   /** 每局固化的空亡牌数量。新档写入当前局数值；旧档缺失时按 rulesVersion 安全回退（V5/V6/V7 回退 3）。 */
   voidCardCount?: number;
+  /** 本地试玩/降级局标记：若为 true 则该存档属于本地试玩，读档时不恢复账号修行账本。 */
+  isLocalOnly?: boolean;
 }
 
 const SAVE_KEY = 'jiazi_game_save';

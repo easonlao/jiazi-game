@@ -22,13 +22,15 @@ import {
   type TelemetryEventType,
   type TelemetryTransport,
 } from '@core/telemetry';
-import type {
-  AnalyticsBackend,
-  CultivationLedgerSnapshot,
-  CloudLeaderboardEntry,
-  PlayerIdentity,
-  VerifiedSessionStart,
-  CloudActiveGameSession,
+import {
+  type AnalyticsBackend,
+  type CultivationLedgerSnapshot,
+  type CloudLeaderboardEntry,
+  type PlayerIdentity,
+  type VerifiedSessionStart,
+  type VerifiedSessionStartResult,
+  type CloudActiveGameSession,
+  mapFunctionErrorToCloudStartError,
 } from './analyticsBackend';
 import {
   VerificationStateController,
@@ -439,19 +441,60 @@ export class TelemetryController {
     return this.session?.session_id ?? null;
   }
 
-  /** 在当前版本游戏真正开始前向服务端申请 seed；失败时返回 null。 */
-  async prepareVerifiedSession(meta: ActiveSessionMeta): Promise<VerifiedSessionStart | null> {
+  /** 在当前版本游戏真正开始前向服务端申请 seed；返回结构化结果或失败诊断。 */
+  async prepareVerifiedSession(meta: ActiveSessionMeta): Promise<VerifiedSessionStartResult> {
+    if (this.backend.isConfigured === false) {
+      return {
+        success: false,
+        error: {
+          code: 'cloud_not_configured',
+          message: 'Cloud backend not configured',
+          userMessage: '云端服务未配置（未检测到 Supabase 凭据）',
+          statusCode: null,
+        },
+      };
+    }
+
     const requestedRulesVersion = Number(meta.rules_version);
-    if (
-      requestedRulesVersion !== CURRENT_RULES_VERSION ||
-      meta.game_mode !== 'volatility_trade' ||
-      !this.state.consent?.granted ||
-      !this.state.identity ||
-      !this.state.telemetryEnabled
-    ) return null;
+    if (!this.state.consent?.granted || !this.state.telemetryEnabled) {
+      return {
+        success: false,
+        error: {
+          code: 'telemetry_disabled',
+          message: 'Telemetry not enabled or consent not granted',
+          userMessage: '未开启遥测或未同意立档协议',
+          statusCode: null,
+        },
+      };
+    }
+
     const identity = this.state.identity;
+    if (!identity) {
+      return {
+        success: false,
+        error: {
+          code: 'identity_not_ready',
+          message: 'Player identity is not initialized',
+          userMessage: '修士身份尚未在云端立档（请先在修行档案中生成玩家 ID）',
+          statusCode: 403,
+        },
+      };
+    }
+
+    if (requestedRulesVersion !== CURRENT_RULES_VERSION || meta.game_mode !== 'volatility_trade') {
+      return {
+        success: false,
+        error: {
+          code: 'rules_version_mismatch',
+          message: `Requested rules version ${requestedRulesVersion} does not match current ${CURRENT_RULES_VERSION}`,
+          userMessage: '当前对局模式或规则版本不支持云端开局',
+          statusCode: 409,
+        },
+      };
+    }
+
     try {
-      const prepared = await this.backend.startVerifiedSession(identity.player_id, {
+      return await this.backend.startVerifiedSession(identity.player_id, {
         session_id: newUuid(),
         started_at: new Date().toISOString(),
         status: 'started',
@@ -462,14 +505,12 @@ export class TelemetryController {
         app_version: this.appVersion,
         consent_version: String(this.state.consent.version),
       });
-      if (prepared?.rules_snapshot.rulesVersion !== requestedRulesVersion) {
-        console.warn('[telemetry] 服务端规则版本与客户端不一致，交由玩家决定是否本地开局');
-        return null;
-      }
-      return prepared;
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[telemetry] verified session 准备失败，交由玩家决定是否本地开局', e);
-      return null;
+      return {
+        success: false,
+        error: mapFunctionErrorToCloudStartError(e),
+      };
     }
   }
 
@@ -608,15 +649,19 @@ export class TelemetryController {
 
   // ── 会话生命周期 ──────────────────────────────────────────
 
-  /** 开始一次游戏会话（仅同意后生效；返回是否启用）。 */
-  startSession(meta: ActiveSessionMeta, verified: VerifiedSessionStart | null = null): boolean {
+  /** 开始一次游戏会话（仅同意后生效；返回是否启用）。只接收验证成功的 VerifiedSessionStart。 */
+  startSession(
+    meta: ActiveSessionMeta,
+    verified: VerifiedSessionStart | null = null,
+  ): boolean {
+
     // 活动交易局只允许当前规则版本，并且必须绑定服务端 seed 会话。
     // 旧版本只保留存档/历史重放兼容，不再创建新的云端会话或事件。
     if (meta.game_mode === 'volatility_trade') {
       if (
         Number(meta.rules_version) !== CURRENT_RULES_VERSION ||
         !verified ||
-        verified.rules_snapshot.rulesVersion !== CURRENT_RULES_VERSION
+        verified.rules_snapshot?.rulesVersion !== CURRENT_RULES_VERSION
       ) {
         return false;
       }

@@ -304,12 +304,13 @@ describe('Supabase 真实数据库迁移、RLS、触发器与续局全链路模�
     // 1. 开第 1 局对局并上报事件
     const meta = { rules_version: String(CURRENT_RULES_VERSION), game_mode: 'volatility_trade', volatility_enabled: true };
     const prepared1 = await controller.prepareVerifiedSession(meta);
-    expect(prepared1).not.toBeNull();
-    const started1 = controller.startSession(meta, prepared1);
+    expect(prepared1.success).toBe(true);
+    if (!prepared1.success) return;
+    const started1 = controller.startSession(meta, prepared1.session);
     expect(started1).toBe(true);
 
     const sessId1 = controller.getActiveSessionId()!;
-    expect(sessId1).toBe(prepared1!.session_id);
+    expect(sessId1).toBe(prepared1.session.session_id);
 
     // 记录若干动作事件
     controller.recordReplayAction({ type: 'buy', cardIndex: 0, leverage: false });
@@ -354,8 +355,9 @@ describe('Supabase 真实数据库迁移、RLS、触发器与续局全链路模�
 
     // 4. 开第 2 局并在中途保持 active -> 设备 2 成功拉取并接续
     const prepared2 = await controller.prepareVerifiedSession(meta);
-    expect(prepared2).not.toBeNull();
-    controller.startSession(meta, prepared2);
+    expect(prepared2.success).toBe(true);
+    if (!prepared2.success) return;
+    controller.startSession(meta, prepared2.session);
     await controller.flush();
     const sessId2 = controller.getActiveSessionId()!;
 

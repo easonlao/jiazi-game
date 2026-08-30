@@ -29,6 +29,7 @@ export {
   getReplayRulesByVersion,
   CURRENT_REPLAY_RULES,
   cloneReplayRulesSnapshot,
+  validateRulesSnapshotContract,
 } from './ReplayRules';
 export type {
   ReplayRulesSnapshot,

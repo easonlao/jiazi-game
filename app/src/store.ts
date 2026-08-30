@@ -42,6 +42,7 @@ import {
   type AnalyticsBackend,
   type CloudLeaderboardEntry,
   type CloudActiveGameSession,
+  type VerifiedSessionStart,
 } from './lib/analyticsBackend';
 import {
   TelemetryController,
@@ -78,7 +79,11 @@ export function setTelemetryControllerForTesting(controller: TelemetryController
 }
 
 const _leaderboardRefreshGate = new LeaderboardRefreshGate();
-const _cultivationLedger = new CultivationLedgerService(localStorageProvider);
+let _cultivationLedger = new CultivationLedgerService(localStorageProvider);
+
+export function setCultivationLedgerForTesting(service: CultivationLedgerService): void {
+  _cultivationLedger = service;
+}
 
 /**
  * 回合末「锁定牌被自动解锁」事件的 Toast 文案（如「神识难继，灵气甲子自行散去」）。
@@ -322,6 +327,8 @@ interface GameStore {
   telemetryState: TelemetryControllerState | null;
   startingGame: boolean;
   startGameError: string | null;
+  /** 本地试玩对局标记（不上云端榜、不污染修士账本） */
+  isLocalOnlyGame: boolean;
   /** 云端排行榜（娱乐榜公开字段；云端未配置时为空数组） */
   cloudLeaderboard: CloudLeaderboardEntry[];
   cloudLeaderboardStatus: 'idle' | 'loading' | 'ready' | 'error';
@@ -671,8 +678,10 @@ export function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get:
       final_score: finalScore,
       margin_call_count: tm.getMarginCallCount(),
     });
-    _cultivationLedger.completeActiveGame(finalScore);
-    refreshCultivationLedgerOverview(set, get);
+    if (!get().isLocalOnlyGame) {
+      _cultivationLedger.completeActiveGame(finalScore);
+      refreshCultivationLedgerOverview(set, get);
+    }
     tm.clearSave();
     set({ hasSave: false });
     get().showToast(`一甲子终了！最终修为：${finalScore}`);
@@ -758,6 +767,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   telemetryState: null,
   startingGame: false,
   startGameError: null,
+  isLocalOnlyGame: false,
   cloudLeaderboard: [],
   cloudLeaderboardStatus: 'idle',
   cloudLeaderboardError: null,
@@ -991,23 +1001,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const telemetryState = controller?.getState() ?? null;
     const shouldAwaitVerifiedStart = !localOnly && telemetryState?.consent?.granted === true;
 
-    set({ startingGame: true, startGameError: null });
+    set({ startingGame: true, startGameError: null, isLocalOnlyGame: localOnly === true });
     try {
       if (shouldAwaitVerifiedStart && controller) {
         await ensureTelemetryInit();
-        const readyState = controller.getState();
-        if (!readyState.consent?.granted || !readyState.identity || !readyState.telemetryEnabled) {
-          const message = '云端连接失败。可重试，或改为本地开局（本局不上云端榜）。';
-          set({ startGameError: message });
-          get().showToast('云端连接失败，请重试');
-          return false;
+        const startResult = await controller.prepareVerifiedSession(getTelemetryGameMeta(tm));
+        let prepared: VerifiedSessionStart | null = null;
+        if (startResult && typeof startResult === 'object') {
+          if ('session' in startResult && (startResult as any).success) {
+            prepared = (startResult as any).session;
+          } else if ('session_id' in startResult && 'seed' in startResult) {
+            prepared = startResult as unknown as VerifiedSessionStart;
+          }
         }
 
-        const prepared = await controller.prepareVerifiedSession(getTelemetryGameMeta(tm));
         if (!prepared) {
-          const message = '云端连接失败。可重试，或改为本地开局（本局不上云端榜）。';
+          const userMessage = (startResult as any)?.error?.userMessage ?? '云端连接失败，请重试';
+          const message = `${userMessage}。可重试，或改为本地开局（本局不上云端榜）。`;
           set({ startGameError: message });
-          get().showToast('云端连接失败，请重试');
+          get().showToast(userMessage);
           return false;
         }
 
@@ -1031,8 +1043,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
 
         tm.clearSave();
-        set({ hasSave: false, gameState: 'init', _endedSessionId: null, verificationState: null });
+        set({
+          hasSave: false,
+          gameState: 'init',
+          _endedSessionId: null,
+          verificationState: null,
+          isLocalOnlyGame: false,
+        });
         bindTurnManagerCallbacks(verifiedTm, set, get);
+        verifiedTm.setLocalOnly(false);
         set({ turnManager: verifiedTm });
         verifiedTm.startGame();
         _cultivationLedger.startNewGame(verifiedTm.getRulesVersion(), prepared.session_id);
@@ -1051,11 +1070,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
 
       tm.clearSave();
-      set({ hasSave: false, _endedSessionId: null, verificationState: null });
+      tm.setLocalOnly(localOnly === true);
+      set({
+        hasSave: false,
+        _endedSessionId: null,
+        verificationState: null,
+        isLocalOnlyGame: localOnly === true,
+      });
       tm.reset();
       tm.startGame();
-      _cultivationLedger.startNewGame(tm.getRulesVersion());
-      refreshCultivationLedgerOverview(set, get);
+      if (!localOnly) {
+        _cultivationLedger.startNewGame(tm.getRulesVersion());
+        refreshCultivationLedgerOverview(set, get);
+      }
       get()._sync();
       set({
         selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
@@ -1066,14 +1093,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
       flushPendingVoidToasts(get);
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('[store] 开局失败:', error);
       controller?.abandonSession('reset');
+      const detail = error instanceof Error ? error.message : '未知异常';
       const message = localOnly
-        ? '本地开局失败，请重试'
-        : '云端连接失败。可重试，或改为本地开局（本局不上云端榜）。';
+        ? `本地开局失败（${detail}），请重试`
+        : `云端开局异常（${detail}）。可重试，或改为本地开局（本局不上云端榜）。`;
       set({ startGameError: message });
-      get().showToast(localOnly ? '本地开局失败，请重试' : '云端连接失败，请重试');
+      get().showToast(localOnly ? `本地开局失败：${detail}` : `云端开局异常：${detail}`);
       return false;
     } finally {
       set({ startingGame: false });
@@ -1104,28 +1132,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
     tm.startGame();
 
     // 依序重放云端动作序列，恢复至中断时的精确状态
+    let hasReplayError = false;
     for (const action of cloudSession.actions) {
+      let ok = true;
       switch (action.type) {
         case 'buy':
-          tm.executeBuy(action.cardIndex, action.leverage);
+          ok = tm.executeBuy(action.cardIndex, action.leverage);
           break;
         case 'sell':
-          tm.executeSell(action.slotIndex);
+          ok = tm.executeSell(action.slotIndex);
           break;
         case 'wait':
-          tm.executeWait();
+          ok = tm.executeWait();
           break;
         case 'lock':
-          tm.executeLockCard(action.cardIndex);
+          ok = Boolean(tm.executeLockCard(action.cardIndex).ok);
           break;
         case 'unlock':
-          tm.executeUnlockCard(action.cardIndex);
+          ok = tm.executeUnlockCard(action.cardIndex);
           break;
+      }
+      if (!ok) {
+        hasReplayError = true;
+        break;
       }
     }
 
-    // 关键守恒检查：若云端重放后发现牌池重复或守恒破坏，执行免惩罚技术重置
-    if (!tm.validateCardPoolIntegrity()) {
+    // 关键守恒检查：若云端重放动作失败或发现牌池重复/守恒破坏，执行免惩罚技术重置
+    if (hasReplayError || !tm.validateCardPoolIntegrity()) {
       return await handleCorruptedGameRecoveryHelper(set, get, 'cloud_session', cloudSession.session_id);
     }
 
@@ -1183,7 +1217,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 确保包含尚未 flush 到云端的最新回合与手牌状态，避免从落后的云端动作链重放发生回滚。
     if (tm && tm.hasSave()) {
       const loaded = await get().loadGameFromSave();
-      if (loaded && hasCloudIdentity && controller && !controller.getActiveSessionId()) {
+      if (loaded && !get().isLocalOnlyGame && hasCloudIdentity && controller && !controller.getActiveSessionId()) {
         // 关键重绑：页面刷新后 controller.session 为空，若存在活跃云端局，必须重绑云端会话！
         let cloudSession = controller.getState().activeCloudSession;
         if (!cloudSession) {
@@ -1251,17 +1285,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
           marginCallCount: tm.getMarginCallCount(),
         });
         get()._sync();
-        set({ selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false, pendingAction: null, settlementPreview: null, buySettlementEvent: null, voidTriggerQueue: [], _voidAnimationTrueState: null, hasSave: false });
-        _cultivationLedger.resumeActiveGame(tm.getRulesVersion());
-        refreshCultivationLedgerOverview(set, get);
-        // 关键防护：页面刷新后若 controller 内部尚未重绑 session，在此尝试根据已缓存的 activeCloudSession 重绑
+        const isLocalOnly = tm.getIsLocalOnly();
+        set({
+          isLocalOnlyGame: isLocalOnly,
+          selectedPublicCard: -1,
+          selectedHandCard: -1,
+          useLeverage: false,
+          pendingAction: null,
+          settlementPreview: null,
+          buySettlementEvent: null,
+          voidTriggerQueue: [],
+          _voidAnimationTrueState: null,
+          hasSave: false,
+        });
+        if (!isLocalOnly) {
+          _cultivationLedger.resumeActiveGame(tm.getRulesVersion());
+          refreshCultivationLedgerOverview(set, get);
+        }
+        // 关键防护：页面刷新后若 controller 内部尚未重绑 session，在此尝试根据已缓存的 activeCloudSession 重绑（仅限非本地试玩局）
         const controller = _telemetryController;
         const identity = controller?.getState().identity;
         const consentGranted = controller?.getState().consent?.granted;
         const telemetryEnabled = controller?.getState().telemetryEnabled;
         const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
         const activeCloudSession = controller?.getState().activeCloudSession;
-        if (hasCloudIdentity && controller && activeCloudSession && activeCloudSession.rounds_completed < 60 && !controller.getActiveSessionId()) {
+        if (!isLocalOnly && hasCloudIdentity && controller && activeCloudSession && activeCloudSession.rounds_completed < 60 && !controller.getActiveSessionId()) {
           const verifiedStart = {
             session_id: activeCloudSession.session_id,
             client_session_id: activeCloudSession.client_session_id,
@@ -1287,7 +1335,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
 
         const hasActiveCloudSession = Boolean(controller?.getActiveSessionId());
-        if (hasActiveCloudSession) {
+        if (isLocalOnly) {
+          get().showToast('已继续本地试玩');
+        } else if (hasActiveCloudSession) {
           get().showToast('已继续当前修行');
         } else {
           get().showToast('已继续本地存档');
@@ -1315,8 +1365,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return false;
   },
 
-  startNewGame() {
-    return get().startGame();
+  startNewGame(localOnly?: boolean) {
+    return get().startGame(localOnly);
   },
 
   startLocalGame() {
@@ -1536,8 +1586,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tm.clearSave();
       tm.reset();
     }
-    _cultivationLedger.abandonActiveGame();
-    refreshCultivationLedgerOverview(set, get);
+    if (!get().isLocalOnlyGame) {
+      _cultivationLedger.abandonActiveGame();
+      refreshCultivationLedgerOverview(set, get);
+    }
     _pendingAutoUnlockToast = null;
     _pendingVoidToasts = [];
     set({
@@ -1580,7 +1632,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 遥测：放弃当前会话（无 controller/未同意/无活跃会话时静默 no-op，不阻塞重置）
     _telemetryController?.abandonSession('reset');
     tm.reset();
-    _cultivationLedger.abandonActiveGame();
+    if (!get().isLocalOnlyGame) {
+      _cultivationLedger.abandonActiveGame();
+    }
     // 清掉可能残留的自动解锁提示，避免跨局误弹
     _pendingAutoUnlockToast = null;
     // 清掉残留的空亡触发累积，避免跨局误弹合并 Toast

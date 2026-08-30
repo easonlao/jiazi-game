@@ -402,6 +402,8 @@ export class TurnManager {
   private lastActionCard: LastActionCardInfo | null = null;
   /** 最近一次玩家行动发生的回合号（用于 roundLog 行动层） */
   private lastActionRound: number | null = null;
+  /** 本地试玩/降级标记（持久化到存档快照） */
+  private isLocalOnly: boolean = false;
 
   // 回调
   private onStateChange?: (state: GameState) => void;
@@ -714,6 +716,16 @@ export class TurnManager {
   /** 当前实际生效的规则版本；读档后以存档声明为准。 */
   getRulesVersion(): SupportedRulesVersion {
     return this.rulesVersion;
+  }
+
+  /** 获取当前对局是否为本地试玩/降级局。 */
+  getIsLocalOnly(): boolean {
+    return this.isLocalOnly;
+  }
+
+  /** 设置当前对局是否为本地试玩/降级局。 */
+  setLocalOnly(localOnly: boolean): void {
+    this.isLocalOnly = localOnly;
   }
 
   /**
@@ -1716,6 +1728,7 @@ export class TurnManager {
       // V6 地支波动状态：仅 rulesVersion=6 时写入；V5 及以下为 undefined（协议不变形）。
       branchRoll: this.getBranchRollState() ?? undefined,
       voidCardCount: this.voidCardCount,
+      isLocalOnly: this.isLocalOnly ? true : undefined,
     };
   }
 
@@ -2002,6 +2015,7 @@ export class TurnManager {
     this.voidTriggers = voidTriggers;
     this.voidSwallowedEvents = voidSwallowed;
     this.voidMaxK = voidMaxK;
+    this.isLocalOnly = Boolean(data.isLocalOnly);
   }
 
   /**

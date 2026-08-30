@@ -47,7 +47,14 @@ function createBackend() {
     ),
     uploadEvents: vi.fn(async () => undefined),
     upsertSession: vi.fn(async (_playerId: string, _session: SessionUpsert) => undefined),
-    startVerifiedSession: vi.fn(async (): Promise<VerifiedSessionStart | null> => null),
+    startVerifiedSession: vi.fn(async () => ({
+      success: false,
+      error: {
+        code: 'cloud_not_configured' as const,
+        message: 'not configured',
+        userMessage: '云端未配置',
+      },
+    })),
     submitVerifiedScore: vi.fn(async () => ({
       verified: true,
       rejected: false,
@@ -161,17 +168,22 @@ describe('TelemetryController leaderboard eligibility', () => {
     seedIdentity(storage, true);
     const backend = createBackend();
     backend.startVerifiedSession.mockResolvedValue({
-      session_id: 'verified-session',
-      started_at: '2026-08-10T00:00:00.000Z',
-      seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      success: true,
+      session: {
+        session_id: 'verified-session',
+        started_at: '2026-08-10T00:00:00.000Z',
+        seed: 42,
+        rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      },
     });
     const controller = new TelemetryController({ storage, backend });
 
     await controller.init();
-    const prepared = await controller.prepareVerifiedSession(verifiedMeta);
-    expect(prepared?.session_id).toBe('verified-session');
-    expect(controller.startSession(verifiedMeta, prepared)).toBe(true);
+    const startRes = await controller.prepareVerifiedSession(verifiedMeta);
+    expect(startRes.success).toBe(true);
+    if (!startRes.success) return;
+    expect(startRes.session.session_id).toBe('verified-session');
+    expect(controller.startSession(verifiedMeta, startRes.session)).toBe(true);
     controller.recordReplayAction({ type: 'wait' });
     controller.endSession({ reason: 'game_over', rounds: 60, final_score: 999999, margin_call_count: 0 });
 
@@ -231,7 +243,7 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(controller.getActiveSessionId()).toBe('session-resumed');
   });
 
-  it('当前版本（生产默认 V5）未拿到服务端 seed 时不允许创建普通交易会话', async () => {
+  it('当前版本（生产默认 V8）未拿到服务端 seed 时不允许创建普通交易会话', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
     const backend = createBackend();
@@ -239,7 +251,8 @@ describe('TelemetryController leaderboard eligibility', () => {
     const currentMeta = { rules_version: String(CURRENT_REPLAY_RULES.rulesVersion), game_mode: 'volatility_trade', volatility_enabled: true };
 
     await controller.init();
-    await expect(controller.prepareVerifiedSession(currentMeta)).resolves.toBeNull();
+    const res = await controller.prepareVerifiedSession(currentMeta);
+    expect(res.success).toBe(false);
     expect(backend.startVerifiedSession).toHaveBeenCalledTimes(1);
     expect(controller.startSession(currentMeta)).toBe(false);
     expect(controller.getActiveSessionId()).toBeNull();
@@ -254,9 +267,13 @@ describe('TelemetryController leaderboard eligibility', () => {
     const controller = new TelemetryController({ storage, backend });
 
     await controller.init();
-    await expect(controller.prepareVerifiedSession({
+    const res = await controller.prepareVerifiedSession({
       rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true,
-    })).resolves.toBeNull();
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.error.code).toBe('rules_version_mismatch');
+    }
     expect(controller.startSession({
       rules_version: '3', game_mode: 'volatility_trade', volatility_enabled: true,
     })).toBe(false);
@@ -268,10 +285,13 @@ describe('TelemetryController leaderboard eligibility', () => {
     seedIdentity(storage, true);
     const backend = createBackend();
     backend.startVerifiedSession.mockResolvedValue({
-      session_id: 'verified-session',
-      started_at: '2026-08-10T00:00:00.000Z',
-      seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      success: true,
+      session: {
+        session_id: 'verified-session',
+        started_at: '2026-08-10T00:00:00.000Z',
+        seed: 42,
+        rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      },
     });
     backend.recoverIdentity.mockResolvedValue({
       player_id: 'player-2',
@@ -283,9 +303,10 @@ describe('TelemetryController leaderboard eligibility', () => {
     const controller = new TelemetryController({ storage, backend });
 
     await controller.init();
-    const prepared = await controller.prepareVerifiedSession(verifiedMeta);
-    expect(prepared).not.toBeNull();
-    controller.startSession(verifiedMeta, prepared);
+    const startRes = await controller.prepareVerifiedSession(verifiedMeta);
+    expect(startRes.success).toBe(true);
+    if (!startRes.success) return;
+    controller.startSession(verifiedMeta, startRes.session);
     // 对局中途身份切换：回收恢复码换绑到 player-2
     await controller.recoverIdentity('SOME-RECOVERY-CODE');
     controller.endSession({ reason: 'game_over', rounds: 60, final_score: 1000, margin_call_count: 0 });
@@ -302,17 +323,22 @@ describe('TelemetryController leaderboard eligibility', () => {
     seedIdentity(storage, true);
     const backend = createBackend();
     backend.startVerifiedSession.mockResolvedValue({
-      session_id: 'verified-session',
-      started_at: '2026-08-10T00:00:00.000Z',
-      seed: 42,
-      rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      success: true,
+      session: {
+        session_id: 'verified-session',
+        started_at: '2026-08-10T00:00:00.000Z',
+        seed: 42,
+        rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      },
     });
     backend.submitVerifiedScore.mockRejectedValueOnce(new Error('network down'));
     const controller = new TelemetryController({ storage, backend });
 
     await controller.init();
-    const prepared = await controller.prepareVerifiedSession(verifiedMeta);
-    controller.startSession(verifiedMeta, prepared);
+    const startRes = await controller.prepareVerifiedSession(verifiedMeta);
+    expect(startRes.success).toBe(true);
+    if (!startRes.success) return;
+    controller.startSession(verifiedMeta, startRes.session);
     expect(() => controller.endSession({
       reason: 'game_over', rounds: 60, final_score: 100, margin_call_count: 0,
     })).not.toThrow();

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { SupabaseAnalyticsBackend } from '../../app/src/lib/analyticsBackend';
+import { SupabaseAnalyticsBackend, NoopAnalyticsBackend } from '../../app/src/lib/analyticsBackend';
 import { summarizeCultivationLedger } from '../../app/src/lib/cultivationLedger';
 import { cloneReplayRulesSnapshot } from '../../src/core';
 
@@ -39,7 +39,7 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
     });
   });
 
-  it('requests the exact rules version when creating a verified session', async () => {
+  it('requests the exact rules version and returns success when creating a verified session', async () => {
     const invoke = vi.fn(async () => ({
       data: {
         session_id: 'verified-session',
@@ -52,21 +52,211 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
     const client = { functions: { invoke } } as unknown as SupabaseClient;
     const backend = new SupabaseAnalyticsBackend(client);
 
-    await backend.startVerifiedSession('player-1', {
+    const result = await backend.startVerifiedSession('player-1', {
       session_id: 'client-session',
       started_at: '2026-08-10T00:00:00.000Z',
       status: 'started',
       rounds_completed: 0,
       final_score: 0,
-      rules_version: '4',
+      rules_version: '8',
       game_mode: 'volatility_trade',
       app_version: '0.2.0',
       consent_version: '1',
     });
 
     expect(invoke).toHaveBeenCalledWith('start-verified-session', {
-      body: expect.objectContaining({ requested_rules_version: '4' }),
+      body: expect.objectContaining({ requested_rules_version: '8' }),
     });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.session.session_id).toBe('verified-session');
+      expect(result.session.seed).toBe(42);
+    }
+  });
+
+  it('correctly categorizes start errors by HTTP status and network type', async () => {
+    // 1. 401 Unauthorized
+    const client401 = {
+      functions: {
+        invoke: vi.fn(async () => ({
+          data: null,
+          error: {
+            message: 'unauthorized',
+            context: new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }),
+          },
+        })),
+      },
+    } as unknown as SupabaseClient;
+    const backend401 = new SupabaseAnalyticsBackend(client401);
+    const res401 = await backend401.startVerifiedSession('p1', {
+      session_id: 's1',
+      started_at: '2026-08-10T00:00:00.000Z',
+      status: 'started',
+      rounds_completed: 0,
+      final_score: 0,
+      rules_version: '8',
+      game_mode: 'volatility_trade',
+      app_version: '0.2.0',
+      consent_version: '1',
+    });
+    expect(res401.success).toBe(false);
+    if (!res401.success) {
+      expect(res401.error.code).toBe('identity_not_ready');
+      expect(res401.error.userMessage).toContain('修士身份鉴权已失效');
+    }
+
+    // 2. 403 Forbidden (identity_not_ready)
+    const client403 = {
+      functions: {
+        invoke: vi.fn(async () => ({
+          data: null,
+          error: {
+            message: 'identity_not_ready',
+            context: new Response(JSON.stringify({ error: 'identity_not_ready' }), { status: 403 }),
+          },
+        })),
+      },
+    } as unknown as SupabaseClient;
+    const backend403 = new SupabaseAnalyticsBackend(client403);
+    const res403 = await backend403.startVerifiedSession('p1', {
+      session_id: 's1',
+      started_at: '2026-08-10T00:00:00.000Z',
+      status: 'started',
+      rounds_completed: 0,
+      final_score: 0,
+      rules_version: '8',
+      game_mode: 'volatility_trade',
+      app_version: '0.2.0',
+      consent_version: '1',
+    });
+    expect(res403.success).toBe(false);
+    if (!res403.success) {
+      expect(res403.error.code).toBe('identity_not_ready');
+      expect(res403.error.userMessage).toContain('修士身份尚未在云端立档');
+    }
+
+    // 3. 409 Rules Version Mismatch
+    const client409 = {
+      functions: {
+        invoke: vi.fn(async () => ({
+          data: null,
+          error: {
+            message: 'rules_version_not_supported',
+            context: new Response(JSON.stringify({ error: 'rules_version_not_supported' }), { status: 409 }),
+          },
+        })),
+      },
+    } as unknown as SupabaseClient;
+    const backend409 = new SupabaseAnalyticsBackend(client409);
+    const res409 = await backend409.startVerifiedSession('p1', {
+      session_id: 's1',
+      started_at: '2026-08-10T00:00:00.000Z',
+      status: 'started',
+      rounds_completed: 0,
+      final_score: 0,
+      rules_version: '8',
+      game_mode: 'volatility_trade',
+      app_version: '0.2.0',
+      consent_version: '1',
+    });
+    expect(res409.success).toBe(false);
+    if (!res409.success) {
+      expect(res409.error.code).toBe('rules_version_mismatch');
+      expect(res409.error.userMessage).toContain('云端规则版本与当前客户端不一致');
+    }
+
+    // 4. 500 Server Error
+    const client500 = {
+      functions: {
+        invoke: vi.fn(async () => ({
+          data: null,
+          error: {
+            message: 'internal_error',
+            context: new Response(JSON.stringify({ error: 'internal_error' }), { status: 500 }),
+          },
+        })),
+      },
+    } as unknown as SupabaseClient;
+    const backend500 = new SupabaseAnalyticsBackend(client500);
+    const res500 = await backend500.startVerifiedSession('p1', {
+      session_id: 's1',
+      started_at: '2026-08-10T00:00:00.000Z',
+      status: 'started',
+      rounds_completed: 0,
+      final_score: 0,
+      rules_version: '8',
+      game_mode: 'volatility_trade',
+      app_version: '0.2.0',
+      consent_version: '1',
+    });
+    expect(res500.success).toBe(false);
+    if (!res500.success) {
+      expect(res500.error.code).toBe('service_unavailable');
+      expect(res500.error.userMessage).toContain('云端开局服务暂时不可用');
+    }
+
+    // 5. Network Error (TypeError / Failed to fetch)
+    const clientNet = {
+      functions: {
+        invoke: vi.fn(async () => {
+          throw new TypeError('Failed to fetch');
+        }),
+      },
+    } as unknown as SupabaseClient;
+    const backendNet = new SupabaseAnalyticsBackend(clientNet);
+    const resNet = await backendNet.startVerifiedSession('p1', {
+      session_id: 's1',
+      started_at: '2026-08-10T00:00:00.000Z',
+      status: 'started',
+      rounds_completed: 0,
+      final_score: 0,
+      rules_version: '8',
+      game_mode: 'volatility_trade',
+      app_version: '0.2.0',
+      consent_version: '1',
+    });
+    expect(resNet.success).toBe(false);
+    if (!resNet.success) {
+      expect(resNet.error.code).toBe('network_error');
+      expect(resNet.error.userMessage).toContain('网络连接失败');
+    }
+
+    // 6. Invalid response structure -> service_contract_error
+    const clientInvalid = {
+      functions: {
+        invoke: vi.fn(async () => ({
+          data: { corrupted: true },
+          error: null,
+        })),
+      },
+    } as unknown as SupabaseClient;
+    const backendInvalid = new SupabaseAnalyticsBackend(clientInvalid);
+    const resInvalid = await backendInvalid.startVerifiedSession('p1', {
+      session_id: 's1',
+      started_at: '2026-08-10T00:00:00.000Z',
+      status: 'started',
+      rounds_completed: 0,
+      final_score: 0,
+      rules_version: '8',
+      game_mode: 'volatility_trade',
+      app_version: '0.2.0',
+      consent_version: '1',
+    });
+    expect(resInvalid.success).toBe(false);
+    if (!resInvalid.success) {
+      expect(resInvalid.error.code).toBe('service_contract_error');
+      expect(resInvalid.error.userMessage).toContain('格式异常');
+    }
+
+    // 7. NoopAnalyticsBackend -> cloud_not_configured
+    const noopBackend = new NoopAnalyticsBackend();
+    expect(noopBackend.isConfigured).toBe(false);
+    const resNoop = await noopBackend.startVerifiedSession();
+    expect(resNoop.success).toBe(false);
+    if (!resNoop.success) {
+      expect(resNoop.error.code).toBe('cloud_not_configured');
+      expect(resNoop.error.userMessage).toContain('云端服务未配置');
+    }
   });
 
   it('does not mistake a non-idempotent 409 response for a verified score', async () => {
@@ -433,5 +623,43 @@ describe('SupabaseAnalyticsBackend recoverCorruptedSession & activeSession revis
       ],
     });
     expect(result).toEqual([{ session_id: 'sess-1', session_revision: 3, inserted_count: 2 }]);
+  });
+
+  it('rejects verified sessions with drifted V8 rules snapshots and returns service_contract_error', async () => {
+    const driftedSnapshot = {
+      ...cloneReplayRulesSnapshot(),
+      scoreRules: { holdBonus: 1.2, sellMultiplier: 999 }, // 发生参数漂移
+    };
+
+    const invoke = vi.fn(async () => ({
+      data: {
+        session_id: 'drifted-session',
+        started_at: '2026-08-10T00:00:00.000Z',
+        seed: 42,
+        rules_snapshot: driftedSnapshot,
+      },
+      error: null,
+    }));
+    const client = { functions: { invoke } } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const result = await backend.startVerifiedSession('player-1', {
+      session_id: 'client-session',
+      started_at: '2026-08-10T00:00:00.000Z',
+      status: 'started',
+      rounds_completed: 0,
+      final_score: 0,
+      rules_version: '8',
+      game_mode: 'volatility_trade',
+      app_version: '0.2.0',
+      consent_version: '1',
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('service_contract_error');
+      expect(result.error.message).toContain('Rules snapshot contract violation');
+      expect(result.error.userMessage).toContain('异常');
+    }
   });
 });

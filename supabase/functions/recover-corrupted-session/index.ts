@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
 
   // P1: 使用 Service Role 调用私有原子 RPC finalize_corrupted_recovery（行级锁 + advisory 锁 + 版本校验）
   const targetExpectedRevision = expectedRevision ?? (typeof session.session_revision === 'number' ? session.session_revision : null);
-  const { error: updateError } = await supabase.rpc('finalize_corrupted_recovery', {
+  const { error: updateError } = await supabase.schema('private').rpc('finalize_corrupted_recovery', {
     p_session_id: session.id,
     p_player_id: link.player_id,
     p_expected_session_revision: targetExpectedRevision,

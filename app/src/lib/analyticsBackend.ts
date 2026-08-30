@@ -14,7 +14,11 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ReplayAction, ReplayRulesSnapshot } from '@core/index';
+import {
+  validateRulesSnapshotContract,
+  type ReplayAction,
+  type ReplayRulesSnapshot,
+} from '@core/index';
 import type { TelemetryEvent } from '@core/telemetry';
 import {
   summarizeCultivationLedger,
@@ -135,7 +139,32 @@ export interface CultivationLedgerSnapshot {
   summary: CultivationLedgerSummary;
 }
 
+/** 云端开局失败的结构化错误码 */
+export type CloudStartErrorCode =
+  | 'telemetry_disabled'       // 遥测或授权未开启
+  | 'cloud_not_configured'     // 云端客户端未配置
+  | 'identity_not_ready'       // 玩家身份未就绪 / 鉴权失效 (401/403)
+  | 'network_error'            // 网络不可达 / 超时
+  | 'service_unavailable'     // 云端开局函数异常 (5xx)
+  | 'service_contract_error'   // 云端返回响应格式异常或结构损坏
+  | 'rules_version_mismatch'   // 服务端规则版本与客户端不一致 (409)
+  | 'session_rejected'         // 会话创建被拒绝 (400/409/其他)
+  | 'unknown_error';           // 未知异常
+
+export interface CloudStartError {
+  code: CloudStartErrorCode;
+  message: string;
+  userMessage: string;
+  statusCode?: number | null;
+  rawError?: unknown;
+}
+
+export type VerifiedSessionStartResult =
+  | { success: true; session: VerifiedSessionStart }
+  | { success: false; error: CloudStartError };
+
 export interface AnalyticsBackend {
+  readonly isConfigured?: boolean;
   /** 恢复/建立匿名会话；返回是否已就绪（离线等场景返回 false，不抛错） */
   ensureSession(): Promise<boolean>;
   provision(displayName: string): Promise<ProvisionResult>;
@@ -147,7 +176,7 @@ export interface AnalyticsBackend {
   updateDisplayName(playerId: string, name: string): Promise<PlayerIdentity>;
   uploadEvents(playerId: string, events: TelemetryEvent[]): Promise<Array<{ session_id: string; session_revision: number; inserted_count: number }>>;
   upsertSession(playerId: string, session: SessionUpsert): Promise<void>;
-  startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null>;
+  startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStartResult>;
   submitVerifiedScore(playerId: string, submission: VerifiedScoreSubmission): Promise<VerifiedScoreOutcome>;
   fetchLeaderboard(limit?: number, rulesVersion?: string): Promise<CloudLeaderboardEntry[]>;
   fetchActiveGameSession(playerId: string): Promise<CloudActiveGameSession | null>;
@@ -234,6 +263,12 @@ function parseVerifiedSessionStart(data: unknown): VerifiedSessionStart | null {
     typeof scoreRules.holdBonus !== 'number' ||
     typeof scoreRules.sellMultiplier !== 'number'
   ) return null;
+  // V8 (clean_pool) 规则快照严格校验：防止同版本配置漂移与坏快照静默进入
+  if (snapshot.rulesVersion === 8) {
+    const voidCount = (snapshot as { voidCardCount?: unknown }).voidCardCount;
+    if (voidCount !== undefined && (typeof voidCount !== 'number' || !Number.isInteger(voidCount) || voidCount < 0 || voidCount > 10)) return null;
+    if (volatility.model !== 'trend_window') return null;
+  }
   return {
     session_id,
     started_at,
@@ -319,8 +354,88 @@ function parsePlayerIdentity(data: unknown): PlayerIdentity | null {
   };
 }
 
+export function mapFunctionErrorToCloudStartError(
+  error: unknown,
+  extracted?: { statusCode?: number | null; message: string },
+): CloudStartError {
+  const isNetwork =
+    (error as any)?.name === 'TypeError' ||
+    (error as any)?.message?.includes('fetch') ||
+    (error as any)?.message?.includes('network') ||
+    (error as any)?.message?.includes('Failed to fetch');
+
+  if (isNetwork) {
+    return {
+      code: 'network_error',
+      message: (error as any)?.message || 'Failed to fetch',
+      userMessage: '网络连接失败，无法访问云端服务器',
+      statusCode: null,
+      rawError: error,
+    };
+  }
+
+  const message = extracted?.message || (error as any)?.message || '';
+  const statusCode = extracted?.statusCode ?? (error as any)?.status ?? null;
+
+  if (statusCode === 401 || message.includes('unauthorized') || message.includes('auth_required')) {
+    return {
+      code: 'identity_not_ready',
+      message: message || 'unauthorized',
+      userMessage: '修士身份鉴权已失效（请在修行档案中重新立档）',
+      statusCode,
+      rawError: error,
+    };
+  }
+
+  if (statusCode === 403 || message.includes('forbidden') || message.includes('identity_not_found')) {
+    return {
+      code: 'identity_not_ready',
+      message: message || 'identity_forbidden',
+      userMessage: '修士身份尚未在云端立档（请先在修行档案中生成玩家 ID）',
+      statusCode,
+      rawError: error,
+    };
+  }
+
+  if (statusCode === 409 || message.includes('rules_version') || message.includes('rules_mismatch')) {
+    const isRulesMismatch = message.includes('rules_version') || message.includes('rules_mismatch');
+    return {
+      code: isRulesMismatch ? 'rules_version_mismatch' : 'session_rejected',
+      message: message || 'conflict',
+      userMessage: isRulesMismatch
+        ? '云端规则版本与当前客户端不一致（请刷新网页）'
+        : '云端存在冲突的进行中对局，开局被拒绝',
+      statusCode,
+      rawError: error,
+    };
+  }
+
+  if (statusCode && statusCode >= 500) {
+    return {
+      code: 'service_unavailable',
+      message: message || `Server error ${statusCode}`,
+      userMessage: '云端开局服务暂时不可用（HTTP 5xx，请稍后重试）',
+      statusCode,
+      rawError: error,
+    };
+  }
+
+  return {
+    code: 'unknown_error',
+    message: message || 'unknown error',
+    userMessage: `云端开局失败：${message || '未知错误'}`,
+    statusCode,
+    rawError: error,
+  };
+}
+
 export class SupabaseAnalyticsBackend implements AnalyticsBackend {
-  constructor(private readonly client: SupabaseClient) {}
+  readonly isConfigured = true;
+  private readonly client: SupabaseClient;
+
+  constructor(client: SupabaseClient) {
+    this.client = client;
+  }
 
   async ensureSession(): Promise<boolean> {
     try {
@@ -461,17 +576,71 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     }
   }
 
-  async startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStart | null> {
-    const { data, error } = await this.client.functions.invoke('start-verified-session', {
-      body: {
-        client_session_id: meta.session_id,
-        app_version: meta.app_version,
-        consent_version: meta.consent_version,
-        requested_rules_version: meta.rules_version,
-      },
-    });
-    if (error) throw normalizeError(error);
-    return parseVerifiedSessionStart(data);
+  async startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStartResult> {
+    try {
+      const { data, error } = await this.client.functions.invoke('start-verified-session', {
+        body: {
+          client_session_id: meta.session_id,
+          app_version: meta.app_version,
+          consent_version: meta.consent_version,
+          requested_rules_version: meta.rules_version,
+        },
+      });
+
+      if (error) {
+        const extracted = await extractFunctionError(error);
+        return {
+          success: false,
+          error: mapFunctionErrorToCloudStartError(error, extracted),
+        };
+      }
+
+      const parsed = parseVerifiedSessionStart(data);
+      if (!parsed) {
+        return {
+          success: false,
+          error: {
+            code: 'service_contract_error',
+            message: 'Invalid verified session response structure',
+            userMessage: '云端返回的对局种子或规则快照格式异常（请稍后重试）',
+            statusCode: 200,
+          },
+        };
+      }
+
+      const requestedVersion = Number(meta.rules_version);
+      if (parsed.rules_snapshot.rulesVersion !== requestedVersion) {
+        return {
+          success: false,
+          error: {
+            code: 'rules_version_mismatch',
+            message: `Rules version mismatch: expected ${requestedVersion}, got ${parsed.rules_snapshot.rulesVersion}`,
+            userMessage: `云端规则版本 (V${parsed.rules_snapshot.rulesVersion}) 与客户端 (V${requestedVersion}) 不一致`,
+            statusCode: 200,
+          },
+        };
+      }
+
+      const contractCheck = validateRulesSnapshotContract(parsed.rules_snapshot);
+      if (!contractCheck.valid) {
+        return {
+          success: false,
+          error: {
+            code: 'service_contract_error',
+            message: `Rules snapshot contract violation: ${contractCheck.reason}`,
+            userMessage: `云端规则快照参数异常（${contractCheck.reason}）`,
+            statusCode: 200,
+          },
+        };
+      }
+
+      return { success: true, session: parsed };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: mapFunctionErrorToCloudStartError(err),
+      };
+    }
   }
 
   async submitVerifiedScore(playerId: string, submission: VerifiedScoreSubmission): Promise<VerifiedScoreOutcome> {
@@ -654,6 +823,7 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
  * fetchLeaderboard 返回空数组。保证遥测逻辑在无云端环境下零副作用运行。
  */
 export class NoopAnalyticsBackend implements AnalyticsBackend {
+  readonly isConfigured = false;
   async ensureSession(): Promise<boolean> {
     return false;
   }
@@ -678,8 +848,16 @@ export class NoopAnalyticsBackend implements AnalyticsBackend {
     return undefined;
   }
 
-  async startVerifiedSession(): Promise<VerifiedSessionStart | null> {
-    return null;
+  async startVerifiedSession(): Promise<VerifiedSessionStartResult> {
+    return {
+      success: false,
+      error: {
+        code: 'cloud_not_configured',
+        message: 'Supabase client not configured',
+        userMessage: '云端服务未配置（未检测到 Supabase 凭据）',
+        statusCode: null,
+      },
+    };
   }
 
   async submitVerifiedScore(): Promise<VerifiedScoreOutcome> {
