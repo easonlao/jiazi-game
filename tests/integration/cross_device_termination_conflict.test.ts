@@ -3,7 +3,7 @@ import { useGameStore, bindTurnManagerCallbacks, setTelemetryControllerForTestin
 import { TurnManager } from '../../src/core/TurnManager';
 import { DEFAULT_BALANCE_CONFIG } from '../../src/core/BalanceConfig';
 import { SeededRandomSource } from '../../src/core/RandomSource';
-import { CLEAN_POOL_REPLAY_RULES } from '../../src/core/ReplayRules';
+import { CLEAN_POOL_REPLAY_RULES, CURRENT_REPLAY_RULES } from '../../src/core/ReplayRules';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
 import {
   readPendingTerminations,
@@ -840,14 +840,14 @@ describe('Issue 02: 处理跨设备终止冲突 (Cross-Device Termination Confli
 
     // 开启会话（产生 session_start 事件，sequence 0）
     const started = controller.startSession({
-      rules_version: '8',
+      rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
       game_mode: 'volatility_trade',
       volatility_enabled: true,
     }, {
       session_id: 'sess-seq-101',
       started_at: '2026-08-29T10:00:00.000Z',
       seed: 42,
-      rules_snapshot: CLEAN_POOL_REPLAY_RULES,
+      rules_snapshot: CURRENT_REPLAY_RULES,
     });
     expect(started).toBe(true);
 

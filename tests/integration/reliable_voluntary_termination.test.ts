@@ -3,7 +3,7 @@ import { useGameStore, bindTurnManagerCallbacks, setTelemetryControllerForTestin
 import { TurnManager } from '../../src/core/TurnManager';
 import { DEFAULT_BALANCE_CONFIG } from '../../src/core/BalanceConfig';
 import { SeededRandomSource } from '../../src/core/RandomSource';
-import { CLEAN_POOL_REPLAY_RULES } from '../../src/core/ReplayRules';
+import { CURRENT_REPLAY_RULES } from '../../src/core/ReplayRules';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
 import {
   readPendingTerminations,
@@ -73,7 +73,7 @@ describe('Issue 01: 可靠同步主动终止 (Reliable Voluntary Termination Syn
         session_id: 'sess-offline-101',
         started_at: '2026-08-29T10:00:00.000Z',
         seed: 42,
-        rules_snapshot: CLEAN_POOL_REPLAY_RULES,
+        rules_snapshot: CURRENT_REPLAY_RULES,
       }),
       submitVerifiedScore: async () => ({ verified: false, score: null, leaderboard_submitted: false }),
       claimLegacyRecords: async () => null,
@@ -88,10 +88,10 @@ describe('Issue 01: 可靠同步主动终止 (Reliable Voluntary Termination Syn
     await controller.grantConsent();
 
     const tm = new TurnManager(DEFAULT_BALANCE_CONFIG, new SeededRandomSource(42), {
-      rulesVersion: 8,
-      scoreRules: CLEAN_POOL_REPLAY_RULES.scoreRules,
-      volatility: CLEAN_POOL_REPLAY_RULES.volatility,
-      voidConfig: { voidCardCount: 2 },
+      rulesVersion: CURRENT_REPLAY_RULES.rulesVersion,
+      scoreRules: CURRENT_REPLAY_RULES.scoreRules,
+      volatility: CURRENT_REPLAY_RULES.volatility,
+      voidConfig: { voidCardCount: CURRENT_REPLAY_RULES.voidCardCount },
     });
     await tm.initialize();
     bindTurnManagerCallbacks(tm, useGameStore.setState, () => useGameStore.getState());
@@ -168,7 +168,7 @@ describe('Issue 01: 可靠同步主动终止 (Reliable Voluntary Termination Syn
         session_id: 'sess-offline-101',
         started_at: '2026-08-29T10:00:00.000Z',
         seed: 42,
-        rules_snapshot: CLEAN_POOL_REPLAY_RULES,
+        rules_snapshot: CURRENT_REPLAY_RULES,
         status: 'started' as const,
         rounds_completed: 1,
         final_score: 0,
@@ -322,10 +322,10 @@ describe('Issue 01: 可靠同步主动终止 (Reliable Voluntary Termination Syn
 
   it('游客模式纯本机行为：游客主动终止不产生云端待同步记录', async () => {
     const tm = new TurnManager(DEFAULT_BALANCE_CONFIG, new SeededRandomSource(42), {
-      rulesVersion: 8,
-      scoreRules: CLEAN_POOL_REPLAY_RULES.scoreRules,
-      volatility: CLEAN_POOL_REPLAY_RULES.volatility,
-      voidConfig: { voidCardCount: 2 },
+      rulesVersion: CURRENT_REPLAY_RULES.rulesVersion,
+      scoreRules: CURRENT_REPLAY_RULES.scoreRules,
+      volatility: CURRENT_REPLAY_RULES.volatility,
+      voidConfig: { voidCardCount: CURRENT_REPLAY_RULES.voidCardCount },
     });
     await tm.initialize();
     bindTurnManagerCallbacks(tm, useGameStore.setState, () => useGameStore.getState());

@@ -5,49 +5,52 @@ import {
   VOID_REPLAY_RULES,
   BRANCH_ROLL_REPLAY_RULES,
   TREND_WINDOW_REPLAY_RULES,
+  CLEAN_POOL_REPLAY_RULES,
   CURRENT_REPLAY_RULES,
   RULES_VERSION_VOID,
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_TREND_WINDOW,
+  RULES_VERSION_SINGLE_VOID,
   RULES_BASE,
   replayGame,
   type ReplayAction,
   SeededRandomSource,
 } from '../../src/core/index.ts';
 
-describe('空亡牌数量固化与新局默认 2 张（Ticket 01 & 02）', () => {
-  it('新局当前规则集（V7）默认使用 2 张空亡牌（总牌堆 62 张）', async () => {
+describe('空亡牌数量固化与 V9 新局默认 1 张', () => {
+  it('新局当前规则集（V9）默认使用 1 张空亡牌（总牌堆 61 张）', async () => {
     const tm = new TurnManager(undefined, undefined, {
-      rulesVersion: RULES_VERSION_TREND_WINDOW,
+      rulesVersion: RULES_VERSION_SINGLE_VOID,
     });
     await tm.initialize();
     tm.startGame();
 
-    expect(tm.getVoidCardCount()).toBe(2);
-    expect(VOID_CARD_COUNT).toBe(2);
+    expect(tm.getVoidCardCount()).toBe(1);
+    expect(VOID_CARD_COUNT).toBe(1);
 
     const totalDeckAndPublic = tm.getDeckSize() + tm.getPublicCards().length;
-    // 60 甲子 + 2 空亡 = 62 张
-    expect(totalDeckAndPublic).toBe(62);
+    // 60 甲子 + 1 空亡 = 61 张
+    expect(totalDeckAndPublic).toBe(61);
   });
 
-  it('历史规则集快照冻结值：V5/V6 冻结为 3 张，V7 冻结为 2 张', () => {
+  it('历史规则集快照冻结值：V5/V6 为 3 张，V7/V8 为 2 张，V9 为 1 张', () => {
     expect(VOID_REPLAY_RULES.voidCardCount).toBe(3);
     expect(BRANCH_ROLL_REPLAY_RULES.voidCardCount).toBe(3);
     expect(TREND_WINDOW_REPLAY_RULES.voidCardCount).toBe(2);
-    expect(CURRENT_REPLAY_RULES.voidCardCount).toBe(2);
+    expect(CLEAN_POOL_REPLAY_RULES.voidCardCount).toBe(2);
+    expect(CURRENT_REPLAY_RULES.voidCardCount).toBe(1);
   });
 
   it('GameSnapshot 导出并固化 voidCardCount 字段', async () => {
     const tm2 = new TurnManager(undefined, undefined, {
-      rulesVersion: RULES_VERSION_TREND_WINDOW,
-      voidConfig: { voidCardCount: 2 },
+      rulesVersion: RULES_VERSION_SINGLE_VOID,
+      voidConfig: { voidCardCount: 1 },
     });
     await tm2.initialize();
     tm2.startGame();
 
     const snapshot2 = tm2.exportSnapshot();
-    expect(snapshot2.voidCardCount).toBe(2);
+    expect(snapshot2.voidCardCount).toBe(1);
 
     const tm3 = new TurnManager(undefined, undefined, {
       rulesVersion: RULES_VERSION_VOID,
@@ -96,14 +99,14 @@ describe('空亡牌数量固化与新局默认 2 张（Ticket 01 & 02）', () =>
     expect(restoredBase.getVoidCardCount()).toBe(0);
   });
 
-  it('旧局读档后调用 reset()，空亡牌数量正确重置为初始默认值（新局默认 2 张，总牌堆 62 张）', async () => {
-    // 1. 创建默认当前规则局（默认 2 张空亡）
+  it('旧局读档后调用 reset()，空亡牌数量正确重置为初始默认值（V9 新局 1 张，总牌堆 61 张）', async () => {
+    // 1. 创建默认当前规则局（V9 默认 1 张空亡）
     const tm = new TurnManager(undefined, undefined, {
-      rulesVersion: RULES_VERSION_TREND_WINDOW,
+      rulesVersion: RULES_VERSION_SINGLE_VOID,
     });
     await tm.initialize();
     tm.startGame();
-    expect(tm.getVoidCardCount()).toBe(2);
+    expect(tm.getVoidCardCount()).toBe(1);
 
     // 2. 模拟读取 3 张空亡的旧局存档
     const tmV5 = new TurnManager(undefined, undefined, {
@@ -122,19 +125,19 @@ describe('空亡牌数量固化与新局默认 2 张（Ticket 01 & 02）', () =>
 
     // 3. 点击“新局”/ 调用 reset()
     tm.reset();
-    expect(tm.getVoidCardCount()).toBe(2);
-    expect(tm.getRulesVersion()).toBe(RULES_VERSION_TREND_WINDOW);
-    expect(tm.getDeckSize() + tm.getPublicCards().length).toBe(62);
+    expect(tm.getVoidCardCount()).toBe(1);
+    expect(tm.getRulesVersion()).toBe(RULES_VERSION_SINGLE_VOID);
+    expect(tm.getDeckSize() + tm.getPublicCards().length).toBe(61);
     expect(tm.getCardById(63)).toBeUndefined();
   });
 
-  it('确定性重放：3 张空亡旧局与 2 张空亡新局均可准确重放', async () => {
-    // 1. 2 张空亡新局
+  it('确定性重放：3 张空亡旧局与 1 张空亡 V9 新局均可准确重放', async () => {
+    // 1. 1 张空亡 V9 新局
     const seedNew = 7788;
     const rngNew = new SeededRandomSource(seedNew);
     const tmNew = new TurnManager(undefined, rngNew, {
-      rulesVersion: RULES_VERSION_TREND_WINDOW,
-      voidConfig: { voidCardCount: 2 },
+      rulesVersion: RULES_VERSION_SINGLE_VOID,
+      voidConfig: { voidCardCount: 1 },
     });
     await tmNew.initialize();
     tmNew.startGame();
@@ -148,8 +151,8 @@ describe('空亡牌数量固化与新局默认 2 张（Ticket 01 & 02）', () =>
     const replayNew = await replayGame({
       seed: seedNew,
       actions: actionsNew,
-      rulesVersion: RULES_VERSION_TREND_WINDOW,
-      voidCardCount: 2,
+      rulesVersion: RULES_VERSION_SINGLE_VOID,
+      voidCardCount: 1,
     });
     expect(replayNew.completed).toBe(true);
     expect(replayNew.rounds).toBe(60);

@@ -2,6 +2,7 @@ import {
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_CLEAN_POOL,
+  RULES_VERSION_SINGLE_VOID,
   RULES_VERSION_TRADE,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOID,
@@ -154,7 +155,8 @@ export interface TrendWindowReplayRulesSnapshot extends Omit<BranchRollReplayRul
 export const TREND_WINDOW_REPLAY_RULES: TrendWindowReplayRulesSnapshot = {
   ...BRANCH_ROLL_REPLAY_RULES,
   rulesVersion: RULES_VERSION_TREND_WINDOW,
-  voidCardCount: VOID_CARD_COUNT,
+  // V7 已发布对局固定为 2 张，不能随新局默认值漂移。
+  voidCardCount: 2,
   volatility: {
     ...BRANCH_ROLL_REPLAY_RULES.volatility,
     model: 'trend_window',
@@ -176,6 +178,19 @@ export interface CleanPoolReplayRulesSnapshot extends Omit<BranchRollReplayRules
 export const CLEAN_POOL_REPLAY_RULES: CleanPoolReplayRulesSnapshot = {
   ...TREND_WINDOW_REPLAY_RULES,
   rulesVersion: RULES_VERSION_CLEAN_POOL,
+  // V8 已发布对局固定为 2 张，不能随新局默认值漂移。
+  voidCardCount: 2,
+};
+
+/** V9 单空亡平衡快照：继承 V8 完整牌池守恒，供新局使用。 */
+export interface SingleVoidReplayRulesSnapshot extends Omit<CleanPoolReplayRulesSnapshot, 'rulesVersion'> {
+  rulesVersion: typeof RULES_VERSION_SINGLE_VOID;
+}
+
+export const SINGLE_VOID_REPLAY_RULES: SingleVoidReplayRulesSnapshot = {
+  ...CLEAN_POOL_REPLAY_RULES,
+  rulesVersion: RULES_VERSION_SINGLE_VOID,
+  voidCardCount: VOID_CARD_COUNT,
 };
 
 /**
@@ -185,6 +200,7 @@ export const CLEAN_POOL_REPLAY_RULES: CleanPoolReplayRulesSnapshot = {
  * 新局统一走空亡规则；V4 保留在注册表内仅用于历史对局解释，不再创建新云端会话。
  * 2026-08-15 新增 V6（地支波动）：注册表内可创建显式实验会话，生产默认不翻转（票 05）。
  * 2026-08-28 新增 V8（牌池守恒）：生产默认翻转为 V8。
+ * 2026-08-30 新增 V9（单空亡）：保留 V8，避免改写进行中云端对局的冻结快照。
  */
 export const SUPPORTED_REPLAY_RULES: readonly ReplayRulesSnapshot[] = [
   BALANCED_TRADE_REPLAY_RULES,
@@ -192,6 +208,7 @@ export const SUPPORTED_REPLAY_RULES: readonly ReplayRulesSnapshot[] = [
   BRANCH_ROLL_REPLAY_RULES,
   TREND_WINDOW_REPLAY_RULES,
   CLEAN_POOL_REPLAY_RULES,
+  SINGLE_VOID_REPLAY_RULES,
 ];
 
 /** 按规则版本号取冻结快照；未注册版本返回 undefined（函数层据此拒绝 409/422）。 */
@@ -199,8 +216,8 @@ export function getReplayRulesByVersion(version: number): ReplayRulesSnapshot | 
   return SUPPORTED_REPLAY_RULES.find((rules) => rules.rulesVersion === version);
 }
 
-/** 新局与服务端新会话使用的当前规则快照（2026-08-28 翻转：V8 clean_pool 为生产默认）。 */
-export const CURRENT_REPLAY_RULES = CLEAN_POOL_REPLAY_RULES;
+/** 新局与服务端新会话使用的当前规则快照（V9：单空亡）。 */
+export const CURRENT_REPLAY_RULES = SINGLE_VOID_REPLAY_RULES;
 
 export function cloneReplayRulesSnapshot<T extends ReplayRulesSnapshot = ReplayRulesSnapshot>(
   source: T = CURRENT_REPLAY_RULES as unknown as T,
@@ -216,8 +233,8 @@ export function cloneReplayRulesSnapshot<T extends ReplayRulesSnapshot = ReplayR
       );
     }
   }
-  // V7/V8 冻结快照契约：trendWindow.enabled 必须为 true，concentrationPremiumFactor 必须为 1。
-  if (source.rulesVersion === RULES_VERSION_TREND_WINDOW || source.rulesVersion === RULES_VERSION_CLEAN_POOL) {
+  // V7+ 冻结快照契约：trendWindow.enabled 必须为 true，concentrationPremiumFactor 必须为 1。
+  if (source.rulesVersion === RULES_VERSION_TREND_WINDOW || source.rulesVersion === RULES_VERSION_CLEAN_POOL || source.rulesVersion === RULES_VERSION_SINGLE_VOID) {
     const tw = (source as unknown as TrendWindowReplayRulesSnapshot).trendWindow;
     const cpf = (source as unknown as TrendWindowReplayRulesSnapshot).concentrationPremiumFactor;
     if (!tw || tw.enabled !== true) {

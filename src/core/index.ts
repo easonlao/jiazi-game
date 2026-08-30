@@ -25,6 +25,7 @@ export {
   BRANCH_ROLL_REPLAY_RULES,
   TREND_WINDOW_REPLAY_RULES,
   CLEAN_POOL_REPLAY_RULES,
+  SINGLE_VOID_REPLAY_RULES,
   SUPPORTED_REPLAY_RULES,
   getReplayRulesByVersion,
   CURRENT_REPLAY_RULES,
@@ -39,6 +40,7 @@ export type {
   BranchRollReplayConfig,
   TrendWindowReplayRulesSnapshot,
   CleanPoolReplayRulesSnapshot,
+  SingleVoidReplayRulesSnapshot,
 } from './ReplayRules';
 
 export { SeasonCycle, LAZY_SEASON_LENGTH_DISTRIBUTION } from './SeasonCycle';
@@ -93,6 +95,7 @@ export {
   CURRENT_SCHEMA_VERSION,
   CURRENT_RULES_VERSION,
   RULES_VERSION_CLEAN_POOL,
+  RULES_VERSION_SINGLE_VOID,
   isSupportedRulesVersion,
   isTradeRulesVersion,
   RULES_BASE,

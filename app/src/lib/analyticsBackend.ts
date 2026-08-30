@@ -254,8 +254,10 @@ function parseVerifiedSessionStart(data: unknown): VerifiedSessionStart | null {
   if (!session_id || !started_at || !Number.isSafeInteger(seed) || !isRecord(snapshot)) return null;
   const volatility = snapshot.volatility;
   const scoreRules = snapshot.scoreRules;
+  const rulesVersion = snapshot.rulesVersion;
   if (
-    !Number.isInteger(snapshot.rulesVersion) ||
+    typeof rulesVersion !== 'number' ||
+    !Number.isInteger(rulesVersion) ||
     snapshot.gameMode !== 'volatility_trade' ||
     snapshot.volatilityEnabled !== true ||
     !isRecord(volatility) ||
@@ -263,8 +265,8 @@ function parseVerifiedSessionStart(data: unknown): VerifiedSessionStart | null {
     typeof scoreRules.holdBonus !== 'number' ||
     typeof scoreRules.sellMultiplier !== 'number'
   ) return null;
-  // V8 (clean_pool) 规则快照严格校验：防止同版本配置漂移与坏快照静默进入
-  if (snapshot.rulesVersion === 8) {
+  // V8+ (clean_pool) 规则快照严格校验：防止同版本配置漂移与坏快照静默进入
+  if (rulesVersion >= 8) {
     const voidCount = (snapshot as { voidCardCount?: unknown }).voidCardCount;
     if (voidCount !== undefined && (typeof voidCount !== 'number' || !Number.isInteger(voidCount) || voidCount < 0 || voidCount > 10)) return null;
     if (volatility.model !== 'trend_window') return null;

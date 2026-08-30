@@ -25,6 +25,7 @@ import {
   RULES_VERSION_BALANCED_TRADE,
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_CLEAN_POOL,
+  RULES_VERSION_SINGLE_VOID,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOLATILE,
   RULES_VERSION_TRADE,
@@ -372,7 +373,7 @@ export class TurnManager {
   /** 空亡牌张数上限（防止非法坏档导致牌堆异常膨胀） */
   static readonly VOID_CARD_COUNT_MAX = 10;
 
-  /** 实际生效的空亡参数（options.voidConfig 覆盖，缺省 = 2 张新局 / 3 张旧局 / K 2~8）。 */
+  /** 实际生效的空亡参数（options.voidConfig 覆盖，缺省 = V9 1 张 / V8-V7 2 张 / V5-V6 3 张 / K 2~8）。 */
   private voidCardCount: number;
   private readonly initialVoidCardCount: number;
   private readonly voidKMin: number;
@@ -475,7 +476,7 @@ export class TurnManager {
       ...defaultScoreRules,
       ...options?.scoreRules,
     };
-    // 空亡参数：可选注入（voidConfig），缺省 = 定稿值（3 张 / K 2~8）。
+    // 空亡参数：可选注入（voidConfig）；默认张数按规则版本冻结，K 仍为 2~8。
     // 必须在 CardDataBank 构造之前解析（后者按张数生成空亡牌）。
     // 仅 rulesVersion=5 生效；V1-V4 不读取。K 边界做归一化防止非法范围。
     this.voidKMin = Math.min(
@@ -488,7 +489,9 @@ export class TurnManager {
     );
     const defaultVoidCards = (this.rulesVersion === RULES_VERSION_VOID || this.rulesVersion === RULES_VERSION_BRANCH_ROLL)
       ? 3
-      : (this.rulesVersion >= RULES_VERSION_TREND_WINDOW ? VOID_CARD_COUNT : 0);
+      : (this.rulesVersion === RULES_VERSION_TREND_WINDOW || this.rulesVersion === RULES_VERSION_CLEAN_POOL)
+        ? 2
+        : (this.rulesVersion >= RULES_VERSION_SINGLE_VOID ? VOID_CARD_COUNT : 0);
     this.voidCardCount = Math.max(0, Math.floor(options?.voidConfig?.voidCardCount ?? defaultVoidCards));
     this.initialVoidCardCount = this.voidCardCount;
     this.cardDataBank = new CardDataBank(this.voidCardCount);

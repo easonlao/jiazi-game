@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseAnalyticsBackend, NoopAnalyticsBackend } from '../../app/src/lib/analyticsBackend';
 import { summarizeCultivationLedger } from '../../app/src/lib/cultivationLedger';
-import { cloneReplayRulesSnapshot } from '../../src/core';
+import { cloneReplayRulesSnapshot, CURRENT_RULES_VERSION } from '../../src/core';
 
 describe('SupabaseAnalyticsBackend session lifecycle', () => {
   it('writes sessions through the owner-checked RPC', async () => {
@@ -58,14 +58,14 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
       status: 'started',
       rounds_completed: 0,
       final_score: 0,
-      rules_version: '8',
+      rules_version: String(CURRENT_RULES_VERSION),
       game_mode: 'volatility_trade',
       app_version: '0.2.0',
       consent_version: '1',
     });
 
     expect(invoke).toHaveBeenCalledWith('start-verified-session', {
-      body: expect.objectContaining({ requested_rules_version: '8' }),
+      body: expect.objectContaining({ requested_rules_version: String(CURRENT_RULES_VERSION) }),
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -625,7 +625,7 @@ describe('SupabaseAnalyticsBackend recoverCorruptedSession & activeSession revis
     expect(result).toEqual([{ session_id: 'sess-1', session_revision: 3, inserted_count: 2 }]);
   });
 
-  it('rejects verified sessions with drifted V8 rules snapshots and returns service_contract_error', async () => {
+  it('rejects verified sessions with drifted current rules snapshots and returns service_contract_error', async () => {
     const driftedSnapshot = {
       ...cloneReplayRulesSnapshot(),
       scoreRules: { holdBonus: 1.2, sellMultiplier: 999 }, // 发生参数漂移
@@ -649,7 +649,7 @@ describe('SupabaseAnalyticsBackend recoverCorruptedSession & activeSession revis
       status: 'started',
       rounds_completed: 0,
       final_score: 0,
-      rules_version: '8',
+      rules_version: String(CURRENT_RULES_VERSION),
       game_mode: 'volatility_trade',
       app_version: '0.2.0',
       consent_version: '1',

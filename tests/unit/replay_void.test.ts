@@ -25,6 +25,7 @@ import {
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_CLEAN_POOL,
+  RULES_VERSION_SINGLE_VOID,
   TREND_WINDOW_REPLAY_RULES,
   CLEAN_POOL_REPLAY_RULES,
   SeededRandomSource,
@@ -228,9 +229,9 @@ describe('函数层 V5 路径（共享核心；Edge Function 无法在 vitest �
     expect(getReplayRulesByVersion(3)).toBeUndefined();
     expect(getReplayRulesByVersion(2)).toBeUndefined();
     expect(getReplayRulesByVersion(NaN)).toBeUndefined();
-    expect(SUPPORTED_REPLAY_RULES.map((rules) => rules.rulesVersion)).toEqual([4, 5, 6, 7, 8]);
-    // 2026-08-28 翻转：生产默认 V8（clean_pool）。
-    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_CLEAN_POOL);
+    expect(SUPPORTED_REPLAY_RULES.map((rules) => rules.rulesVersion)).toEqual([4, 5, 6, 7, 8, 9]);
+    // V9 为生产默认；V8 保留完整牌池历史对局的冻结快照。
+    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_SINGLE_VOID);
     expect(SUPPORTED_REPLAY_RULES[0]).toBe(BALANCED_TRADE_REPLAY_RULES);
   });
 

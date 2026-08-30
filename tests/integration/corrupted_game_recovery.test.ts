@@ -3,7 +3,7 @@ import { useGameStore, bindTurnManagerCallbacks, setTelemetryControllerForTestin
 import { TurnManager } from '../../src/core/TurnManager';
 import { DEFAULT_BALANCE_CONFIG } from '../../src/core/BalanceConfig';
 import { SeededRandomSource } from '../../src/core/RandomSource';
-import { TREND_WINDOW_REPLAY_RULES, CLEAN_POOL_REPLAY_RULES } from '../../src/core/ReplayRules';
+import { TREND_WINDOW_REPLAY_RULES, CLEAN_POOL_REPLAY_RULES, CURRENT_REPLAY_RULES } from '../../src/core/ReplayRules';
 import { replayGame } from '../../src/core/ReplayRunner';
 import { JiaziCard } from '../../src/core/JiaziCard';
 
@@ -564,12 +564,7 @@ describe('02 受损对局检测与免惩罚技术恢复 (Corrupted Game Recovery
         client_session_id: 'client-b-1',
         started_at: new Date().toISOString(),
         seed: 42,
-        rules_snapshot: {
-          rulesVersion: 8,
-          gameMode: 'clean_pool',
-          volatility: CLEAN_POOL_REPLAY_RULES.volatility,
-          scoreRules: CLEAN_POOL_REPLAY_RULES.scoreRules,
-        },
+        rules_snapshot: CURRENT_REPLAY_RULES,
       }),
       submitVerifiedScore: async () => ({ verified: true, rejected: false, score: 100, leaderboard_submitted: true, message: null }),
       ensureSession: async () => true,

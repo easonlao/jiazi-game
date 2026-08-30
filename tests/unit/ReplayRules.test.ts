@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { validateRulesSnapshotContract, CLEAN_POOL_REPLAY_RULES, VOID_REPLAY_RULES } from '../../src/core/ReplayRules.ts';
+import {
+  validateRulesSnapshotContract,
+  CLEAN_POOL_REPLAY_RULES,
+  CURRENT_REPLAY_RULES,
+  VOID_REPLAY_RULES,
+} from '../../src/core/ReplayRules.ts';
 
 describe('ReplayRules', () => {
   describe('validateRulesSnapshotContract', () => {
-    it('should validate canonical V8 snapshot (clean pool)', () => {
+    it('should validate canonical V9 snapshot (single void current rules)', () => {
       // Must be a complete match
+      const snapshot = JSON.parse(JSON.stringify(CURRENT_REPLAY_RULES));
+      const res = validateRulesSnapshotContract(snapshot);
+      expect(res.valid).toBe(true);
+    });
+
+    it('should preserve the canonical V8 snapshot for active legacy sessions', () => {
       const snapshot = JSON.parse(JSON.stringify(CLEAN_POOL_REPLAY_RULES));
       const res = validateRulesSnapshotContract(snapshot);
       expect(res.valid).toBe(true);

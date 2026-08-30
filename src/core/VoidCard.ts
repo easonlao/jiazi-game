@@ -2,8 +2,8 @@ import { Element, JiaziCard, JiaziCardData, ScoreConfig, YinYang } from './Jiazi
 
 /** V5 空亡牌 ID 起点：60 张甲子牌（1-60）之后连续分配。 */
 export const VOID_CARD_ID_START = 61;
-/** 新局默认空亡牌数量：牌堆 = 60 甲子 + 2 空亡 = 62 张（历史 V5/V6 局为 3 张）。 */
-export const VOID_CARD_COUNT = 2;
+/** 新局默认空亡牌数量：牌堆 = 60 甲子 + 1 空亡 = 61 张（历史 V5/V6 为 3 张、V7/V8 为 2 张）。 */
+export const VOID_CARD_COUNT = 1;
 /** 空亡牌名称：同名纯事件牌。 */
 export const VOID_CARD_NAME = '空亡';
 

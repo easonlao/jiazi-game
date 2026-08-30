@@ -136,11 +136,11 @@ describe('03 跨设备继续当前修行测试（真实 Supabase 查询与动作
     // 设备 1 对照组：用相同 seed 和 actions 推进到第 3 回合
     const random1 = new SeededRandomSource(8888);
     const tm1 = new TurnManager(undefined, random1, {
-      rulesVersion: 7,
+      rulesVersion: CURRENT_REPLAY_RULES.rulesVersion,
       scoreRules: CURRENT_REPLAY_RULES.scoreRules,
       volatility: CURRENT_REPLAY_RULES.volatility,
       volatilityRandom: random1,
-      voidConfig: { voidCardCount: 2 },
+      voidConfig: { voidCardCount: CURRENT_REPLAY_RULES.voidCardCount },
     });
     await tm1.initialize();
     tm1.startGame();

@@ -19,6 +19,7 @@ import {
   TREND_WINDOW_REPLAY_RULES,
   CURRENT_REPLAY_RULES,
   CLEAN_POOL_REPLAY_RULES,
+  SINGLE_VOID_REPLAY_RULES,
   VOID_REPLAY_RULES,
   CURRENT_RULES_VERSION,
 } from '@core/index';
@@ -881,9 +882,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     _initializing = true;
     try {
       // 本地规则版本选择（配置驱动，符合「环境差异只通过配置驱动」铁律）：
-      // 1. `?rules=v4|v5|v6|v7|v8` URL 参数——E2E 用 `?rules=v4` 跑确定性流程回归；E2E / 调试用 `?rules=v8` 显式走 V8 洁净牌池。
+      // 1. `?rules=v4|v5|v6|v7|v8|v9` URL 参数——E2E 用 `?rules=v4` 跑确定性流程回归；`v8` 保留历史对照，`v9` 为当前单空亡规则。
       // 2. `VITE_RULES_VERSION=5` env——本地预览 V5 空亡（不进 git 的 .env.local）。
-      // 3. 缺省 = 生产默认 CURRENT_REPLAY_RULES（V8，2026-08-28 用户拍板翻转）。
+      // 3. 缺省 = 生产默认 CURRENT_REPLAY_RULES（V9：单空亡）。
       const urlRules = typeof window !== 'undefined' && window.location
         ? new URLSearchParams(window.location.search).get('rules')
         : null;
@@ -897,9 +898,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
               ? TREND_WINDOW_REPLAY_RULES
               : urlRules === 'v8'
                 ? CLEAN_POOL_REPLAY_RULES
-                : import.meta.env.VITE_RULES_VERSION === '5'
-                  ? VOID_REPLAY_RULES
-                  : CURRENT_REPLAY_RULES;
+                : urlRules === 'v9'
+                  ? SINGLE_VOID_REPLAY_RULES
+                  : import.meta.env.VITE_RULES_VERSION === '5'
+                    ? VOID_REPLAY_RULES
+                    : CURRENT_REPLAY_RULES;
       const tm = new TurnManager(undefined, undefined, {
         storage: localStorageProvider,
         rulesVersion: previewRules.rulesVersion,
