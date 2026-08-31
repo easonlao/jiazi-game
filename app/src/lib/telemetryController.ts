@@ -864,6 +864,8 @@ export class TelemetryController {
     });
     void this.finalizeSession(session, result, abandoned, isCorruptedRecovery ? 'corrupted_recovery' : undefined).catch(() => {});
     this.session = null;
+    // 终局会话不再可续局；校验状态由 verification 单独保留并回传界面。
+    this.setState({ activeCloudSession: null });
     this.persistCurrentSession();
   }
 

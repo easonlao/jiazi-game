@@ -258,6 +258,16 @@ describe('TelemetryController leaderboard eligibility', () => {
         rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
       },
     });
+    backend.fetchActiveGameSession.mockResolvedValue({
+      session_id: 'verified-session',
+      started_at: '2026-08-31T09:00:00.000Z',
+      seed: 42,
+      rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      actions: [],
+      rounds_completed: 59,
+      final_score: 300,
+      session_revision: 59,
+    });
     backend.fetchCultivationLedger
       .mockResolvedValueOnce({ records: [], summary: summarizeCultivationLedger([]) })
       .mockResolvedValueOnce({
@@ -285,6 +295,8 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(controller.startSession(verifiedMeta, prepared.session)).toBe(true);
     controller.endSession({ reason: 'game_over', rounds: 60, final_score: 321, margin_call_count: 0 });
 
+    // 终局后不能继续把旧云端会话当成“可续局”展示。
+    expect(controller.getState().activeCloudSession).toBeNull();
     await vi.waitFor(() => expect(controller.getState().cultivationLedger?.records).toHaveLength(1));
     expect(controller.getState().cultivationLedger?.records[0]).toMatchObject({
       local_game_id: 'verified-session',
