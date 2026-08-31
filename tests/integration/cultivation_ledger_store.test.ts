@@ -106,6 +106,41 @@ describe('本机修行账本与 store 接线', () => {
     expect(summary.byRulesVersion[0]?.averageScore).toEqual(expect.any(Number));
     expect(summary.byRulesVersion[0]?.highestScore).toEqual(expect.any(Number));
     expect(summary.byRulesVersion[0]?.lowestScore).toEqual(expect.any(Number));
+
+    // 从终局返回首页只是界面重置，不能把已完成的账本记录改写为中断。
+    useGameStore.getState().reset();
+    expect(useGameStore.getState().cultivationLedgerSummary).toMatchObject({
+      totalGames: 1,
+      completedGames: 1,
+      abandonedGames: 0,
+    });
+  });
+
+  it('终局返回首页时保留本局云端校验状态，直到校验结束或开启下一局', async () => {
+    const tm = await freshGame(29);
+    useGameStore.setState({
+      gameState: 'game_over',
+      _endedSessionId: 'completed-session',
+      verificationState: {
+        sessionId: 'completed-session',
+        playerId: 'p1',
+        status: 'pending',
+        score: null,
+        leaderboardSubmitted: false,
+        message: null,
+        submittedAt: Date.now(),
+        resolvedAt: null,
+        retryCount: 0,
+        actions: [],
+      },
+    });
+
+    useGameStore.getState().reset();
+
+    expect(useGameStore.getState().gameState).toBe('init');
+    expect(useGameStore.getState()._endedSessionId).toBe('completed-session');
+    expect(useGameStore.getState().verificationState?.status).toBe('pending');
+    void tm;
   });
 
   it('continue 和 reset 基础路径不会重复建档，reset 才会记为中断', async () => {

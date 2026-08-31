@@ -404,7 +404,12 @@ export class TelemetryController {
       now: deps.now,
     });
     this.verification = new VerificationStateController({ backend: deps.backend, storage: deps.storage });
-    this.verification.subscribe((record) => this.onVerificationChange?.(record));
+    this.verification.subscribe((record) => {
+      this.onVerificationChange?.(record);
+      // 服务端重放成功后，账本才是玩家档案的权威来源；重新拉取会通过
+      // onStateChange 把首页、档案和当前玩法最佳成绩一次性更新。
+      if (record.status === 'verified') void this.refreshCultivationLedger();
+    });
 
     // 页面刷新恢复：若本地存在该玩家尚未结束的活跃会话快照，自动复原内存会话与已记录的动作链
     const savedSession = readActiveSession(deps.storage);

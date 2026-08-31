@@ -41,6 +41,8 @@ export function StartScreen({
   const recoveringCorruptedGame = useGameStore((s) => s.recoveringCorruptedGame);
   const corruptedRecoveryError = useGameStore((s) => s.corruptedRecoveryError);
   const retryCorruptedRecovery = useGameStore((s) => s.retryCorruptedRecovery);
+  const verificationState = useGameStore((s) => s.verificationState);
+  const retryVerification = useGameStore((s) => s.retryVerification);
   const identity = telemetryState?.identity ?? null;
   const consent = telemetryState?.consent ?? null;
   const consentGranted = consent?.granted ?? false;
@@ -131,6 +133,26 @@ export function StartScreen({
           ›
         </span>
       </button>
+
+      {hasCloudIdentity && verificationState?.status === 'pending' && (
+        <div role="status" className="w-full max-w-xs rounded-xl border border-gold/50 bg-gold/10 px-3 py-2.5 text-xs leading-relaxed text-ink">
+          <p className="font-serif font-bold">本局正在云端校验</p>
+          <p className="mt-0.5 text-ink-light">校验完成后，修行档案会自动更新。</p>
+        </div>
+      )}
+
+      {hasCloudIdentity && (verificationState?.status === 'failed' || verificationState?.status === 'rejected') && (
+        <div role="alert" className="w-full max-w-xs rounded-xl border border-qi-critical/40 bg-qi-critical/10 px-3 py-2.5 text-xs leading-relaxed text-ink">
+          <p className="font-serif font-bold">本局云端校验未完成</p>
+          <p className="mt-0.5 text-ink-light">成长记录暂未更新，可稍后重试。</p>
+          <button
+            onClick={retryVerification}
+            className="mt-2 rounded-lg border border-qi-critical/50 bg-parchment px-3 py-1.5 text-xs font-bold text-qi-critical transition-colors hover:bg-qi-critical hover:text-parchment"
+          >
+            重试云端校验
+          </button>
+        </div>
+      )}
 
       {/* 操作按钮区 */}
       {turnManager ? (

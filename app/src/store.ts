@@ -1679,10 +1679,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   reset() {
     const tm = get().turnManager;
     if (!tm) return;
-    // 遥测：放弃当前会话（无 controller/未同意/无活跃会话时静默 no-op，不阻塞重置）
-    _telemetryController?.abandonSession('reset');
+    // 终局后的「再入轮回」只回到首页：会话已完成，仍可能在等待服务端校验，
+    // 绝不能再作为主动放弃上报或清掉其校验提示。
+    const returningAfterCompletion = get().gameState === 'game_over';
+    const endedSessionId = returningAfterCompletion ? get()._endedSessionId : null;
+    const verificationState = returningAfterCompletion ? get().verificationState : null;
+    if (!returningAfterCompletion) {
+      _telemetryController?.abandonSession('reset');
+    }
     tm.reset();
-    if (!get().isLocalOnlyGame) {
+    if (!returningAfterCompletion && !get().isLocalOnlyGame) {
       _cultivationLedger.abandonActiveGame();
     }
     // 清掉可能残留的自动解锁提示，避免跨局误弹
@@ -1709,8 +1715,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       lastSettlement: null,
       roundLog: [],
       decisionLog: [],
-      _endedSessionId: null,
-      verificationState: null,
+      _endedSessionId: endedSessionId,
+      verificationState,
       // 清空 FX 事件，避免残留动画在重开时误触发
       seasonEvent: null,
       marginCallEvent: null,

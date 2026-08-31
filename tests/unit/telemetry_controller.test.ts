@@ -245,6 +245,55 @@ describe('TelemetryController leaderboard eligibility', () => {
     expect(controller.getActiveSessionId()).toBe('session-resumed');
   });
 
+  it('终局云端校验成功后重新读取账本，让首页无需刷新即可看到本局', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    backend.startVerifiedSession.mockResolvedValue({
+      success: true,
+      session: {
+        session_id: 'verified-session',
+        started_at: '2026-08-31T09:00:00.000Z',
+        seed: 42,
+        rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      },
+    });
+    backend.fetchCultivationLedger
+      .mockResolvedValueOnce({ records: [], summary: summarizeCultivationLedger([]) })
+      .mockResolvedValueOnce({
+        records: [{
+          player_id: 'player-1',
+          local_game_id: 'verified-session',
+          game_session_id: 'verified-session',
+          rules_version: CURRENT_RULES_VERSION,
+          started_at: '2026-08-31T09:00:00.000Z',
+          ended_at: '2026-08-31T10:00:00.000Z',
+          outcome: 'completed',
+          final_score: 321,
+          record_source: 'verified_session',
+          created_at: '2026-08-31T10:00:00.000Z',
+          updated_at: '2026-08-31T10:00:00.000Z',
+        }],
+        summary: summarizeCultivationLedger([{ rulesVersion: CURRENT_RULES_VERSION, outcome: 'completed', finalScore: 321 }]),
+      });
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    const prepared = await controller.prepareVerifiedSession(verifiedMeta);
+    expect(prepared.success).toBe(true);
+    if (!prepared.success) return;
+    expect(controller.startSession(verifiedMeta, prepared.session)).toBe(true);
+    controller.endSession({ reason: 'game_over', rounds: 60, final_score: 321, margin_call_count: 0 });
+
+    await vi.waitFor(() => expect(controller.getState().cultivationLedger?.records).toHaveLength(1));
+    expect(controller.getState().cultivationLedger?.records[0]).toMatchObject({
+      local_game_id: 'verified-session',
+      outcome: 'completed',
+      final_score: 321,
+    });
+    expect(backend.fetchCultivationLedger).toHaveBeenCalledTimes(2);
+  });
+
   it('当前版本（生产默认 V8）未拿到服务端 seed 时不允许创建普通交易会话', async () => {
     const storage = new MemoryStorage();
     seedIdentity(storage, true);
