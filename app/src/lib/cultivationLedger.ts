@@ -9,6 +9,7 @@ export type CultivationLedgerOutcome = 'active' | 'completed' | 'abandoned';
 export interface CultivationLedgerRecord {
   id: string;
   rulesVersion: number;
+  balanceProfileId?: string | null;
   startedAt: string;
   endedAt: string | null;
   outcome: CultivationLedgerOutcome;
@@ -23,17 +24,30 @@ export interface CultivationRuleSummary {
   lowestScore: number | null;
 }
 
+export interface CultivationProfileSummary {
+  profileId: string;
+  rulesVersion: number;
+  completedGames: number;
+  averageScore: number | null;
+  highestScore: number | null;
+  lowestScore: number | null;
+}
+
 export interface CultivationLedgerSummary {
   totalGames: number;
   completedGames: number;
   abandonedGames: number;
   byRulesVersion: CultivationRuleSummary[];
+  byBalanceProfile?: CultivationProfileSummary[];
+  currentProfileSummary?: CultivationProfileSummary | null;
 }
 
 export type CultivationLedgerSummarySource = Pick<
   CultivationLedgerRecord,
   'rulesVersion' | 'outcome' | 'finalScore'
->;
+> & {
+  balanceProfileId?: string | null;
+};
 
 interface CultivationLedgerState {
   version: number;
@@ -64,7 +78,7 @@ function readLegacyLeaderboardRecords(storage: StorageProvider): CultivationLedg
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    const validEntries = parsed.filter((entry): entry is { score: number; date: string; rulesVersion?: number } => (
+    const validEntries = parsed.filter((entry): entry is { score: number; date: string; rulesVersion?: number; balanceProfileId?: string } => (
       typeof entry === 'object' &&
       entry !== null &&
       typeof (entry as { score?: unknown }).score === 'number' &&
@@ -80,6 +94,7 @@ function readLegacyLeaderboardRecords(storage: StorageProvider): CultivationLedg
       return {
         id: `legacy_lb_${rulesVersion}_${entry.date}_${score}_${index}`,
         rulesVersion,
+        balanceProfileId: entry.balanceProfileId ?? null,
         startedAt,
         endedAt: startedAt,
         outcome: 'completed' as const,
@@ -120,7 +135,10 @@ function readJson(storage: StorageProvider): CultivationLedgerState {
             (record as CultivationLedgerRecord).outcome === 'completed' ||
             (record as CultivationLedgerRecord).outcome === 'abandoned') &&
           ((record as CultivationLedgerRecord).endedAt === null || typeof (record as CultivationLedgerRecord).endedAt === 'string') &&
-          ((record as CultivationLedgerRecord).finalScore === null || typeof (record as CultivationLedgerRecord).finalScore === 'number')
+          ((record as CultivationLedgerRecord).finalScore === null || typeof (record as CultivationLedgerRecord).finalScore === 'number') &&
+          ((record as CultivationLedgerRecord).balanceProfileId === undefined ||
+            (record as CultivationLedgerRecord).balanceProfileId === null ||
+            typeof (record as CultivationLedgerRecord).balanceProfileId === 'string')
         ))
       : [];
 
@@ -191,10 +209,15 @@ function finalizeActiveRecord(
       };
 }
 
-function createActiveRecord(rulesVersion: number, id = newGameId()): CultivationLedgerRecord {
+function createActiveRecord(
+  rulesVersion: number,
+  id = newGameId(),
+  balanceProfileId?: string | null,
+): CultivationLedgerRecord {
   return {
     id,
     rulesVersion,
+    balanceProfileId: balanceProfileId ?? null,
     startedAt: nowIso(),
     endedAt: null,
     outcome: 'active',
@@ -204,15 +227,19 @@ function createActiveRecord(rulesVersion: number, id = newGameId()): Cultivation
 
 export function summarizeCultivationLedger(
   records: readonly CultivationLedgerSummarySource[],
+  currentProfileId?: string | null,
 ): CultivationLedgerSummary {
   const abandonedGames = records.filter((record) => record.outcome === 'abandoned').length;
   const groups = new Map<number, { completedGames: number; totalScore: number; highestScore: number; lowestScore: number }>();
+  const profileGroups = new Map<string, { rulesVersion: number; completedGames: number; totalScore: number; highestScore: number; lowestScore: number }>();
   let completedGames = 0;
 
   for (const record of records) {
     if (record.outcome !== 'completed') continue;
     const finalScore = record.finalScore;
     if (typeof finalScore !== 'number') continue;
+
+    // 按规则版本聚合
     const stats = groups.get(record.rulesVersion) ?? {
       completedGames: 0,
       totalScore: 0,
@@ -224,8 +251,41 @@ export function summarizeCultivationLedger(
     stats.highestScore = Math.max(stats.highestScore, finalScore);
     stats.lowestScore = Math.min(stats.lowestScore, finalScore);
     groups.set(record.rulesVersion, stats);
+
+    // 按平衡档案独立聚合
+    const profileKey = record.balanceProfileId ?? `v${record.rulesVersion}_standard`;
+    const pStats = profileGroups.get(profileKey) ?? {
+      rulesVersion: record.rulesVersion,
+      completedGames: 0,
+      totalScore: 0,
+      highestScore: Number.NEGATIVE_INFINITY,
+      lowestScore: Number.POSITIVE_INFINITY,
+    };
+    pStats.completedGames += 1;
+    pStats.totalScore += finalScore;
+    pStats.highestScore = Math.max(pStats.highestScore, finalScore);
+    pStats.lowestScore = Math.min(pStats.lowestScore, finalScore);
+    profileGroups.set(profileKey, pStats);
+
     completedGames += 1;
   }
+
+  const byBalanceProfile: CultivationProfileSummary[] = [...profileGroups.entries()]
+    .map(([profileId, stats]) => ({
+      profileId,
+      rulesVersion: stats.rulesVersion,
+      completedGames: stats.completedGames,
+      averageScore: stats.completedGames > 0 ? Math.round((stats.totalScore / stats.completedGames) * 10) / 10 : null,
+      highestScore: stats.completedGames > 0 ? stats.highestScore : null,
+      lowestScore: stats.completedGames > 0 ? stats.lowestScore : null,
+    }))
+    .sort((a, b) => b.rulesVersion - a.rulesVersion);
+
+  const currentProfileSummary = currentProfileId
+    ? byBalanceProfile.find((p) => p.profileId === currentProfileId) ?? null
+    : null;
+  const hasExplicitProfile = records.some((r) => r.balanceProfileId !== undefined && r.balanceProfileId !== null);
+  const includeProfiles = Boolean(currentProfileId || hasExplicitProfile);
 
   return {
     totalGames: records.length,
@@ -235,11 +295,12 @@ export function summarizeCultivationLedger(
       .map(([rulesVersion, stats]) => ({
         rulesVersion,
         completedGames: stats.completedGames,
-        averageScore: stats.completedGames > 0 ? stats.totalScore / stats.completedGames : null,
+        averageScore: stats.completedGames > 0 ? Math.round((stats.totalScore / stats.completedGames) * 10) / 10 : null,
         highestScore: stats.completedGames > 0 ? stats.highestScore : null,
         lowestScore: stats.completedGames > 0 ? stats.lowestScore : null,
       }))
       .sort((a, b) => b.rulesVersion - a.rulesVersion),
+    ...(includeProfiles ? { byBalanceProfile, currentProfileSummary } : {}),
   };
 }
 
@@ -267,10 +328,11 @@ export class CultivationLedgerService {
     state: CultivationLedgerState,
     rulesVersion: number,
     explicitId?: string,
+    balanceProfileId?: string | null,
   ): { state: CultivationLedgerState; record: CultivationLedgerRecord } {
     const active = this.getActiveRecord(state);
     if (active) return { state, record: active };
-    const record = createActiveRecord(rulesVersion, explicitId);
+    const record = createActiveRecord(rulesVersion, explicitId, balanceProfileId);
     return {
       state: {
         version: CULTIVATION_LEDGER_VERSION,
@@ -284,13 +346,17 @@ export class CultivationLedgerService {
   /**
    * 开始一局新的本机修行记录。若已有进行中记录，会先标记为中断，再开启新记录。
    */
-  startNewGame(rulesVersion: number, explicitId?: string): CultivationLedgerRecord {
+  startNewGame(
+    rulesVersion: number,
+    explicitId?: string,
+    balanceProfileId?: string | null,
+  ): CultivationLedgerRecord {
     const state = this.readState();
     const active = this.getActiveRecord(state);
     const nextState = active
       ? finalizeActiveRecord(state, 'abandoned', null)
       : state;
-    const record = createActiveRecord(rulesVersion, explicitId);
+    const record = createActiveRecord(rulesVersion, explicitId, balanceProfileId);
     this.writeState({
       version: CULTIVATION_LEDGER_VERSION,
       activeGameId: record.id,
@@ -302,9 +368,18 @@ export class CultivationLedgerService {
   /**
    * 续接当前局；若没有进行中记录，则创建一条新的进行中记录，用于账本启用后的 prospective tracking。
    */
-  resumeActiveGame(rulesVersion: number, explicitId?: string): CultivationLedgerRecord {
+  resumeActiveGame(
+    rulesVersion: number,
+    explicitId?: string,
+    balanceProfileId?: string | null,
+  ): CultivationLedgerRecord {
     const state = this.readState();
-    const { state: nextState, record } = this.ensureActiveRecord(state, rulesVersion, explicitId);
+    const { state: nextState, record } = this.ensureActiveRecord(
+      state,
+      rulesVersion,
+      explicitId,
+      balanceProfileId,
+    );
     if (nextState !== state) this.writeState(nextState);
     return record;
   }
@@ -345,8 +420,8 @@ export class CultivationLedgerService {
     });
   }
 
-  getSummary(): CultivationLedgerSummary {
-    return summarizeCultivationLedger(this.readState().records);
+  getSummary(currentProfileId?: string | null): CultivationLedgerSummary {
+    return summarizeCultivationLedger(this.readState().records, currentProfileId);
   }
 
   getRecords(): readonly CultivationLedgerRecord[] {

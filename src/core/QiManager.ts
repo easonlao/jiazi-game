@@ -6,7 +6,7 @@
  * 
  * @see {@link design/gdd/system-qi-resource.md} 神识资源设计文档
  */
-import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
+import { type BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
 
 export class QiManager {
   private readonly cfg: BalanceConfig;

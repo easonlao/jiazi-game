@@ -2,7 +2,19 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import {
   cloneReplayRulesSnapshot,
   getReplayRulesByVersion,
+  createReplayRulesSnapshotForProfile,
+  CURRENT_REPLAY_RULES,
 } from '../../../src/core/ReplayRules.ts';
+import {
+  getBalanceProfileById,
+  getDefaultBalanceProfileForRules,
+  EA_DEFAULT_BALANCE_PROFILE,
+} from '../../../src/core/BalanceProfile.ts';
+import {
+  assignPlayerToExperiment,
+  getActiveExperimentForRules,
+  validateExperimentConfig,
+} from '../../../src/core/ExperimentAssignment.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -36,13 +48,6 @@ Deno.serve(async (req) => {
   if (!clientSessionId || clientSessionId.length > CLIENT_SESSION_ID_MAX) {
     return json({ error: 'invalid_client_session_id' }, 400);
   }
-  const requestedRulesVersion = Number(body?.requested_rules_version);
-  // 可创建/校验的规则版本注册表（票 04 修正案：V4 生产默认 + V5 增量支持）。
-  // 未注册版本（V1-V3 及未知版本）沿用既有 409 拒绝；V4 判定与直用 CURRENT_REPLAY_RULES 一致。
-  const rules = getReplayRulesByVersion(requestedRulesVersion);
-  if (!rules) {
-    return json({ error: 'rules_version_not_supported' }, 409);
-  }
 
   const { data: link, error: linkError } = await supabase
     .from('player_identity_links')
@@ -51,6 +56,80 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (linkError) return json({ error: 'internal_error' }, 500);
   if (!link) return json({ error: 'identity_not_ready' }, 403);
+
+  // 严格由服务端决定当前规则与平衡档案（客户端零选档权）
+  const targetRulesVersion = CURRENT_REPLAY_RULES.rulesVersion;
+  let profile = EA_DEFAULT_BALANCE_PROFILE;
+  let experimentId: string | null = null;
+  let variantId: string | null = null;
+
+  // 检查当前规则是否存在生效中的 EA 试验
+  const activeExperiment = getActiveExperimentForRules(targetRulesVersion);
+  if (activeExperiment && activeExperiment.enabled) {
+    const expValidation = validateExperimentConfig(activeExperiment);
+    if (!expValidation.valid) {
+      console.error('Active experiment misconfigured:', expValidation.errors);
+      return json({ error: 'server_misconfigured' }, 500);
+    }
+
+    // 优先读取持久化的玩家试验分组
+    const { data: persistentAssignment, error: persistentError } = await supabase
+      .from('player_experiment_assignments')
+      .select('variant_id, balance_profile_id')
+      .eq('player_id', link.player_id)
+      .eq('experiment_id', activeExperiment.id)
+      .maybeSingle();
+
+    if (persistentError) return json({ error: 'internal_error' }, 500);
+
+    if (persistentAssignment) {
+      if (!persistentAssignment.variant_id || !persistentAssignment.balance_profile_id) {
+        console.error('Persisted assignment missing fields:', persistentAssignment);
+        return json({ error: 'server_misconfigured' }, 500);
+      }
+      const matchedVariant = activeExperiment.variants.find((v) => v.variantId === persistentAssignment.variant_id);
+      if (!matchedVariant || matchedVariant.balanceProfileId !== persistentAssignment.balance_profile_id) {
+        console.error('Persisted assignment variant inconsistent with active experiment variants:', persistentAssignment);
+        return json({ error: 'server_misconfigured' }, 500);
+      }
+      const persistedProfile = getBalanceProfileById(persistentAssignment.balance_profile_id);
+      if (!persistedProfile || persistedProfile.rulesVersion !== targetRulesVersion) {
+        console.error('Persisted assignment profile invalid or rules mismatch:', persistentAssignment);
+        return json({ error: 'server_misconfigured' }, 500);
+      }
+      profile = persistedProfile;
+      experimentId = activeExperiment.id;
+      variantId = matchedVariant.variantId;
+    }
+
+    if (!experimentId) {
+      // 首次进入：执行确定性分流并落库持久化
+      const assignment = assignPlayerToExperiment(link.player_id, activeExperiment);
+      profile = assignment.profile;
+      experimentId = assignment.experimentId;
+      variantId = assignment.variantId;
+
+      if (experimentId && variantId) {
+        const { error: upsertError } = await supabase.from('player_experiment_assignments').upsert({
+          player_id: link.player_id,
+          experiment_id: experimentId,
+          variant_id: variantId,
+          balance_profile_id: profile.profileId,
+          assigned_at: new Date().toISOString(),
+        });
+        if (upsertError) {
+          console.error('Failed to persist player experiment assignment', upsertError);
+          return json({ error: 'internal_error' }, 500);
+        }
+      }
+    }
+  } else {
+    profile = getDefaultBalanceProfileForRules(targetRulesVersion);
+  }
+
+  const snapshot = createReplayRulesSnapshotForProfile(profile ?? EA_DEFAULT_BALANCE_PROFILE);
+  if (experimentId) snapshot.experimentId = experimentId;
+  if (variantId) snapshot.variantId = variantId;
 
   const { data: existing, error: existingError } = await supabase
     .from('game_sessions')
@@ -68,14 +147,13 @@ Deno.serve(async (req) => {
     }
     if (isValidStoredSession(existing)) {
       const storedRules = existing.rules_snapshot as Record<string, unknown>;
-      if (storedRules.rulesVersion !== rules.rulesVersion) {
+      if (storedRules.rulesVersion !== snapshot.rulesVersion) {
         return json({ error: 'session_rules_mismatch' }, 409);
       }
       return json(toResponse(existing), 200);
     }
   }
 
-  const snapshot = cloneReplayRulesSnapshot(rules);
   const seed = generateSeed();
   const sessionId = crypto.randomUUID();
   const startedAt = new Date().toISOString();

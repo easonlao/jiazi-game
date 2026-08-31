@@ -2,6 +2,7 @@ import type {
   CultivationLedgerOutcome,
   CultivationLedgerRecord,
   CultivationLedgerSummary,
+  CultivationLedgerSummarySource,
 } from './cultivationLedger';
 import type { CultivationLedgerEntry } from './analyticsBackend';
 import { summarizeCultivationLedger } from './cultivationLedger';
@@ -11,6 +12,7 @@ export type CultivationProfileRecordSource = 'local' | 'local_claim' | 'verified
 export interface CultivationProfileRecord {
   id: string;
   rulesVersion: number;
+  balanceProfileId?: string | null;
   startedAt: string;
   endedAt: string | null;
   outcome: CultivationLedgerOutcome;
@@ -64,6 +66,7 @@ function stripTime(date: string): number {
 function mapLocalRecord(record: CultivationLedgerRecord): CultivationProfileRecord {
   return {
     ...record,
+    balanceProfileId: record.balanceProfileId ?? null,
     source: 'local',
     sourceLabel: record.outcome === 'active' ? '本机进行中' : '本机记录',
   };
@@ -73,6 +76,7 @@ function mapCloudRecord(record: CultivationLedgerEntry): CultivationProfileRecor
   return {
     id: record.local_game_id,
     rulesVersion: record.rules_version,
+    balanceProfileId: record.balance_profile_id ?? null,
     startedAt: record.started_at,
     endedAt: record.ended_at,
     outcome: record.outcome,
@@ -82,12 +86,10 @@ function mapCloudRecord(record: CultivationLedgerEntry): CultivationProfileRecor
   };
 }
 
-function toSummarySource(record: CultivationProfileRecord): Pick<
-  CultivationLedgerRecord,
-  'rulesVersion' | 'outcome' | 'finalScore'
-> {
+function toSummarySource(record: CultivationProfileRecord): CultivationLedgerSummarySource {
   return {
     rulesVersion: record.rulesVersion,
+    balanceProfileId: record.balanceProfileId,
     outcome: record.outcome,
     finalScore: record.finalScore,
   };
@@ -107,15 +109,20 @@ function findFirst(records: readonly CultivationProfileRecord[], predicate: (rec
   return sortRecords(records).find(predicate) ?? null;
 }
 
-function findBestCurrentRuleRecord(
+function findBestCurrentProfileRecord(
   records: readonly CultivationProfileRecord[],
+  currentProfileId: string | null | undefined,
   currentRulesVersion: number | null,
 ): CultivationProfileRecord | null {
-  if (currentRulesVersion === null) return null;
   let best: CultivationProfileRecord | null = null;
   for (const record of records) {
     if (record.outcome !== 'completed') continue;
-    if (record.rulesVersion !== currentRulesVersion) continue;
+    if (currentProfileId) {
+      const recProfile = record.balanceProfileId ?? `v${record.rulesVersion}_standard`;
+      if (recProfile !== currentProfileId) continue;
+    } else if (currentRulesVersion !== null) {
+      if (record.rulesVersion !== currentRulesVersion) continue;
+    }
     if (typeof record.finalScore !== 'number') continue;
     if (!best || record.finalScore > (best.finalScore ?? Number.NEGATIVE_INFINITY)) {
       best = record;
@@ -235,8 +242,9 @@ export function buildCultivationProfileSnapshot(
   cloudRecords: readonly CultivationLedgerEntry[] | null,
   currentRulesVersion: number | null,
   isAccountEstablished: boolean = true,
+  currentBalanceProfileId?: string | null,
 ): CultivationProfileSnapshot {
-  const localSummary = summarizeCultivationLedger(localRecords);
+  const localSummary = summarizeCultivationLedger(localRecords, currentBalanceProfileId);
   const cloudNormalized = cloudRecords?.map(mapCloudRecord) ?? null;
 
   // 账号优先边界：无论游客还是已立档玩家，账号档案（局数、修为、里程碑、走势与坚持度）均仅统计云端记录，本机试玩/未上云局绝不计入
@@ -245,14 +253,16 @@ export function buildCultivationProfileSnapshot(
     : [];
 
   const records = sortRecords(combinedRecords);
-  const combinedSummary = summarizeCultivationLedger(records.map(toSummarySource));
+  const combinedSummary = summarizeCultivationLedger(records.map(toSummarySource), currentBalanceProfileId);
   const cloudSummary = cloudRecords
     ? summarizeCultivationLedger(
         cloudRecords.map((record) => ({
           rulesVersion: record.rules_version,
+          balanceProfileId: record.balance_profile_id,
           outcome: record.outcome,
           finalScore: record.final_score,
         })),
+        currentBalanceProfileId,
       )
     : null;
 
@@ -265,9 +275,13 @@ export function buildCultivationProfileSnapshot(
   const firstStart = records.length > 0 ? records[0] ?? null : null;
   const firstCompletion = findFirst(records, (record) => record.outcome === 'completed');
   const completedCount = combinedSummary.completedGames;
-  const bestCurrentRuleRecord = findBestCurrentRuleRecord(records, currentRulesVersion);
+  const bestCurrentProfileRecord = findBestCurrentProfileRecord(
+    records,
+    currentBalanceProfileId,
+    currentRulesVersion,
+  );
 
-  const bestCurrentRuleScore = bestCurrentRuleRecord?.finalScore;
+  const bestCurrentRuleScore = bestCurrentProfileRecord?.finalScore;
 
   const milestones: CultivationProfileMilestone[] = [
     {
@@ -303,16 +317,14 @@ export function buildCultivationProfileSnapshot(
     },
     {
       key: 'current_rule_record',
-      title: '当前规则个人纪录',
-      detail: currentRulesVersion === null
-        ? '规则版本尚未就绪'
-        : `只统计当前规则 V${currentRulesVersion} 的完成局，不和旧规则混比`,
+      title: '当前境界个人最佳',
+      detail: '只统计当前修行周期的完成局，不和历史参数混比',
       progress: typeof bestCurrentRuleScore === 'number'
         ? `最好 ${bestCurrentRuleScore.toFixed(1)} 修为`
-        : '当前规则暂无完成局',
-      achievedAt: bestCurrentRuleRecord?.endedAt ?? bestCurrentRuleRecord?.startedAt ?? null,
-      sourceLabel: bestCurrentRuleRecord?.sourceLabel ?? '当前规则',
-      achieved: Boolean(bestCurrentRuleRecord),
+        : '当前周期暂无完成局',
+      achievedAt: bestCurrentProfileRecord?.endedAt ?? bestCurrentProfileRecord?.startedAt ?? null,
+      sourceLabel: bestCurrentProfileRecord?.sourceLabel ?? '当前修为',
+      achieved: Boolean(bestCurrentProfileRecord),
     },
   ];
 

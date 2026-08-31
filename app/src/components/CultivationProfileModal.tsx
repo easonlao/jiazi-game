@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { CURRENT_RULES_VERSION } from '@core/index';
+import { CURRENT_RULES_VERSION, getDefaultBalanceProfileForRules, EA_DEFAULT_BALANCE_PROFILE } from '@core/index';
 import { useGameStore } from '../store';
 import {
   buildCultivationProfileSnapshot,
@@ -168,6 +168,12 @@ export function CultivationProfileModal() {
   }, [open, close]);
 
   const currentRulesVersion = turnManager?.getRulesVersion() ?? CURRENT_RULES_VERSION;
+  const currentBalanceProfileId =
+    turnManager?.getBalanceProfileId() ??
+    telemetryState?.activeCloudSession?.rules_snapshot?.balanceProfileId ??
+    telemetryState?.assignedBalanceProfileId ??
+    getDefaultBalanceProfileForRules(currentRulesVersion)?.profileId ??
+    EA_DEFAULT_BALANCE_PROFILE.profileId;
   const cloudRecords = telemetryState?.cultivationLedger?.records ?? null;
   const cloudError = telemetryState?.cultivationLedgerError ?? null;
   const identity = telemetryState?.identity ?? null;
@@ -180,8 +186,14 @@ export function CultivationProfileModal() {
   const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
 
   const profile = useMemo(
-    () => buildCultivationProfileSnapshot(localRecords, cloudRecords, currentRulesVersion, hasCloudIdentity),
-    [localRecords, cloudRecords, currentRulesVersion, hasCloudIdentity],
+    () => buildCultivationProfileSnapshot(
+      localRecords,
+      cloudRecords,
+      currentRulesVersion,
+      hasCloudIdentity,
+      currentBalanceProfileId,
+    ),
+    [localRecords, cloudRecords, currentRulesVersion, hasCloudIdentity, currentBalanceProfileId],
   );
 
   const pendingTerminations = useMemo(() => {
@@ -192,13 +204,13 @@ export function CultivationProfileModal() {
 
   if (!open) return null;
 
-  const currentRuleSummary = profile.combinedSummary.byRulesVersion.find(
-    (group) => group.rulesVersion === currentRulesVersion,
-  ) ?? null;
-  const otherRuleSummaries = profile.combinedSummary.byRulesVersion.filter(
-    (group) => group.rulesVersion !== currentRulesVersion,
-  );
-  const currentRuleRecentRecords = profile.records.filter((record) => record.rulesVersion === currentRulesVersion);
+  // 当前修为表现：严格按当前平衡档案聚合（绝不退回按规则版本混入其他试验档案分数）
+  const currentProfileSummary = profile.combinedSummary.currentProfileSummary ?? null;
+
+  const currentProfileRecentRecords = profile.records.filter((record) => {
+    return (record.balanceProfileId ?? `v${record.rulesVersion}_standard`) === currentBalanceProfileId;
+  });
+
   const nextMilestone = profile.milestones.find((milestone) => !milestone.achieved) ?? null;
   const playerName = identity?.display_name && identity.display_name !== '玩家' ? identity.display_name : '你';
   const totalGames = profile.combinedSummary.totalGames;
@@ -266,10 +278,10 @@ export function CultivationProfileModal() {
 
         {/* 滚动内容区 */}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-5 overscroll-contain">
-          {/* 成长总览 */}
+          {/* 修行历程总览 */}
           <section className="rounded-[22px] sm:rounded-[24px] bg-ink px-4 py-4 text-parchment shadow-[0_12px_26px_rgba(74,48,33,0.2)]">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-parchment/75">已走过</p>
+              <p className="text-xs text-parchment/75">修行历程 · 累计走过</p>
               <span className="text-[10px] text-parchment/60 font-mono">
                 {hasCloudIdentity ? '账号档案' : '本机试玩'}
               </span>
@@ -307,46 +319,10 @@ export function CultivationProfileModal() {
             )}
           </section>
 
-          {/* 这套玩法的成绩 */}
-          <section>
-            <SectionHeading title="这套玩法的成绩" description="只和相同玩法下的自己比较。" />
-            <div className="mt-2.5 rounded-[22px] sm:rounded-[24px] border border-wood-light bg-white/85 p-3.5 shadow-sm">
-              {currentRuleSummary ? (
-                <>
-                  <ScoreMetric label="目前最佳修为" value={formatScore(currentRuleSummary.highestScore)} featured />
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <ScoreMetric label="平均修为" value={formatScore(currentRuleSummary.averageScore)} />
-                    <ScoreMetric label="最低修为" value={formatScore(currentRuleSummary.lowestScore)} />
-                  </div>
-                  <p className="mt-3 text-center text-[11px] text-ink-light">已完成 {currentRuleSummary.completedGames} 局（当前规则 V{currentRulesVersion}）</p>
-                </>
-              ) : (
-                <div className="rounded-2xl bg-[#FBF8F0] px-4 py-5 text-center">
-                  <p className="font-serif text-sm font-bold text-ink">第一局完整结束后，这里会留下你的最好成绩。</p>
-                  <p className="mt-1 text-xs leading-relaxed text-ink-light">每种玩法会分开计算，成绩只和同一套规则下的自己比较。</p>
-                </div>
-              )}
-
-              {/* 历史其他规则集标签 */}
-              {otherRuleSummaries.length > 0 && (
-                <div className="mt-3 border-t border-wood-light/50 pt-2.5">
-                  <p className="text-[11px] text-ink-light mb-1.5">历史规则成绩：</p>
-                  <div className="flex flex-wrap gap-1.5 text-[10px] text-ink-light">
-                    {otherRuleSummaries.map((group) => (
-                      <span key={group.rulesVersion} className="rounded-full border border-wood-light bg-parchment px-2.5 py-1 tabular-nums">
-                        {`V${group.rulesVersion} ${group.completedGames} 完成 · 均 ${group.averageScore?.toFixed(1) ?? '—'} · 最优 ${group.highestScore?.toFixed(1) ?? '—'}`}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
           {/* 修行坚持度与心性 */}
           <section>
             <SectionHeading
-              title="修行坚持度"
+              title="道心坚持"
               description="专注走完一甲子，反映修行的心性与专注度；暂停与继续中不降低数值。"
             />
             <div className="mt-2.5 rounded-[22px] sm:rounded-[24px] border border-wood-light bg-white/85 p-3.5 shadow-sm">
@@ -389,10 +365,34 @@ export function CultivationProfileModal() {
             </div>
           </section>
 
+          {/* 当前修为表现 */}
+          <section>
+            <SectionHeading title="当前修为" description="只和相同玩法下的自己比较，专注当前的修行领悟。" />
+            <div className="mt-2.5 rounded-[22px] sm:rounded-[24px] border border-wood-light bg-white/85 p-3.5 shadow-sm">
+              {currentProfileSummary && currentProfileSummary.completedGames > 0 ? (
+                <>
+                  <ScoreMetric label="目前最佳修为" value={formatScore(currentProfileSummary.highestScore)} featured />
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <ScoreMetric label="平均修为" value={formatScore(currentProfileSummary.averageScore)} />
+                    <ScoreMetric label="最低修为" value={formatScore(currentProfileSummary.lowestScore)} />
+                  </div>
+                  <p className="mt-3 text-center text-[11px] text-ink-light">
+                    当前玩法下已完成 {currentProfileSummary.completedGames} 局
+                  </p>
+                </>
+              ) : (
+                <div className="rounded-2xl bg-[#FBF8F0] px-4 py-5 text-center">
+                  <p className="font-serif text-sm font-bold text-ink">第一局完整结束后，这里会留下你的最好成绩。</p>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-light">成绩只和同一玩法下的自己比较。</p>
+                </div>
+              )}
+            </div>
+          </section>
+
           {/* 最近成绩走势 */}
           <section>
-            <SectionHeading title="最近修为走势" description="只看当前玩法，避免不同规则的成绩混在一起。" />
-            <RecentScoreTrend records={currentRuleRecentRecords} />
+            <SectionHeading title="最近修为走势" description="只展示当前玩法下的走势，记录近期的修行状态。" />
+            <RecentScoreTrend records={currentProfileRecentRecords} />
           </section>
 
           {/* 修行印记 */}
@@ -568,7 +568,7 @@ export function CultivationProfileModal() {
           <div className="pt-1 pb-2">
             <button
               onClick={close}
-              className="w-full py-2.5 rounded-xl border border-wood-mid bg-white/90 text-ink text-xs font-serif font-bold hover:bg-wood-light transition-colors active:scale-95 shadow-sm"
+              className="w-full py-2.5 rounded-xl border border-wood-mid bg-white/90 text-ink text-xs font-serif font-bold hover:bg-wood-light transition-colors active:scale-95 shadow-sm cursor-pointer"
             >
               返回开始页
             </button>

@@ -61,6 +61,7 @@ export interface SessionUpsert {
   rounds_completed: number;
   final_score: number;
   rules_version: string;
+  balance_profile_id?: string;
   game_mode: string;
   app_version: string;
   consent_version: string;
@@ -116,6 +117,8 @@ export interface CloudLeaderboardEntry {
   display_name: string;
   score: number;
   date: string;
+  rules_version?: string;
+  balance_profile_id?: string;
 }
 
 export type CultivationLedgerRecordSource = 'local_claim' | 'verified_session';
@@ -125,6 +128,7 @@ export interface CultivationLedgerEntry {
   local_game_id: string;
   game_session_id: string | null;
   rules_version: number;
+  balance_profile_id?: string | null;
   started_at: string;
   ended_at: string | null;
   outcome: Exclude<CultivationLedgerRecord['outcome'], 'active'>;
@@ -178,9 +182,11 @@ export interface AnalyticsBackend {
   upsertSession(playerId: string, session: SessionUpsert): Promise<void>;
   startVerifiedSession(playerId: string, meta: SessionUpsert): Promise<VerifiedSessionStartResult>;
   submitVerifiedScore(playerId: string, submission: VerifiedScoreSubmission): Promise<VerifiedScoreOutcome>;
-  fetchLeaderboard(limit?: number, rulesVersion?: string): Promise<CloudLeaderboardEntry[]>;
+  fetchLeaderboard(limit?: number, rulesVersion?: string, balanceProfileId?: string): Promise<CloudLeaderboardEntry[]>;
   fetchActiveGameSession(playerId: string): Promise<CloudActiveGameSession | null>;
   fetchCultivationLedger(playerId: string): Promise<CultivationLedgerSnapshot>;
+  /** 鉴权查询服务端当前为该玩家分配的平衡档案标识 */
+  fetchAssignedBalanceProfile(playerId: string): Promise<string | null>;
   /** 服务端重放验证受损对局并执行免惩罚恢复 */
   recoverCorruptedSession(
     sessionId: string,
@@ -303,12 +309,16 @@ function parseCultivationLedgerEntry(data: unknown): CultivationLedgerEntry | nu
   const ended_at = data.ended_at === null
     ? null
     : requireString(data.ended_at, 'ended_at');
+  const balance_profile_id = typeof data.balance_profile_id === 'string'
+    ? data.balance_profile_id
+    : null;
   if (game_session_id === undefined || ended_at === undefined) return null;
   return {
     player_id,
     local_game_id,
     game_session_id,
     rules_version,
+    balance_profile_id,
     started_at,
     ended_at,
     outcome,
@@ -585,7 +595,6 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
           client_session_id: meta.session_id,
           app_version: meta.app_version,
           consent_version: meta.consent_version,
-          requested_rules_version: meta.rules_version,
         },
       });
 
@@ -672,11 +681,12 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     };
   }
 
-  async fetchLeaderboard(limit = 50, rulesVersion?: string): Promise<CloudLeaderboardEntry[]> {
+  async fetchLeaderboard(limit = 50, rulesVersion?: string, balanceProfileId?: string): Promise<CloudLeaderboardEntry[]> {
     let query = this.client
       .from('leaderboard_entries')
-      .select('public_player_id, score, created_at');
+      .select('public_player_id, score, created_at, rules_version, balance_profile_id');
     if (rulesVersion) query = query.eq('rules_version', rulesVersion);
+    if (balanceProfileId) query = query.eq('balance_profile_id', balanceProfileId);
     const { data, error } = await query.order('score', { ascending: false }).limit(limit);
     if (error) throw normalizeError(error);
     if (!Array.isArray(data)) return [];
@@ -713,7 +723,13 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
       }
     }
     return data.flatMap((row) => {
-      const r = row as { public_player_id?: unknown; score?: unknown; created_at?: unknown };
+      const r = row as {
+        public_player_id?: unknown;
+        score?: unknown;
+        created_at?: unknown;
+        rules_version?: unknown;
+        balance_profile_id?: unknown;
+      };
       const public_player_id = String(r.public_player_id ?? '');
       const profile = profilesByPublicId.get(public_player_id);
       // Hide legacy rows created before the username gate, even if they remain
@@ -725,6 +741,8 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
         display_name: profile.display_name,
         score: Number(r.score ?? 0),
         date: String(r.created_at ?? ''),
+        rules_version: typeof r.rules_version === 'string' ? r.rules_version : undefined,
+        balance_profile_id: typeof r.balance_profile_id === 'string' ? r.balance_profile_id : undefined,
       };
     });
   }
@@ -806,7 +824,7 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
   async fetchCultivationLedger(playerId: string): Promise<CultivationLedgerSnapshot> {
     const { data, error } = await this.client
       .from('cultivation_ledger_entries')
-      .select('player_id, local_game_id, game_session_id, rules_version, started_at, ended_at, outcome, final_score, record_source, created_at, updated_at')
+      .select('player_id, local_game_id, game_session_id, rules_version, balance_profile_id, started_at, ended_at, outcome, final_score, record_source, created_at, updated_at')
       .eq('player_id', playerId)
       .order('started_at', { ascending: false });
     if (error) throw normalizeError(error);
@@ -816,7 +834,22 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
     };
   }
 
-
+  async fetchAssignedBalanceProfile(_playerId: string): Promise<string | null> {
+    try {
+      const { data, error } = await this.client.functions.invoke('get-player-profile');
+      if (error) {
+        console.warn('[analyticsBackend] get-player-profile invoke failed', error);
+        return null;
+      }
+      if (data && typeof data.balance_profile_id === 'string') {
+        return data.balance_profile_id;
+      }
+      return null;
+    } catch (e) {
+      console.warn('[analyticsBackend] fetchAssignedBalanceProfile failed', e);
+      return null;
+    }
+  }
 }
 
 /**
@@ -882,6 +915,10 @@ export class NoopAnalyticsBackend implements AnalyticsBackend {
 
   async fetchCultivationLedger(): Promise<CultivationLedgerSnapshot> {
     return { records: [], summary: summarizeCultivationLedger([]) };
+  }
+
+  async fetchAssignedBalanceProfile(): Promise<string | null> {
+    return null;
   }
 
   async recoverCorruptedSession(): Promise<{ success: boolean; error?: string; isConflict?: boolean }> {

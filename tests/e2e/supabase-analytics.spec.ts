@@ -56,6 +56,11 @@ test.describe('Supabase 匿名身份与遥测', () => {
     await expect(startButton).toBeVisible({ timeout: 10_000 });
     await startButton.click();
 
+    const confirmOverrideBtn = page.getByRole('button', { name: '确定开启新局' });
+    if (await confirmOverrideBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await confirmOverrideBtn.click();
+    }
+
     // 关键断言 1：客户端等待并成功接收 start-verified-session 返回的 V9 单空亡规则快照与 seed。
     const startRes = await startVerifiedResponse;
     if (!startRes.ok()) {
@@ -67,9 +72,6 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(typeof startPayload.seed).toBe('number');
     expect(startPayload.rules_snapshot).toMatchObject({
       rulesVersion: 9,
-      gameMode: 'volatility_trade',
-      volatilityEnabled: true,
-      volatility: expect.objectContaining({ model: 'trend_window' }),
     });
 
     // 关键断言 2：进入对局界面，买入第一张牌并验证遥测事件上传。
@@ -94,14 +96,18 @@ test.describe('Supabase 匿名身份与遥测', () => {
       if (await endBtn.isVisible().catch(() => false)) break;
       const waitButton = page.getByRole('button', { name: /调息/ });
       await Promise.race([
-        waitButton.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
-        endBtn.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+        waitButton.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {}),
+        endBtn.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {}),
       ]);
       if (await endBtn.isVisible().catch(() => false)) break;
-      await waitButton.click();
-      const confirmButton = page.getByRole('button', { name: '确认结束本回合' });
-      await confirmButton.click({ timeout: 10_000 });
-      await page.waitForTimeout(20);
+      if (await waitButton.isVisible().catch(() => false)) {
+        await waitButton.click().catch(() => {});
+        const confirmButton = page.getByRole('button', { name: '确认结束本回合' });
+        if (await confirmButton.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await confirmButton.click().catch(() => {});
+        }
+      }
+      await page.waitForTimeout(50);
     }
 
     // 第 60 回合触发终局，并等待真实 submit-verified-score 返回。

@@ -99,6 +99,9 @@ const validators: Record<TelemetryEventType, Validator> = {
     if (!isShortString(raw.app_version)) return null;
     if (!isNumber(raw.consent_version) || !Number.isInteger(raw.consent_version)) return null;
     if (!isShortString(raw.platform)) return null;
+    const balance_profile_id = isShortString(raw.balance_profile_id) ? raw.balance_profile_id : undefined;
+    const experiment_id = isShortString(raw.experiment_id) ? raw.experiment_id : undefined;
+    const variant_id = isShortString(raw.variant_id) ? raw.variant_id : undefined;
     return {
       session_id: raw.session_id,
       rules_version: raw.rules_version,
@@ -107,6 +110,9 @@ const validators: Record<TelemetryEventType, Validator> = {
       app_version: raw.app_version,
       consent_version: raw.consent_version,
       platform: raw.platform,
+      ...(balance_profile_id ? { balance_profile_id } : {}),
+      ...(experiment_id ? { experiment_id } : {}),
+      ...(variant_id ? { variant_id } : {}),
     };
   },
   session_end: (raw) => {

@@ -156,11 +156,11 @@ test.describe('修行档案', () => {
     const modal = page.locator('.modal-backdrop').filter({ has: page.getByRole('dialog', { name: '归档修士的成长' }) });
     await expect(modal).toBeVisible();
     await expect(modal.getByText('已立档').first()).toBeVisible();
-    await expect(modal.getByText('已走过', { exact: true })).toBeVisible();
+    await expect(modal.getByText('修行历程 · 累计走过')).toBeVisible();
     await expect(modal.getByText('5 局', { exact: true })).toBeVisible();
-    await expect(modal.getByText('这套玩法的成绩', { exact: true })).toBeVisible();
+    await expect(modal.getByText('当前修为', { exact: true })).toBeVisible();
     await expect(modal.getByText('目前最佳修为', { exact: true })).toBeVisible();
-    await expect(modal.getByText('修行坚持度', { exact: true })).toBeVisible();
+    await expect(modal.getByText('道心坚持', { exact: true })).toBeVisible();
     await expect(modal.getByText('道心坚持度', { exact: true })).toBeVisible();
     await expect(modal.getByText('当前连续完整', { exact: true })).toBeVisible();
     await expect(modal.getByText('历史最高连续', { exact: true })).toBeVisible();
@@ -170,7 +170,7 @@ test.describe('修行档案', () => {
     await expect(modal.getByText('首次开局', { exact: true })).toBeVisible();
     await expect(modal.getByText('首次完成一甲子', { exact: true })).toBeVisible();
     await expect(modal.getByText('累计完成局数', { exact: true })).toBeVisible();
-    await expect(modal.getByText('当前规则个人纪录', { exact: true })).toBeVisible();
+    await expect(modal.getByText('当前境界个人最佳', { exact: true })).toBeVisible();
     await expect(modal.getByText('把成长带到其他设备', { exact: true })).toBeVisible();
     await expect(modal.getByText('已连接 · 自动同步')).toBeVisible();
     await expect(modal.getByRole('button', { name: /保存.*成长记录/ })).toHaveCount(0);
@@ -221,7 +221,7 @@ test.describe('修行档案', () => {
 
     const modal = page.locator('.modal-backdrop').filter({ has: page.getByRole('dialog', { name: '本机试玩成长' }) });
     await expect(modal).toBeVisible();
-    await expect(modal.getByText('已走过', { exact: true })).toBeVisible();
+    await expect(modal.getByText('修行历程 · 累计走过')).toBeVisible();
     await expect(modal.getByText('0 局').first()).toBeVisible();
     await expect(modal.getByText('完成立档（开启跨设备记录）')).toBeVisible();
     await expect(modal.getByRole('button', { name: '同意并生成玩家 ID' })).toBeVisible();

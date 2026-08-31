@@ -39,7 +39,7 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
     });
   });
 
-  it('requests the exact rules version and returns success when creating a verified session', async () => {
+  it('requests verified session with server authority and returns success', async () => {
     const invoke = vi.fn(async () => ({
       data: {
         session_id: 'verified-session',
@@ -65,7 +65,11 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith('start-verified-session', {
-      body: expect.objectContaining({ requested_rules_version: String(CURRENT_RULES_VERSION) }),
+      body: {
+        client_session_id: 'client-session',
+        app_version: '0.2.0',
+        consent_version: '1',
+      },
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -294,6 +298,7 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
         local_game_id: 'game-1',
         game_session_id: null,
         rules_version: 7,
+        balance_profile_id: null,
         started_at: '2026-08-10T00:00:00.000Z',
         ended_at: '2026-08-10T00:30:00.000Z',
         outcome: 'completed',
@@ -307,6 +312,7 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
         local_game_id: 'game-2',
         game_session_id: 'session-2',
         rules_version: 6,
+        balance_profile_id: null,
         started_at: '2026-08-11T00:00:00.000Z',
         ended_at: '2026-08-11T00:45:00.000Z',
         outcome: 'abandoned',
@@ -661,5 +667,51 @@ describe('SupabaseAnalyticsBackend recoverCorruptedSession & activeSession revis
       expect(result.error.message).toContain('Rules snapshot contract violation');
       expect(result.error.userMessage).toContain('异常');
     }
+  });
+
+  it('submits verified score and parses balance_profile_id response accurately', async () => {
+    const invoke = vi.fn(async () => ({
+      data: {
+        verified: true,
+        score: 310.5,
+        leaderboard_submitted: true,
+        rules_version: '9',
+        balance_profile_id: 'v9_ea_tuned',
+        rounds: 60,
+      },
+      error: null,
+    }));
+    const client = { functions: { invoke } } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const result = await backend.submitVerifiedScore('player-1', { session_id: 'session-123' });
+    expect(invoke).toHaveBeenCalledWith('submit-verified-score', {
+      body: {
+        session_id: 'session-123',
+        actions: undefined,
+      },
+    });
+    expect(result.verified).toBe(true);
+    expect(result.score).toBe(310.5);
+    expect(result.leaderboard_submitted).toBe(true);
+  });
+
+  it('fetchAssignedBalanceProfile queries get-player-profile edge function', async () => {
+    const invoke = vi.fn(async () => ({
+      data: {
+        player_id: 'player-1',
+        rules_version: 9,
+        balance_profile_id: 'v9_ea_tuned',
+        experiment_id: 'ea_v9_balance_test',
+        variant_id: 'treatment_tuned',
+      },
+      error: null,
+    }));
+    const client = { functions: { invoke } } as unknown as SupabaseClient;
+    const backend = new SupabaseAnalyticsBackend(client);
+
+    const profileId = await backend.fetchAssignedBalanceProfile('player-1');
+    expect(invoke).toHaveBeenCalledWith('get-player-profile');
+    expect(profileId).toBe('v9_ea_tuned');
   });
 });

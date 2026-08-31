@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useGameStore } from '../store';
 import type { CultivationLedgerSummary } from '../lib/cultivationLedger';
-import { CURRENT_RULES_VERSION } from '@core/index';
+import { CURRENT_RULES_VERSION, getDefaultBalanceProfileForRules, EA_DEFAULT_BALANCE_PROFILE } from '@core/index';
 
 interface StartScreenProps {
   turnManager: ReturnType<typeof useGameStore.getState>['turnManager'];
@@ -48,7 +48,14 @@ export function StartScreen({
   const hasCloudIdentity = Boolean(identity && consentGranted && telemetryEnabled);
   const playerName = identity?.display_name && identity.display_name !== '玩家' ? identity.display_name : '你';
   const totalGames = cultivationLedgerSummary.totalGames;
-  const currentRuleSummary = cultivationLedgerSummary.byRulesVersion.find((g) => g.rulesVersion === rulesVersion) ?? null;
+  const currentBalanceProfileId =
+    turnManager?.getBalanceProfileId() ??
+    telemetryState?.activeCloudSession?.rules_snapshot?.balanceProfileId ??
+    telemetryState?.assignedBalanceProfileId ??
+    getDefaultBalanceProfileForRules(rulesVersion)?.profileId ??
+    EA_DEFAULT_BALANCE_PROFILE.profileId;
+  const currentProfileSummary =
+    cultivationLedgerSummary.byBalanceProfile?.find((p) => p.profileId === currentBalanceProfileId) ?? null;
   const activeCloudSession = telemetryState?.activeCloudSession ?? null;
   const hasActiveCloudGame = Boolean(hasCloudIdentity && activeCloudSession && activeCloudSession.rounds_completed < 60);
   const hasContinuableGame = hasSave || hasActiveCloudGame;
@@ -113,8 +120,8 @@ export function StartScreen({
           <p className="mt-1 text-[11px] text-ink-light truncate">
             {hasCloudIdentity
               ? totalGames > 0
-                ? currentRuleSummary?.highestScore
-                  ? `最好 ${currentRuleSummary.highestScore.toFixed(1)} 修为 · 自动同步`
+                ? currentProfileSummary?.highestScore
+                  ? `最好 ${currentProfileSummary.highestScore.toFixed(1)} 修为 · 自动同步`
                   : `已走过 ${totalGames} 局 · 自动同步`
                 : '已立档 · 自动累计跨设备修行档案 →'
               : '未立档，对局仅供本机试玩；立档后可累计跨设备修行档案 →'}

@@ -711,3 +711,142 @@ describe('isLocalOnly 本地试玩存档兼容性与往返（GameSnapshot 字段
     expect(exported.isLocalOnly).toBeUndefined();
   });
 });
+
+describe('BalanceProfile 平衡档案存档兼容性与结算一致性（GameSnapshot 字段级扩展）', () => {
+  it('1. 旧存档缺失 balanceProfile 字段时安全回退到该 rulesVersion 的标准档案', async () => {
+    const legacySave = makeValidSnapshot({
+      rulesVersion: RULES_VERSION_CLEAN_POOL,
+      scoreRules: { holdBonus: 1.2, sellMultiplier: 6 },
+      scoreVolatility: {
+        remainingRounds: 2,
+        deltaByDiZhi: { 子: 1 },
+        model: 'trend_window',
+      },
+      branchRoll: createBranchRollState(new SeededRandomSource(42), 0),
+    });
+    delete legacySave.balanceProfileId;
+    delete legacySave.balanceProfileVersion;
+    delete legacySave.balanceConfig;
+
+    const tm = await makeTm();
+    expect(() => tm.importSnapshot(legacySave)).not.toThrow();
+    expect(tm.getBalanceProfileId()).toBe('v8_standard');
+    expect(tm.getBalanceProfileVersion()).toBe(1);
+    expect(tm.getBalanceConfig()).toBeDefined();
+
+    const exported = tm.exportSnapshot();
+    expect(exported.balanceProfileId).toBeUndefined();
+    expect(exported.balanceProfileVersion).toBeUndefined();
+  });
+
+  it('2. GameSaveService.load 遇到缺失字段或被篡改的 balanceProfile 时按坏档拒绝并清理', async () => {
+    const saveService = new GameSaveService();
+
+    // 2.1 携带 profileId 但缺失 balanceProfileVersion
+    const missingVersionSave = makeValidSnapshot({
+      rulesVersion: 9,
+      balanceProfileId: 'v9_standard',
+      // balanceProfileVersion is undefined
+      balanceConfig: { concentrationPremiumFactor: 1 } as any,
+    });
+    saveService.save(() => missingVersionSave);
+    const tm1 = await makeTm();
+    const load1 = saveService.load((data) => tm1.importSnapshot(data));
+    expect(load1).toBe(false);
+    expect(saveService.getLastLoadError()).toBe('invalid_or_import_failed');
+
+    // 2.2 携带 profileId 但缺失 balanceConfig
+    const missingConfigSave = makeValidSnapshot({
+      rulesVersion: 9,
+      balanceProfileId: 'v9_standard',
+      balanceProfileVersion: 1,
+      // balanceConfig is undefined
+    });
+    saveService.save(() => missingConfigSave);
+    const tm2 = await makeTm();
+    const load2 = saveService.load((data) => tm2.importSnapshot(data));
+    expect(load2).toBe(false);
+    expect(saveService.getLastLoadError()).toBe('invalid_or_import_failed');
+
+    // 2.3 携带未知 profileId
+    const unknownProfileSave = makeValidSnapshot({
+      rulesVersion: 9,
+      balanceProfileId: 'unknown_profile_xyz',
+      balanceProfileVersion: 1,
+      balanceConfig: { concentrationPremiumFactor: 1 } as any,
+    });
+    saveService.save(() => unknownProfileSave);
+    const tm3 = await makeTm();
+    const load3 = saveService.load((data) => tm3.importSnapshot(data));
+    expect(load3).toBe(false);
+    expect(saveService.getLastLoadError()).toBe('invalid_or_import_failed');
+
+    // 2.4 携带被篡改的 balanceConfig
+    const tamperedConfigSave = makeValidSnapshot({
+      rulesVersion: 9,
+      balanceProfileId: 'v9_standard',
+      balanceProfileVersion: 1,
+      balanceConfig: { concentrationPremiumFactor: 999 } as any,
+    });
+    saveService.save(() => tamperedConfigSave);
+    const tm4 = await makeTm();
+    const load4 = saveService.load((data) => tm4.importSnapshot(data));
+    expect(load4).toBe(false);
+    expect(saveService.getLastLoadError()).toBe('invalid_or_import_failed');
+  });
+
+  it('3. 携带合法 balanceProfile 读档后，继续进行回合操作并顺利结算，分值与逻辑保持一致', async () => {
+    const validProfile = (await import('../../src/core/BalanceProfile')).V9_STANDARD_PROFILE;
+    const snapshotWithProfile = makeValidSnapshot({
+      rulesVersion: 9,
+      scoreRules: { holdBonus: 1.2, sellMultiplier: 6 },
+      scoreVolatility: {
+        remainingRounds: 2,
+        deltaByDiZhi: { 子: 1 },
+        model: 'trend_window',
+      },
+      branchRoll: createBranchRollState(new SeededRandomSource(42), 0),
+      balanceProfileId: 'v9_standard',
+      balanceProfileVersion: 1,
+      balanceConfig: { ...validProfile.balanceConfig },
+      currentRound: 59,
+      qi: 100,
+      score: 300,
+      hand: [
+        {
+          cardId: 1,
+          buyScore: 10,
+          useLeverage: false,
+          leverage: 1,
+          buyRound: 1,
+          lockedQi: 10,
+          holdEarnings: 5,
+        },
+        null,
+        null,
+      ],
+    });
+
+    const saveService = new GameSaveService();
+    saveService.save(() => snapshotWithProfile);
+
+    const tm = await makeTm();
+    const loadOk = saveService.load((data) => tm.importSnapshot(data));
+    expect(loadOk).toBe(true);
+
+    expect(tm.getBalanceProfileId()).toBe('v9_standard');
+    expect(tm.getCurrentRound()).toBe(59);
+
+    // 读档后继续行动：卖出手中卡牌
+    const sellRes = tm.executeSell(0);
+    expect(sellRes).toBe(true);
+
+    // 等待推进到终局
+    const waitRes = tm.executeWait();
+    expect(waitRes).toBe(true);
+
+    expect(tm.getState()).toBe('game_over');
+    expect(tm.getScore()).toBeGreaterThan(0);
+    expect(tm.getRoundLog().length).toBeGreaterThan(0);
+  });
+});

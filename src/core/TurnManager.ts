@@ -1,6 +1,6 @@
 import { JiaziCard, Element, YinYang } from './JiaziCard.ts';
 import { CardDataBank } from './CardDataBank.ts';
-import { SeasonCycle, Season } from './SeasonCycle.ts';
+import { SeasonCycle, type Season } from './SeasonCycle.ts';
 import { QiManager } from './QiManager.ts';
 import {
   BALANCED_TRADE_SCORE_RULES,
@@ -13,8 +13,12 @@ import { LeverageCalculator } from './LeverageCalculator.ts';
 import { HandManager } from './HandManager.ts';
 import { HandSlot } from './HandSlot.ts';
 import { CardPoolManager } from './CardPoolManager.ts';
-import { BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
-import { MathRandomSource, RandomSource } from './RandomSource.ts';
+import { type BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
+import {
+  getBalanceProfileById,
+  getDefaultBalanceProfileForRules,
+} from './BalanceProfile.ts';
+import { MathRandomSource, type RandomSource } from './RandomSource.ts';
 import { calculateHoldingSettlement } from './SettlementPreviewCalculator.ts';
 import {
   GameSaveService,
@@ -403,6 +407,10 @@ export class TurnManager {
   private lastActionCard: LastActionCardInfo | null = null;
   /** 最近一次玩家行动发生的回合号（用于 roundLog 行动层） */
   private lastActionRound: number | null = null;
+  /** 平衡档案标识（持久化到存档快照与云端会话） */
+  private balanceProfileId: string | null = null;
+  /** 平衡档案版本 */
+  private balanceProfileVersion: number | null = null;
   /** 本地试玩/降级标记（持久化到存档快照） */
   private isLocalOnly: boolean = false;
 
@@ -447,6 +455,10 @@ export class TurnManager {
         /** 空亡 K 掷骰上限（缺省 8）。 */
         voidKMax?: number;
       };
+      /** 平衡档案标识 */
+      balanceProfileId?: string;
+      /** 平衡档案版本 */
+      balanceProfileVersion?: number;
     },
   ) {
     const balanceConfig = config ?? DEFAULT_BALANCE_CONFIG;
@@ -466,6 +478,9 @@ export class TurnManager {
     // 构造默认只决定"新局/模拟"的规则；读档后由 importSnapshot 按存档声明覆盖。
     this.rulesVersion = options?.rulesVersion
       ?? (this.scoreVolatilityConfig.enabled ? RULES_VERSION_VOLATILE : RULES_BASE);
+    const defaultProfile = getDefaultBalanceProfileForRules(this.rulesVersion);
+    this.balanceProfileId = options?.balanceProfileId ?? defaultProfile?.profileId ?? null;
+    this.balanceProfileVersion = options?.balanceProfileVersion ?? defaultProfile?.profileVersion ?? (this.balanceProfileId ? 1 : null);
     const defaultScoreRules = this.rulesVersion === RULES_VERSION_TRADE
       ? TRADE_SCORE_RULES
       : this.rulesVersion >= RULES_VERSION_BALANCED_TRADE
@@ -719,6 +734,21 @@ export class TurnManager {
   /** 当前实际生效的规则版本；读档后以存档声明为准。 */
   getRulesVersion(): SupportedRulesVersion {
     return this.rulesVersion;
+  }
+
+  /** 获取当前对局绑定的平衡档案 ID（若无则回退到该规则版本的默认标准档案）。 */
+  getBalanceProfileId(): string | null {
+    return this.balanceProfileId ?? getDefaultBalanceProfileForRules(this.rulesVersion)?.profileId ?? null;
+  }
+
+  /** 获取当前对局绑定的平衡档案版本号（若无则回退到该规则版本的默认标准档案版本）。 */
+  getBalanceProfileVersion(): number | null {
+    return this.balanceProfileVersion ?? getDefaultBalanceProfileForRules(this.rulesVersion)?.profileVersion ?? null;
+  }
+
+  /** 获取当前生效的平衡数值配置快照。 */
+  getBalanceConfig(): BalanceConfig {
+    return { ...this.balanceConfig };
   }
 
   /** 获取当前对局是否为本地试玩/降级局。 */
@@ -1731,6 +1761,9 @@ export class TurnManager {
       // V6 地支波动状态：仅 rulesVersion=6 时写入；V5 及以下为 undefined（协议不变形）。
       branchRoll: this.getBranchRollState() ?? undefined,
       voidCardCount: this.voidCardCount,
+      balanceProfileId: this.balanceProfileId ?? undefined,
+      balanceProfileVersion: this.balanceProfileVersion ?? undefined,
+      balanceConfig: this.balanceProfileId ? { ...this.balanceConfig } : undefined,
       isLocalOnly: this.isLocalOnly ? true : undefined,
     };
   }
@@ -2018,6 +2051,25 @@ export class TurnManager {
     this.voidTriggers = voidTriggers;
     this.voidSwallowedEvents = voidSwallowed;
     this.voidMaxK = voidMaxK;
+    if (data.balanceProfileId !== undefined) {
+      const profile = typeof data.balanceProfileId === 'string'
+        ? getBalanceProfileById(data.balanceProfileId)
+        : undefined;
+      const resolvedProfile = profile ?? getDefaultBalanceProfileForRules(this.rulesVersion);
+      this.balanceProfileId = resolvedProfile?.profileId ?? null;
+      this.balanceProfileVersion = resolvedProfile?.profileVersion ?? null;
+      if (data.balanceConfig && profile) {
+        Object.assign(this.balanceConfig, data.balanceConfig);
+      } else if (resolvedProfile) {
+        Object.assign(this.balanceConfig, resolvedProfile.balanceConfig);
+      }
+    } else {
+      this.balanceProfileId = null;
+      this.balanceProfileVersion = null;
+      if (data.balanceConfig) {
+        Object.assign(this.balanceConfig, data.balanceConfig);
+      }
+    }
     this.isLocalOnly = Boolean(data.isLocalOnly);
   }
 

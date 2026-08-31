@@ -71,7 +71,7 @@ describe('本机修行账本与 store 接线', () => {
 
   it('终局卖出路径会在 onGameEnd 统一完成账本记录，只记一次完成', async () => {
     const tm = await freshGame(21);
-    expect(useGameStore.getState().cultivationLedgerSummary).toEqual({
+    expect(useGameStore.getState().cultivationLedgerSummary).toMatchObject({
       totalGames: 1,
       completedGames: 0,
       abandonedGames: 0,
@@ -91,7 +91,7 @@ describe('本机修行账本与 store 接线', () => {
     useGameStore.getState().selectHandCard(0);
     expect(useGameStore.getState().executeSell()).toBe(true);
     expect(useGameStore.getState().gameState).toBe('game_over');
-    expect(useGameStore.getState().cultivationLedgerSummary).toEqual({
+    expect(useGameStore.getState().cultivationLedgerSummary).toMatchObject({
       totalGames: 1,
       completedGames: 1,
       abandonedGames: 0,

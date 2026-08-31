@@ -1,7 +1,7 @@
-import type { TurnManager } from './TurnManager';
-import type { HandSlot } from './HandSlot';
-import { Element, type JiaziCard } from './JiaziCard';
-import type { SettlementPreviewAction } from './TurnManager';
+import type { TurnManager } from './TurnManager.ts';
+import type { HandSlot } from './HandSlot.ts';
+import { Element, type JiaziCard } from './JiaziCard.ts';
+import type { SettlementPreviewAction } from './TurnManager.ts';
 
 export interface ProjectedHolding {
   name: string;

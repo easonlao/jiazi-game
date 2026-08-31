@@ -22,6 +22,9 @@ import {
   SINGLE_VOID_REPLAY_RULES,
   VOID_REPLAY_RULES,
   CURRENT_RULES_VERSION,
+  DEFAULT_BALANCE_CONFIG,
+  EA_DEFAULT_BALANCE_PROFILE,
+  getDefaultBalanceProfileForRules,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -172,8 +175,20 @@ function refreshCultivationLedgerOverview(set: StoreSetter, get: () => GameStore
   const cloudRecords = telemetry?.cultivationLedger?.records ?? null;
   const tm = get().turnManager;
   const currentRulesVersion = tm?.getRulesVersion() ?? CURRENT_RULES_VERSION;
+  const currentBalanceProfileId =
+    tm?.getBalanceProfileId() ??
+    telemetry?.activeCloudSession?.rules_snapshot?.balanceProfileId ??
+    telemetry?.assignedBalanceProfileId ??
+    getDefaultBalanceProfileForRules(currentRulesVersion)?.profileId ??
+    EA_DEFAULT_BALANCE_PROFILE.profileId;
 
-  const profile = buildCultivationProfileSnapshot(localRecords, cloudRecords, currentRulesVersion, hasCloudIdentity);
+  const profile = buildCultivationProfileSnapshot(
+    localRecords,
+    cloudRecords,
+    currentRulesVersion,
+    hasCloudIdentity,
+    currentBalanceProfileId,
+  );
 
   set({
     cultivationLedgerSummary: hasCloudIdentity ? profile.combinedSummary : profile.localSummary,
@@ -666,7 +681,8 @@ export function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get:
   });
   tm.setOnGameEnd((finalScore) => {
     set((s) => ({ tick: s.tick + 1 }));
-    const lb = new LeaderboardService(localStorageProvider, tm.getRulesVersion());
+    const currentProfileId = tm.getBalanceProfileId() ?? EA_DEFAULT_BALANCE_PROFILE.profileId;
+    const lb = new LeaderboardService(localStorageProvider, tm.getRulesVersion(), currentProfileId);
     lb.addEntry(finalScore);
     set({ leaderboardEntries: lb.getEntries() });
     // 记录本局结算展示锚点：云端校验回调只更新这个会话的记录，
@@ -1032,13 +1048,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const resolvedVoidCardCount = snapshotVoidCardCount !== undefined
           ? snapshotVoidCardCount
           : (snapshot.rulesVersion >= 5 ? 3 : 0);
-        const verifiedTm = new TurnManager(undefined, random, {
+        const baseBalanceConfig = snapshot.balanceConfig
+          ? { ...DEFAULT_BALANCE_CONFIG, ...snapshot.balanceConfig }
+          : undefined;
+        const verifiedTm = new TurnManager(baseBalanceConfig, random, {
           storage: localStorageProvider,
           rulesVersion: snapshot.rulesVersion,
           scoreRules: snapshot.scoreRules,
           volatility: snapshot.volatility,
           volatilityRandom: random,
           voidConfig: { voidCardCount: resolvedVoidCardCount },
+          balanceProfileId: snapshot.balanceProfileId,
+          balanceProfileVersion: snapshot.balanceProfileVersion,
         });
         await verifiedTm.initialize();
         if (!controller.startSession(getTelemetryGameMeta(verifiedTm), prepared)) {
@@ -1057,7 +1078,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         verifiedTm.setLocalOnly(false);
         set({ turnManager: verifiedTm });
         verifiedTm.startGame();
-        _cultivationLedger.startNewGame(verifiedTm.getRulesVersion(), prepared.session_id);
+        _cultivationLedger.startNewGame(verifiedTm.getRulesVersion(), prepared.session_id, verifiedTm.getBalanceProfileId());
         refreshCultivationLedgerOverview(set, get);
         get()._sync();
         set({
@@ -1083,7 +1104,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tm.reset();
       tm.startGame();
       if (!localOnly) {
-        _cultivationLedger.startNewGame(tm.getRulesVersion());
+        _cultivationLedger.startNewGame(tm.getRulesVersion(), undefined, tm.getBalanceProfileId());
         refreshCultivationLedgerOverview(set, get);
       }
       get()._sync();
@@ -1120,7 +1141,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ? snapshotVoidCardCount
       : (snapshot.rulesVersion >= 5 ? 3 : 0);
     const random = new SeededRandomSource(cloudSession.seed);
-    const tm = new TurnManager(undefined, random, {
+    const baseBalanceConfig = snapshot.balanceConfig
+      ? { ...DEFAULT_BALANCE_CONFIG, ...snapshot.balanceConfig }
+      : undefined;
+    const tm = new TurnManager(baseBalanceConfig, random, {
       storage: localStorageProvider,
       rulesVersion: snapshot.rulesVersion,
       scoreRules: snapshot.scoreRules,
@@ -1128,6 +1152,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       volatilityRandom: random,
       branchRollRandom: random,
       voidConfig: { voidCardCount: resolvedVoidCardCount },
+      balanceProfileId: snapshot.balanceProfileId,
+      balanceProfileVersion: snapshot.balanceProfileVersion,
     });
     await tm.initialize();
     bindTurnManagerCallbacks(tm, set, get);
@@ -1167,7 +1193,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     tm.saveGame();
-    _cultivationLedger.resumeActiveGame(tm.getRulesVersion(), cloudSession.session_id);
+    _cultivationLedger.resumeActiveGame(tm.getRulesVersion(), cloudSession.session_id, tm.getBalanceProfileId());
     refreshCultivationLedgerOverview(set, get);
 
     const verifiedStart = {
@@ -1302,7 +1328,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           hasSave: false,
         });
         if (!isLocalOnly) {
-          _cultivationLedger.resumeActiveGame(tm.getRulesVersion());
+          _cultivationLedger.resumeActiveGame(tm.getRulesVersion(), undefined, tm.getBalanceProfileId());
           refreshCultivationLedgerOverview(set, get);
         }
         // 关键防护：页面刷新后若 controller 内部尚未重绑 session，在此尝试根据已缓存的 activeCloudSession 重绑（仅限非本地试玩局）
@@ -1377,9 +1403,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   openLeaderboard() {
+    const currentRulesVersion = get().turnManager?.getRulesVersion() ?? CURRENT_RULES_VERSION;
+    const telemetry = get().telemetryState;
+    const currentProfileId =
+      get().turnManager?.getBalanceProfileId() ??
+      telemetry?.activeCloudSession?.rules_snapshot?.balanceProfileId ??
+      telemetry?.assignedBalanceProfileId ??
+      getDefaultBalanceProfileForRules(currentRulesVersion)?.profileId ??
+      EA_DEFAULT_BALANCE_PROFILE.profileId;
     const lb = new LeaderboardService(
       localStorageProvider,
-      get().turnManager?.getRulesVersion() ?? CURRENT_RULES_VERSION,
+      currentRulesVersion,
+      currentProfileId,
     );
     set({ leaderboardEntries: lb.getEntries(), leaderboardOpen: true });
   },
@@ -1411,15 +1446,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
 
 
-  async refreshCloudLeaderboard() {
+  async refreshCloudLeaderboard(rulesVersion?: string, balanceProfileId?: string) {
     const controller = _telemetryController;
     if (!controller) return;
     const requestId = _leaderboardRefreshGate.begin();
     set({ cloudLeaderboardStatus: 'loading', cloudLeaderboardError: null });
     try {
+      const tm = get().turnManager;
+      const telemetry = get().telemetryState;
+      const targetRulesVersion = rulesVersion ?? String(tm?.getRulesVersion?.() ?? CURRENT_RULES_VERSION);
+      const currentRulesNum = Number(targetRulesVersion) || CURRENT_RULES_VERSION;
+      const targetBalanceProfileId =
+        balanceProfileId ??
+        tm?.getBalanceProfileId?.() ??
+        telemetry?.activeCloudSession?.rules_snapshot?.balanceProfileId ??
+        telemetry?.assignedBalanceProfileId ??
+        getDefaultBalanceProfileForRules(currentRulesNum)?.profileId ??
+        EA_DEFAULT_BALANCE_PROFILE.profileId;
       const entries = await controller.fetchLeaderboard(
         50,
-        String(CURRENT_RULES_VERSION),
+        targetRulesVersion,
+        targetBalanceProfileId,
       );
       if (!_leaderboardRefreshGate.isCurrent(requestId)) return;
       set({ cloudLeaderboard: entries, cloudLeaderboardStatus: 'ready', cloudLeaderboardError: null });

@@ -5,6 +5,7 @@ import {
 } from './GameSaveService.ts';
 import type { ScoreRules } from './ScoreManager.ts';
 import type { ScoreVolatilityConfig } from './ScoreVolatility.ts';
+import { type BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
 import { TurnManager, type GameState } from './TurnManager.ts';
 
 /** 玩家在一局游戏中提交给服务端的最小动作集合。 */
@@ -25,6 +26,12 @@ export interface ReplayRequest {
   voidCardCount?: number;
   /** 是否要求对局必须已完成 60 回合并进入 game_over。结算时为 true，进行中局受损校验时为 false。默认 true。 */
   requireCompleted?: boolean;
+  /** 平衡档案标识 */
+  balanceProfileId?: string;
+  /** 平衡档案版本 */
+  balanceProfileVersion?: number;
+  /** 平衡数值配置覆盖/快照 */
+  balanceConfig?: Partial<BalanceConfig>;
 }
 
 export interface ReplayResult {
@@ -123,7 +130,11 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
     : fallbackVoidCardCount;
 
   const random = new SeededRandomSource(request.seed);
-  const turnManager = new TurnManager(undefined, random, {
+  const baseBalanceConfig = request.balanceConfig
+    ? { ...DEFAULT_BALANCE_CONFIG, ...request.balanceConfig }
+    : undefined;
+
+  const turnManager = new TurnManager(baseBalanceConfig, random, {
     rulesVersion: request.rulesVersion,
     volatility: request.volatility,
     scoreRules: request.scoreRules,
@@ -131,6 +142,8 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
     // V6 地支波动：与服务端重放透传同一 seeded 源（客户端局 = 服务端重放同 roll）。
     branchRollRandom: random,
     voidConfig: { voidCardCount: replayVoidCardCount },
+    balanceProfileId: request.balanceProfileId,
+    balanceProfileVersion: request.balanceProfileVersion,
   });
 
   try {

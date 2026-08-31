@@ -1,4 +1,4 @@
-import { JiaziCard, JiaziCardData, Element, YinYang } from './JiaziCard.ts';
+import { JiaziCard, type JiaziCardData, Element, YinYang } from './JiaziCard.ts';
 import { VOID_CARD_COUNT, VOID_CARD_ID_START, VoidCard } from './VoidCard.ts';
 
 /** 卡牌数据银行 - 加载和管理所有甲子卡牌 */

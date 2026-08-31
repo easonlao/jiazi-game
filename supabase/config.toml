@@ -63,6 +63,10 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+[functions.get-player-profile]
+enabled = true
+verify_jwt = true
+
 [analytics]
 enabled = false
 

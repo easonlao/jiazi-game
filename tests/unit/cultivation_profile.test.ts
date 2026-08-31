@@ -108,7 +108,7 @@ describe('cultivation profile snapshot', () => {
       progress: '已完成 2 局',
     });
     expect(snapshot.milestones[3]).toMatchObject({
-      title: '当前规则个人纪录',
+      title: '当前境界个人最佳',
       achieved: true,
       sourceLabel: '云端校验',
       progress: '最好 120.4 修为',

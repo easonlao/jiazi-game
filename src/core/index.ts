@@ -65,6 +65,33 @@ export { HandSlot } from './HandSlot';
 export { DEFAULT_BALANCE_CONFIG, CANDIDATE_BALANCE_CONFIG } from './BalanceConfig';
 export type { BalanceConfig, LeverageTable } from './BalanceConfig';
 
+export {
+  V4_STANDARD_PROFILE,
+  V5_STANDARD_PROFILE,
+  V6_STANDARD_PROFILE,
+  V7_STANDARD_PROFILE,
+  V8_STANDARD_PROFILE,
+  V9_STANDARD_PROFILE,
+  EA_DEFAULT_BALANCE_PROFILE,
+  SUPPORTED_BALANCE_PROFILES,
+  getBalanceProfileById,
+  getDefaultBalanceProfileForRules,
+} from './BalanceProfile';
+export type { BalanceProfile, BalanceProfileId } from './BalanceProfile';
+
+export {
+  assignPlayerToExperiment,
+  hashStringToUnitInterval,
+  getActiveExperimentForRules,
+  validateExperimentConfig,
+  REGISTERED_EXPERIMENTS,
+} from './ExperimentAssignment';
+export type {
+  ExperimentConfig,
+  ExperimentVariant,
+  ExperimentAssignmentResult,
+} from './ExperimentAssignment';
+
 export { MathRandomSource, SeededRandomSource } from './RandomSource';
 export type { RandomSource } from './RandomSource';
 export {

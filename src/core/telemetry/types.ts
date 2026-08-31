@@ -51,6 +51,9 @@ export interface SessionStartPayload {
   app_version: string;
   consent_version: number;
   platform: string;
+  balance_profile_id?: string;
+  experiment_id?: string;
+  variant_id?: string;
 }
 
 export interface SessionEndPayload {

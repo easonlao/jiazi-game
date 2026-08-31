@@ -14,7 +14,15 @@
  * - 未获同意前队列关闭，事件直接丢弃。
  */
 
-import { CURRENT_RULES_VERSION, type ReplayAction, type StorageProvider } from '@core/index';
+import {
+  CURRENT_RULES_VERSION,
+  getDefaultBalanceProfileForRules,
+  getActiveExperimentForRules,
+  assignPlayerToExperiment,
+  EA_DEFAULT_BALANCE_PROFILE,
+  type ReplayAction,
+  type StorageProvider,
+} from '@core/index';
 import {
   TELEMETRY_CONSENT_VERSION,
   TelemetryQueue,
@@ -229,6 +237,8 @@ export interface TelemetryControllerState {
   activeCloudSession: CloudActiveGameSession | null;
   activeCloudSessionBusy: boolean;
   terminationConflict: TerminationConflict | null;
+  /** 经服务端/分流权威计算的当前玩家生效平衡档案标识 */
+  assignedBalanceProfileId: string | null;
 }
 
 export interface TelemetryControllerDeps {
@@ -368,9 +378,10 @@ export class TelemetryController {
     this.appVersion = deps.appVersion ?? APP_VERSION;
     this.onStateChange = deps.onStateChange;
     this.onVerificationChange = deps.onVerificationChange;
+    const initialIdentity = readIdentity(deps.storage);
     this.state = {
       consent: readConsent(deps.storage),
-      identity: readIdentity(deps.storage),
+      identity: initialIdentity,
       recovery_code: readSessionRecoveryCode(),
       telemetryEnabled: false,
       busy: false,
@@ -381,6 +392,7 @@ export class TelemetryController {
       activeCloudSession: null,
       activeCloudSessionBusy: false,
       terminationConflict: null,
+      assignedBalanceProfileId: null,
     };
     this.queue = new TelemetryQueue({
       storage: deps.storage,
@@ -494,7 +506,7 @@ export class TelemetryController {
     }
 
     try {
-      return await this.backend.startVerifiedSession(identity.player_id, {
+      const result = await this.backend.startVerifiedSession(identity.player_id, {
         session_id: newUuid(),
         started_at: new Date().toISOString(),
         status: 'started',
@@ -505,6 +517,10 @@ export class TelemetryController {
         app_version: this.appVersion,
         consent_version: String(this.state.consent.version),
       });
+      if (result.success && result.session.rules_snapshot?.balanceProfileId) {
+        this.setState({ assignedBalanceProfileId: result.session.rules_snapshot.balanceProfileId });
+      }
+      return result;
     } catch (e: any) {
       console.warn('[telemetry] verified session 准备失败，交由玩家决定是否本地开局', e);
       return {
@@ -537,7 +553,11 @@ export class TelemetryController {
       if (ok && this.state.identity) {
         await this.syncPendingTerminations();
         await this.verification.resumePending();
-        await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
+        await Promise.all([
+          this.refreshCultivationLedger(),
+          this.refreshActiveSession(),
+          this.refreshAssignedBalanceProfile(),
+        ]);
       }
       this.setState({ busy: false, error: ok ? null : '云端身份暂不可用，可继续本地游玩' });
     }
@@ -559,7 +579,11 @@ export class TelemetryController {
       else await this.provision(this.defaultDisplayName());
       await this.syncPendingTerminations();
       await this.verification.resumePending();
-      await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
+      await Promise.all([
+        this.refreshCultivationLedger(),
+        this.refreshActiveSession(),
+        this.refreshAssignedBalanceProfile(),
+      ]);
     } else {
       this.setState({ error: '云端服务暂不可用，可稍后重试' });
     }
@@ -593,10 +617,18 @@ export class TelemetryController {
       };
       writeIdentity(this.storage, identity);
       writeSessionRecoveryCode(result.recovery_code);
-      this.setState({ identity, recovery_code: result.recovery_code, error: null });
+      this.setState({
+        identity,
+        recovery_code: result.recovery_code,
+        error: null,
+      });
       void this.queue.flush();
       await this.syncPendingTerminations();
-      await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
+      await Promise.all([
+        this.refreshCultivationLedger(),
+        this.refreshActiveSession(),
+        this.refreshAssignedBalanceProfile(),
+      ]);
       return identity;
     } catch (e) {
       console.warn('[telemetry] provision 失败', e);
@@ -612,10 +644,18 @@ export class TelemetryController {
       const identity = await this.backend.recoverIdentity(recoveryCode.trim());
       writeIdentity(this.storage, identity);
       writeSessionRecoveryCode(null);
-      this.setState({ identity, recovery_code: null, error: null });
+      this.setState({
+        identity,
+        recovery_code: null,
+        error: null,
+      });
       void this.queue.flush();
       await this.syncPendingTerminations();
-      await Promise.all([this.refreshCultivationLedger(), this.refreshActiveSession()]);
+      await Promise.all([
+        this.refreshCultivationLedger(),
+        this.refreshActiveSession(),
+        this.refreshAssignedBalanceProfile(),
+      ]);
       return identity;
     } catch (e) {
       console.warn('[telemetry] recover 失败', e);
@@ -1198,9 +1238,9 @@ export class TelemetryController {
   }
 
   /** 读取云端排行榜（公开安全字段；娱乐榜，未认证）。 */
-  async fetchLeaderboard(limit = 50, rulesVersion?: string): Promise<CloudLeaderboardEntry[]> {
+  async fetchLeaderboard(limit = 50, rulesVersion?: string, balanceProfileId?: string): Promise<CloudLeaderboardEntry[]> {
     try {
-      return await this.backend.fetchLeaderboard(limit, rulesVersion);
+      return await this.backend.fetchLeaderboard(limit, rulesVersion, balanceProfileId);
     } catch (e) {
       console.warn('[telemetry] fetchLeaderboard 失败', e);
       return [];
@@ -1223,14 +1263,38 @@ export class TelemetryController {
         void this.syncPendingTerminations();
         return null;
       }
-      this.setState({
-        activeCloudSession: session,
-        activeCloudSessionBusy: false,
-      });
+      if (session?.rules_snapshot?.balanceProfileId) {
+        this.setState({
+          activeCloudSession: session,
+          activeCloudSessionBusy: false,
+          assignedBalanceProfileId: session.rules_snapshot.balanceProfileId,
+        });
+      } else {
+        this.setState({
+          activeCloudSession: session,
+          activeCloudSessionBusy: false,
+        });
+      }
       return session;
     } catch (e) {
       console.warn('[telemetry] fetchActiveGameSession failed', e);
       this.setState({ activeCloudSessionBusy: false });
+      return null;
+    }
+  }
+
+  /** 鉴权查询并刷新服务端为当前玩家持久化/分配的平衡档案标识（杜绝本地猜测）。 */
+  async refreshAssignedBalanceProfile(): Promise<string | null> {
+    const identity = this.state.identity;
+    if (!identity || !this.state.consent?.granted) return null;
+    try {
+      const profileId = await this.backend.fetchAssignedBalanceProfile(identity.player_id);
+      if (profileId) {
+        this.setState({ assignedBalanceProfileId: profileId });
+      }
+      return profileId;
+    } catch (e) {
+      console.warn('[telemetry] fetchAssignedBalanceProfile failed', e);
       return null;
     }
   }

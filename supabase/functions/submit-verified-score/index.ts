@@ -56,6 +56,9 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (sessionError) return json({ error: 'internal_error' }, 500);
   if (!session) return json({ error: 'session_not_found' }, 404);
+  const sessionProfileId = (session.rules_snapshot as { balanceProfileId?: string })?.balanceProfileId ?? null;
+  const sessionRulesVersion = session.rules_version;
+
   if (session.verified_at) {
     const { data: leaderboardEntry, error: leaderboardError } = await supabase
       .from('leaderboard_entries')
@@ -65,13 +68,9 @@ Deno.serve(async (req) => {
     if (leaderboardError) return json({ error: 'internal_error' }, 500);
     let leaderboardSubmitted = Boolean(leaderboardEntry);
     const verifiedScore = typeof session.final_score === 'number' ? session.final_score : null;
-    // 会话校验成功后若榜单插入曾瞬时失败，V4 重试必须补插；旧版本只读历史记录，不新增榜单。
-    if (
-      !leaderboardSubmitted &&
-      String(session.rules_version) === String(CURRENT_REPLAY_RULES.rulesVersion) &&
-      verifiedScore !== null &&
-      verifiedScore >= 0
-    ) {
+
+    // 会话校验成功后若榜单插入曾瞬时失败，重试必须补插（基于会话自身规则版本与平衡档案）；旧版本只读历史记录，不新增榜单。
+    if (!leaderboardSubmitted && verifiedScore !== null && verifiedScore >= 0) {
       const { data: profile, error: profileError } = await supabase
         .from('player_profiles')
         .select('public_player_id, leaderboard_eligible, display_name')
@@ -86,7 +85,8 @@ Deno.serve(async (req) => {
           .insert({
             public_player_id: profile.public_player_id,
             score: verifiedScore,
-            rules_version: String(CURRENT_REPLAY_RULES.rulesVersion),
+            rules_version: String(sessionRulesVersion),
+            balance_profile_id: sessionProfileId,
             session_id: session.id,
           });
         if (repairError && repairError.code !== '23505') {
@@ -100,7 +100,8 @@ Deno.serve(async (req) => {
       player_id: link.player_id,
       local_game_id: session.id,
       game_session_id: session.id,
-      rules_version: Number(session.rules_version),
+      rules_version: Number(sessionRulesVersion),
+      balance_profile_id: sessionProfileId,
       started_at: session.started_at,
       ended_at: session.verified_at,
       outcome: 'completed',
@@ -113,7 +114,8 @@ Deno.serve(async (req) => {
       verified: true,
       score: verifiedScore,
       leaderboard_submitted: leaderboardSubmitted,
-      rules_version: String(session.rules_version),
+      rules_version: String(sessionRulesVersion),
+      balance_profile_id: sessionProfileId,
       rounds: typeof session.rounds_completed === 'number' ? session.rounds_completed : 60,
     }, 200);
   }
@@ -137,17 +139,21 @@ Deno.serve(async (req) => {
     return json({ error: 'rules_version_not_supported' }, 422);
   }
 
+  const rulesSnapshot = session.rules_snapshot as ReplayRulesSnapshot;
   let replay;
   try {
     replay = await replayGame({
       seed: session.replay_seed,
       actions,
-      rulesVersion: session.rules_snapshot.rulesVersion,
-      volatility: session.rules_snapshot.volatility,
-      scoreRules: session.rules_snapshot.scoreRules,
-      voidCardCount: (session.rules_snapshot as { voidCardCount?: number }).voidCardCount !== undefined
-        ? (session.rules_snapshot as { voidCardCount?: number }).voidCardCount
-        : (session.rules_snapshot.rulesVersion >= 5 ? 3 : 0),
+      rulesVersion: rulesSnapshot.rulesVersion,
+      volatility: rulesSnapshot.volatility,
+      scoreRules: rulesSnapshot.scoreRules,
+      voidCardCount: (rulesSnapshot as { voidCardCount?: number }).voidCardCount !== undefined
+        ? (rulesSnapshot as { voidCardCount?: number }).voidCardCount
+        : (rulesSnapshot.rulesVersion >= 5 ? 3 : 0),
+      balanceProfileId: rulesSnapshot.balanceProfileId,
+      balanceProfileVersion: rulesSnapshot.balanceProfileVersion,
+      balanceConfig: rulesSnapshot.balanceConfig,
     });
   } catch (error) {
     if (error instanceof ReplayValidationError) {
@@ -193,9 +199,9 @@ Deno.serve(async (req) => {
       .insert({
         public_player_id: profile.public_player_id,
         score: finalScore,
-        // 榜单条目按会话自身规则版本落库（V4 会话恒为 '4'，与 CURRENT_REPLAY_RULES 一致；
-        // V5 会话落在 rules_version=5，后续按版本查询隔离）。
+        // 榜单条目按会话自身规则版本与平衡档案落库（支持按平衡档案隔离）。
         rules_version: String(session.rules_version),
+        balance_profile_id: rulesSnapshot.balanceProfileId ?? null,
         session_id: session.id,
       });
     if (leaderboardError && leaderboardError.code !== '23505') {
@@ -209,6 +215,7 @@ Deno.serve(async (req) => {
     local_game_id: session.id,
     game_session_id: session.id,
     rules_version: Number(session.rules_version),
+    balance_profile_id: rulesSnapshot.balanceProfileId ?? null,
     started_at: session.started_at,
     ended_at: verifiedAt,
     outcome: 'completed',
@@ -223,6 +230,7 @@ Deno.serve(async (req) => {
     score: finalScore,
     leaderboard_submitted: eligible,
     rules_version: String(session.rules_version),
+    balance_profile_id: (session.rules_snapshot as { balanceProfileId?: string })?.balanceProfileId,
     rounds: replay.rounds,
   }, 200);
 });
@@ -277,6 +285,7 @@ async function upsertCultivationLedgerEntry(
     local_game_id: string;
     game_session_id: string;
     rules_version: number;
+    balance_profile_id?: string | null;
     started_at: string;
     ended_at: string;
     outcome: 'completed';

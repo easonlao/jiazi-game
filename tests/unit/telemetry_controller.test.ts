@@ -68,6 +68,8 @@ function createBackend() {
       summary: summarizeCultivationLedger([]),
     })),
     fetchActiveGameSession: vi.fn(async () => null),
+    fetchAssignedBalanceProfile: vi.fn(async () => 'v9_standard'),
+    recoverCorruptedSession: vi.fn(async () => ({ success: true })),
   } satisfies AnalyticsBackend;
 }
 

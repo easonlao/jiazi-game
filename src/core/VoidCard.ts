@@ -1,4 +1,4 @@
-import { Element, JiaziCard, JiaziCardData, ScoreConfig, YinYang } from './JiaziCard.ts';
+import { Element, JiaziCard, type JiaziCardData, type ScoreConfig, YinYang } from './JiaziCard.ts';
 
 /** V5 空亡牌 ID 起点：60 张甲子牌（1-60）之后连续分配。 */
 export const VOID_CARD_ID_START = 61;

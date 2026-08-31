@@ -120,6 +120,9 @@ Deno.serve(async (req) => {
         voidCardCount: (session.rules_snapshot as { voidCardCount?: number }).voidCardCount !== undefined
           ? (session.rules_snapshot as { voidCardCount?: number }).voidCardCount
           : (session.rules_snapshot.rulesVersion >= 5 ? 3 : 0),
+        balanceProfileId: (session.rules_snapshot as { balanceProfileId?: string }).balanceProfileId,
+        balanceProfileVersion: (session.rules_snapshot as { balanceProfileVersion?: number }).balanceProfileVersion,
+        balanceConfig: (session.rules_snapshot as { balanceConfig?: any }).balanceConfig,
         requireCompleted: false,
       });
       // 若前缀重放完全成功且合法，证明进行中对局完全健康，非受损对局！

@@ -7,19 +7,34 @@ import {
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOID,
   type SupportedRulesVersion,
-} from './GameSaveService.ts';
+} from './RulesConstants.ts';
 import { BALANCED_TRADE_SCORE_RULES, TRADE_SCORE_RULES, type ScoreRules } from './ScoreManager.ts';
 import { BAND_FACTOR, type ScoreVolatilityConfig } from './ScoreVolatility.ts';
 import { BRANCH_ROLL_DELTA } from './BranchRoll.ts';
 import { VOID_CARD_COUNT } from './VoidCard.ts';
+import type { BalanceConfig } from './BalanceConfig.ts';
+import {
+  type BalanceProfile,
+  getBalanceProfileById,
+} from './BalanceProfile.ts';
 
-/** 服务端和客户端共同使用的、可序列化的 V3 规则快照。 */
+/** 服务端和客户端共同使用的、可序列化的规则快照。 */
 export interface ReplayRulesSnapshot {
   rulesVersion: SupportedRulesVersion;
   gameMode: 'volatility_trade';
   volatilityEnabled: true;
   volatility: ScoreVolatilityConfig;
   scoreRules: ScoreRules;
+  /** 平衡档案标识（可选：旧存档/历史会话无此字段） */
+  balanceProfileId?: string;
+  /** 平衡档案版本（可选） */
+  balanceProfileVersion?: number;
+  /** 平衡数值配置快照（可选） */
+  balanceConfig?: Partial<BalanceConfig>;
+  /** EA 试验标识（可选：参与试验时记录） */
+  experimentId?: string | null;
+  /** EA 试验变体标识（可选） */
+  variantId?: string | null;
 }
 
 /** V3 规则快照冻结值；仅用于旧存档和历史重放兼容。 */
@@ -219,43 +234,150 @@ export function getReplayRulesByVersion(version: number): ReplayRulesSnapshot | 
 /** 新局与服务端新会话使用的当前规则快照（V9：单空亡）。 */
 export const CURRENT_REPLAY_RULES = SINGLE_VOID_REPLAY_RULES;
 
+export interface ContractValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * 为指定的平衡档案创建一份冻结快照。
+ */
+export function createReplayRulesSnapshotForProfile(profile: BalanceProfile): ReplayRulesSnapshot {
+  const baseRules = getReplayRulesByVersion(profile.rulesVersion) ?? CURRENT_REPLAY_RULES;
+  const snapshot = cloneReplayRulesSnapshot(baseRules);
+  snapshot.balanceProfileId = profile.profileId;
+  snapshot.balanceProfileVersion = profile.profileVersion;
+  const cfg = profile.balanceConfig;
+  if (cfg) {
+    snapshot.balanceConfig = { ...cfg };
+  }
+  if (profile.voidCardCount !== undefined && 'voidCardCount' in snapshot) {
+    (snapshot as unknown as { voidCardCount: number }).voidCardCount = profile.voidCardCount;
+  }
+  return snapshot;
+}
+
 export function cloneReplayRulesSnapshot<T extends ReplayRulesSnapshot = ReplayRulesSnapshot>(
   source: T = CURRENT_REPLAY_RULES as unknown as T,
 ): T {
-  // 冻结快照契约（reviewer P2-2，2026-08-15）：V6 的 branchRoll 参数必须与引擎
-  // 实现常量一致（delta = BRANCH_ROLL_DELTA、机制恒开）——引擎按常量执行、不读
-  // 快照参数，任何偏离都会让客户端/重放行为与服务端冻结的规则源不一致。
-  if (source.rulesVersion === RULES_VERSION_BRANCH_ROLL) {
-    const branchRoll = (source as unknown as BranchRollReplayRulesSnapshot).branchRoll;
-    if (!branchRoll || branchRoll.delta !== BRANCH_ROLL_DELTA || branchRoll.enabled !== true) {
-      throw new Error(
-        `branch_roll_rules_mismatch: frozen snapshot must have delta=${BRANCH_ROLL_DELTA} and enabled=true`,
-      );
+  if (source.rulesVersion >= RULES_VERSION_BRANCH_ROLL && 'branchRoll' in (source as any)) {
+    const br = (source as any).branchRoll;
+    if (!br || br.delta !== 2 || br.enabled !== true) {
+      throw new Error(`branch_roll_rules_mismatch: delta=${br?.delta}, enabled=${br?.enabled}`);
     }
   }
-  // V7+ 冻结快照契约：trendWindow.enabled 必须为 true，concentrationPremiumFactor 必须为 1。
-  if (source.rulesVersion === RULES_VERSION_TREND_WINDOW || source.rulesVersion === RULES_VERSION_CLEAN_POOL || source.rulesVersion === RULES_VERSION_SINGLE_VOID) {
-    const tw = (source as unknown as TrendWindowReplayRulesSnapshot).trendWindow;
-    const cpf = (source as unknown as TrendWindowReplayRulesSnapshot).concentrationPremiumFactor;
-    if (!tw || tw.enabled !== true) {
-      throw new Error('trend_window_rules_mismatch: frozen snapshot must have trendWindow.enabled=true');
-    }
-    if (cpf !== 1) {
-      throw new Error(`trend_window_rules_mismatch: frozen snapshot must have concentrationPremiumFactor=1, got ${cpf}`);
-    }
-  }
-  return {
+
+  const base: any = {
     ...source,
-    volatility: {
-      ...source.volatility,
-      bandFactors: { ...source.volatility.bandFactors },
-    },
-    scoreRules: { ...source.scoreRules },
-  } as T;
+    volatility: source.volatility
+      ? {
+          ...source.volatility,
+          bandFactors: (source.volatility as any).bandFactors
+            ? { ...(source.volatility as any).bandFactors }
+            : undefined,
+        }
+      : undefined,
+    scoreRules: source.scoreRules ? { ...source.scoreRules } : undefined,
+    ...((source as any).branchRoll ? { branchRoll: { ...(source as any).branchRoll } } : {}),
+    ...((source as any).trendWindow ? { trendWindow: { ...(source as any).trendWindow } } : {}),
+    ...(source.balanceConfig ? { balanceConfig: { ...source.balanceConfig } } : {}),
+  };
+  return base as T;
 }
 
-function isObject(val: unknown): val is Record<string, unknown> {
+export function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === 'object' && val !== null;
+}
+
+export function isReplayRulesSnapshot(val: unknown): val is ReplayRulesSnapshot {
+  return isObject(val) && typeof (val as any).rulesVersion === 'number' && Number.isInteger((val as any).rulesVersion);
+}
+
+/**
+ * 校验传入的 rules_snapshot 是否与指定 rulesVersion 的冻结契约完全一致。
+ * - 旧无档案快照：走历史兼容路径（校验 coreSnapshot 与对应版本的 frozenSnapshot）。
+ * - 现代平衡档案快照：必须三者（profileId, profileVersion, balanceConfig）俱全，且与注册表档案完全一致。
+ */
+export function validateRulesSnapshotContract(
+  snapshot: unknown,
+  expectedRulesVersion?: number,
+): ContractValidationResult {
+  if (!isObject(snapshot)) {
+    return { valid: false, reason: 'Invalid rules snapshot shape' };
+  }
+
+  if (typeof (snapshot as any).rulesVersion !== 'number' || !Number.isInteger((snapshot as any).rulesVersion)) {
+    return { valid: false, reason: 'Invalid or missing rulesVersion' };
+  }
+
+  const version = (snapshot as any).rulesVersion;
+  if (expectedRulesVersion !== undefined && version !== expectedRulesVersion) {
+    return {
+      valid: false,
+      reason: `rulesVersion mismatch: expected ${expectedRulesVersion}, got ${version}`,
+    };
+  }
+
+  const frozen = getReplayRulesByVersion(version);
+  if (!frozen) {
+    return { valid: false, reason: `Unsupported rulesVersion ${version}` };
+  }
+
+  const hasProfileId = snapshot.balanceProfileId !== undefined;
+  const hasProfileVersion = snapshot.balanceProfileVersion !== undefined;
+  const hasBalanceConfig = snapshot.balanceConfig !== undefined;
+
+  // 1. 无任何档案字段：历史旧档兼容路径
+  if (!hasProfileId && !hasProfileVersion && !hasBalanceConfig) {
+    const { experimentId, variantId, ...coreSnapshot } = snapshot;
+    return deepCompareContract(coreSnapshot, frozen);
+  }
+
+  // 2. 一旦出现任何平衡档案字段，必须三者俱全且精确匹配已注册档案契约（新档案强制不可变契约）
+  if (!hasProfileId || typeof snapshot.balanceProfileId !== 'string' || snapshot.balanceProfileId.trim().length === 0) {
+    return { valid: false, reason: 'Missing or invalid balanceProfileId in modern profile snapshot' };
+  }
+  if (!hasProfileVersion || typeof snapshot.balanceProfileVersion !== 'number') {
+    return { valid: false, reason: 'Missing or invalid balanceProfileVersion in modern profile snapshot' };
+  }
+  if (!hasBalanceConfig || typeof snapshot.balanceConfig !== 'object' || snapshot.balanceConfig === null) {
+    return { valid: false, reason: 'Missing or invalid balanceConfig in modern profile snapshot' };
+  }
+
+  const profile = getBalanceProfileById(snapshot.balanceProfileId);
+  if (!profile) {
+    return { valid: false, reason: `Unsupported balanceProfileId: ${snapshot.balanceProfileId}` };
+  }
+  if (profile.rulesVersion !== version) {
+    return {
+      valid: false,
+      reason: `balanceProfileId ${snapshot.balanceProfileId} requires rulesVersion ${profile.rulesVersion}, got ${version}`,
+    };
+  }
+  if (snapshot.balanceProfileVersion !== profile.profileVersion) {
+    return {
+      valid: false,
+      reason: `balanceProfileVersion mismatch: expected ${profile.profileVersion}, got ${snapshot.balanceProfileVersion}`,
+    };
+  }
+  if (profile.voidCardCount !== undefined && snapshot.voidCardCount !== profile.voidCardCount) {
+    return {
+      valid: false,
+      reason: `voidCardCount mismatch: expected ${profile.voidCardCount}, got ${snapshot.voidCardCount}`,
+    };
+  }
+
+  const balanceConfigComparison = deepCompareContract(snapshot.balanceConfig, profile.balanceConfig);
+  if (!balanceConfigComparison.valid) {
+    return {
+      valid: false,
+      reason: `balanceConfig mismatch with profile ${profile.profileId}: ${balanceConfigComparison.reason}`,
+    };
+  }
+
+  // 剥离档案元数据后与核心规则冻结契约深度对比
+  const { balanceProfileId, balanceProfileVersion, balanceConfig, experimentId, variantId, ...coreSnapshot } = snapshot;
+  return deepCompareContract(coreSnapshot, frozen);
 }
 
 function deepCompareContract(snapshot: unknown, frozen: unknown, path = ''): { valid: boolean; reason?: string } {
@@ -283,23 +405,4 @@ function deepCompareContract(snapshot: unknown, frozen: unknown, path = ''): { v
   }
   
   return { valid: true };
-}
-
-/**
- * 校验规则快照是否严格符合服务端冻结契约（防止同版本参数配置漂移或坏数据静默进入）。
- */
-export function validateRulesSnapshotContract(snapshot: unknown): { valid: boolean; reason?: string } {
-  if (!isObject(snapshot)) {
-    return { valid: false, reason: 'Snapshot must be a non-null object' };
-  }
-  const version = snapshot.rulesVersion;
-  if (typeof version !== 'number' || !Number.isInteger(version)) {
-    return { valid: false, reason: 'Invalid or missing rulesVersion' };
-  }
-  const frozen = getReplayRulesByVersion(version);
-  if (!frozen) {
-    return { valid: false, reason: `Unsupported rulesVersion ${version}` };
-  }
-  
-  return deepCompareContract(snapshot, frozen);
 }

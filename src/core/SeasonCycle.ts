@@ -2,7 +2,7 @@
 /** 季节类型 */
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 
-import { MathRandomSource, RandomSource } from './RandomSource.ts';
+import { MathRandomSource, type RandomSource } from './RandomSource.ts';
 
 /**
  * V5 懒生成季长加权分布（mechanics.md §9 定稿，2026-08-13）：

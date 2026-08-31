@@ -1,5 +1,5 @@
 import { JiaziCard } from './JiaziCard.ts';
-import { MathRandomSource, RandomSource } from './RandomSource.ts';
+import { MathRandomSource, type RandomSource } from './RandomSource.ts';
 
 /**
  * 牌池管理器

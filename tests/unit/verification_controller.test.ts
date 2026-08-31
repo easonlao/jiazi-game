@@ -70,6 +70,10 @@ function makeBackend() {
     startVerifiedSession: vi.fn(async () => null as VerifiedSessionStart | null),
     submitVerifiedScore,
     fetchLeaderboard: vi.fn(async () => []),
+    fetchActiveGameSession: vi.fn(async () => null),
+    fetchCultivationLedger: vi.fn(async () => ({ records: [], summary: {} as any })),
+    fetchAssignedBalanceProfile: vi.fn(async () => null),
+    recoverCorruptedSession: vi.fn(async () => ({ success: true })),
   } satisfies AnalyticsBackend;
   return { backend, submitVerifiedScore };
 }

@@ -15,6 +15,7 @@ import type { RoundLogEntry } from './TurnManager.ts';
 import type { ScoreVolatilitySnapshot } from './ScoreVolatility.ts';
 import type { ScoreRules } from './ScoreManager.ts';
 import type { BranchRollState } from './BranchRoll.ts';
+import type { BalanceConfig } from './BalanceConfig.ts';
 
 /** 读档失败分类原因：GameSaveService.load 最近一次失败的原因（成功或尚未 load 时为 null）。 */
 export type GameSaveLoadError =
@@ -34,104 +35,37 @@ export type GameSaveLoadError =
  */
 export const CURRENT_SCHEMA_VERSION = 2;
 
-/**
- * 游戏规则语义版本（rulesVersion）：描述"这一局按哪套结算规则运行"
- * （评分模型 / 机制启用集，如是否启用季内评分波动）。
- * 阶段 1 只有 base 规则（无季内波动），产品默认路径只能产出本版本。
- */
-export const RULES_BASE = 1;
+import {
+  RULES_BASE,
+  RULES_VERSION_VOLATILE,
+  RULES_VERSION_TRADE,
+  RULES_VERSION_BALANCED_TRADE,
+  RULES_VERSION_VOID,
+  RULES_VERSION_BRANCH_ROLL,
+  RULES_VERSION_TREND_WINDOW,
+  RULES_VERSION_CLEAN_POOL,
+  RULES_VERSION_SINGLE_VOID,
+  CURRENT_RULES_VERSION,
+  type SupportedRulesVersion,
+  isSupportedRulesVersion,
+  isTradeRulesVersion,
+} from './RulesConstants.ts';
 
-/**
- * 预留的波动规则版本：季内评分波动规则集，波动模型冻结后启用。
- * 阶段 1 产品默认路径不产出该版本档（产品默认 base）；
- * 仅测试 / 显式实验模式（构造函数 volatility 开启 + volatilityRandom）
- * 可经 round-trip 验证其读档还原，见 tests/unit/score_volatility_save.test.ts。
- */
-export const RULES_VERSION_VOLATILE = 2;
-
-/** 交易主导波动规则：局部冲突波动 + 独立卖出收益倍率。 */
-export const RULES_VERSION_TRADE = 3;
-
-/** 平衡版交易规则：降低冲突牌波动与释灵倍率，并与 V3 排行榜隔离。 */
-export const RULES_VERSION_BALANCED_TRADE = 4;
-
-/**
- * 空亡规则（V5）：牌堆 63 张（60 甲子 + 3 空亡）、季节长度懒生成、双时钟时间吞噬。
- * 语义门控见 docs/mechanics.md §9（2026-08-13 定稿）。仅在 rulesVersion=5 时激活；
- * V1-V4 路径行为逐字节不变。2026-08-14 用户拍板：V5 为生产默认。
- */
-export const RULES_VERSION_VOID = 5;
-
-/**
- * 地支波动规则（V6）：V5 之上加地支波动一层——每季开始时给 12 个地支的藏干响应
- * 各 roll 一次偏移（δ=2 均匀），季内恒定、换季重掷（含空亡 K 步跨季），注入评分
- * 公式地支藏干分支项。语义门控见 docs/mechanics.md §10（2026-08-15 定稿）。
- * 仅在 rulesVersion=6 时激活；V5 及以下路径逐字节不变。生产默认翻转待票 05。
- */
-export const RULES_VERSION_BRANCH_ROLL = 6;
-
-/**
- * 趋势窗口波动规则（V7）：V6 之上加 trend_window 波动模型 + 集中度溢价。
- * 语义门控见 docs/mechanics.md §11。仅在 rulesVersion=7 时激活；
- * V6 及以下路径逐字节不变。
- */
-export const RULES_VERSION_TREND_WINDOW = 7 as const;
-
-/**
- * 完整牌池守恒规则（V8）：V7 之上规范锁定/解锁与自动解锁的牌池单向守恒与全周期唯一归属。
- * 生产默认翻转为 V8。
- */
-export const RULES_VERSION_CLEAN_POOL = 8 as const;
-
-/**
- * 单空亡平衡规则（V9）：保留 V8 的完整牌池守恒语义，将新局空亡牌数量降为 1 张。
- * 必须单独升版，避免改写 V8 冻结快照而使进行中的 V8 云端对局无法恢复或验证。
- */
-export const RULES_VERSION_SINGLE_VOID = 9 as const;
-
-/** 新局默认规则版本；旧存档仍按自身 rulesVersion 继续运行。 */
-export const CURRENT_RULES_VERSION = RULES_VERSION_SINGLE_VOID;
-
-/** 当前代码可解释的规则版本集合；存档层与引擎层共用，避免两处规则门控漂移。 */
-export type SupportedRulesVersion =
-  | typeof RULES_BASE
-  | typeof RULES_VERSION_VOLATILE
-  | typeof RULES_VERSION_TRADE
-  | typeof RULES_VERSION_BALANCED_TRADE
-  | typeof RULES_VERSION_VOID
-  | typeof RULES_VERSION_BRANCH_ROLL
-  | typeof RULES_VERSION_TREND_WINDOW
-  | typeof RULES_VERSION_CLEAN_POOL
-  | typeof RULES_VERSION_SINGLE_VOID;
-
-export function isSupportedRulesVersion(version: unknown): version is SupportedRulesVersion {
-  return version === RULES_BASE ||
-    version === RULES_VERSION_VOLATILE ||
-    version === RULES_VERSION_TRADE ||
-    version === RULES_VERSION_BALANCED_TRADE ||
-    version === RULES_VERSION_VOID ||
-    version === RULES_VERSION_BRANCH_ROLL ||
-    version === RULES_VERSION_TREND_WINDOW ||
-    version === RULES_VERSION_CLEAN_POOL ||
-    version === RULES_VERSION_SINGLE_VOID;
-}
-
-/**
- * 交易规则家族（V3/V4/V5/V6/V7/V8/V9）：携带"持仓收益 + 释灵倍率 + conflict_banded 季内波动"计分语义。
- * V5（空亡）继承 V4 计分——设计定案（一审 P1-①）；V6（地支波动）继承 V5 计分
- * 并在其上追加地支 roll 一层（mechanics.md §10）。
- */
-export function isTradeRulesVersion(
-  version: unknown,
-): version is typeof RULES_VERSION_TRADE | typeof RULES_VERSION_BALANCED_TRADE | typeof RULES_VERSION_VOID | typeof RULES_VERSION_BRANCH_ROLL | typeof RULES_VERSION_TREND_WINDOW | typeof RULES_VERSION_CLEAN_POOL | typeof RULES_VERSION_SINGLE_VOID {
-  return version === RULES_VERSION_TRADE ||
-    version === RULES_VERSION_BALANCED_TRADE ||
-    version === RULES_VERSION_VOID ||
-    version === RULES_VERSION_BRANCH_ROLL ||
-    version === RULES_VERSION_TREND_WINDOW ||
-    version === RULES_VERSION_CLEAN_POOL ||
-    version === RULES_VERSION_SINGLE_VOID;
-}
+export {
+  RULES_BASE,
+  RULES_VERSION_VOLATILE,
+  RULES_VERSION_TRADE,
+  RULES_VERSION_BALANCED_TRADE,
+  RULES_VERSION_VOID,
+  RULES_VERSION_BRANCH_ROLL,
+  RULES_VERSION_TREND_WINDOW,
+  RULES_VERSION_CLEAN_POOL,
+  RULES_VERSION_SINGLE_VOID,
+  CURRENT_RULES_VERSION,
+  type SupportedRulesVersion,
+  isSupportedRulesVersion,
+  isTradeRulesVersion,
+};
 
 /** 可序列化的手牌槽位快照。 */
 export interface HandSlotSnapshot {
@@ -205,11 +139,18 @@ export interface GameSnapshot {
   branchRoll?: BranchRollState;
   /** 每局固化的空亡牌数量。新档写入当前局数值；旧档缺失时按 rulesVersion 安全回退（V5/V6/V7 回退 3）。 */
   voidCardCount?: number;
+  /** 平衡档案标识（可选：老存档无此字段，读档时按历史兼容规则回退） */
+  balanceProfileId?: string;
+  /** 平衡档案版本（可选） */
+  balanceProfileVersion?: number;
+  /** 平衡数值配置快照（可选） */
+  balanceConfig?: Partial<BalanceConfig>;
   /** 本地试玩/降级局标记：若为 true 则该存档属于本地试玩，读档时不恢复账号修行账本。 */
   isLocalOnly?: boolean;
 }
 
 const SAVE_KEY = 'jiazi_game_save';
+import { getBalanceProfileById } from './BalanceProfile.ts';
 
 /**
  * 存档服务：负责持久化读写、格式校验与坏档清理。
@@ -292,6 +233,55 @@ export class GameSaveService {
           `[GameSaveService] 存档 rulesVersion=${data.rulesVersion} 不是支持的规则版本，拒绝读档（保留存档，不清理）`,
         );
         return false;
+      }
+
+      // 0.6 平衡档案契约校验：
+      // - 无任何档案字段：历史旧档兼容路径（直接放行）。
+      // - 一旦出现档案字段：必须 profileId/version/balanceConfig 三者俱全且与注册表档案精确匹配；篡改/损坏时拒绝读档。
+      const hasProfileId = data.balanceProfileId !== undefined;
+      const hasProfileVersion = data.balanceProfileVersion !== undefined;
+      const hasBalanceConfig = data.balanceConfig !== undefined;
+      if (hasProfileId || hasProfileVersion || hasBalanceConfig) {
+        if (!hasProfileId || typeof data.balanceProfileId !== 'string' || data.balanceProfileId.trim().length === 0) {
+          this.lastLoadError = 'invalid_or_import_failed';
+          console.warn('[GameSaveService] 存档平衡档案 profileId 缺失或无效');
+          return false;
+        }
+        if (!hasProfileVersion || typeof data.balanceProfileVersion !== 'number') {
+          this.lastLoadError = 'invalid_or_import_failed';
+          console.warn('[GameSaveService] 存档平衡档案 profileVersion 缺失或无效');
+          return false;
+        }
+        if (!hasBalanceConfig || typeof data.balanceConfig !== 'object' || data.balanceConfig === null) {
+          this.lastLoadError = 'invalid_or_import_failed';
+          console.warn('[GameSaveService] 存档平衡档案 balanceConfig 缺失或无效');
+          return false;
+        }
+        const profile = getBalanceProfileById(data.balanceProfileId);
+        if (!profile) {
+          this.lastLoadError = 'invalid_or_import_failed';
+          console.warn(`[GameSaveService] 存档平衡档案未知: ${data.balanceProfileId}`);
+          return false;
+        }
+        if (profile.rulesVersion !== declaredRules) {
+          this.lastLoadError = 'invalid_or_import_failed';
+          console.warn(
+            `[GameSaveService] 存档平衡档案 rulesVersion 不匹配: expected ${profile.rulesVersion}, got ${declaredRules}`,
+          );
+          return false;
+        }
+        if (data.balanceProfileVersion !== profile.profileVersion) {
+          this.lastLoadError = 'invalid_or_import_failed';
+          console.warn(
+            `[GameSaveService] 存档平衡档案 profileVersion 不匹配: expected ${profile.profileVersion}, got ${data.balanceProfileVersion}`,
+          );
+          return false;
+        }
+        if (JSON.stringify(data.balanceConfig) !== JSON.stringify(profile.balanceConfig)) {
+          this.lastLoadError = 'invalid_or_import_failed';
+          console.warn('[GameSaveService] 存档 balanceConfig 被篡改或与注册档案不一致');
+          return false;
+        }
       }
 
       // 终局不是可继续的活动对局。历史版本曾在终局后重新写回 game_over 快照，

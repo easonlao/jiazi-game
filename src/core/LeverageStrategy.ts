@@ -10,7 +10,7 @@
  * 「高分牌」分界沿用代码既有强牌约定（strong_card_leverage / expert-lock 均用 cur>=20），
  * 集中为常量便于校准——确切分界以玩家确认为准。
  */
-import type { HandSlot } from './HandSlot';
+import type { HandSlot } from './HandSlot.ts';
 
 /** 高分牌阈值：当前季评分 ≥ 此值视为高分牌（沿用 strong_card_leverage 的强牌约定） */
 export const HIGH_SCORE_THRESHOLD = 20;
