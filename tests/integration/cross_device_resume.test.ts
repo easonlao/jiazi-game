@@ -4,7 +4,12 @@ import { useGameStore, bindTurnManagerCallbacks, setTelemetryControllerForTestin
 import { TurnManager } from '../../src/core/TurnManager';
 import { DEFAULT_BALANCE_CONFIG } from '../../src/core/BalanceConfig';
 import { SeededRandomSource } from '../../src/core/RandomSource';
-import { CURRENT_REPLAY_RULES, cloneReplayRulesSnapshot } from '../../src/core/ReplayRules';
+import {
+  CURRENT_REPLAY_RULES,
+  RELATIONSHIP_RESPONSE_REPLAY_RULES,
+  TREND_WINDOW_REPLAY_RULES,
+  cloneReplayRulesSnapshot,
+} from '../../src/core/ReplayRules';
 import { SupabaseAnalyticsBackend } from '../../app/src/lib/analyticsBackend';
 import { TelemetryController } from '../../app/src/lib/telemetryController';
 
@@ -48,7 +53,8 @@ describe('03 跨设备继续当前修行测试（真实 Supabase 查询与动作
       client_session_id: 'cross-device-sess-42',
       started_at: '2026-08-27T10:00:00.000Z',
       replay_seed: 8888,
-      rules_snapshot: cloneReplayRulesSnapshot(CURRENT_REPLAY_RULES),
+      // V10 活跃局必须和 V9 一样可跨设备精确恢复；不能把 relationship_response 当作 V8 趋势快照拒绝。
+      rules_snapshot: cloneReplayRulesSnapshot(RELATIONSHIP_RESPONSE_REPLAY_RULES),
       status: 'started',
       rounds_completed: 2,
       final_score: 15.5,
@@ -136,11 +142,16 @@ describe('03 跨设备继续当前修行测试（真实 Supabase 查询与动作
     // 设备 1 对照组：用相同 seed 和 actions 推进到第 3 回合
     const random1 = new SeededRandomSource(8888);
     const tm1 = new TurnManager(undefined, random1, {
-      rulesVersion: CURRENT_REPLAY_RULES.rulesVersion,
-      scoreRules: CURRENT_REPLAY_RULES.scoreRules,
-      volatility: CURRENT_REPLAY_RULES.volatility,
+      rulesVersion: RELATIONSHIP_RESPONSE_REPLAY_RULES.rulesVersion,
+      scoreRules: RELATIONSHIP_RESPONSE_REPLAY_RULES.scoreRules,
+      volatility: RELATIONSHIP_RESPONSE_REPLAY_RULES.volatility,
       volatilityRandom: random1,
-      voidConfig: { voidCardCount: CURRENT_REPLAY_RULES.voidCardCount },
+      branchRollRandom: random1,
+      voidConfig: {
+        voidCardCount: RELATIONSHIP_RESPONSE_REPLAY_RULES.voidCardCount,
+        voidKMin: RELATIONSHIP_RESPONSE_REPLAY_RULES.voidKMin,
+        voidKMax: RELATIONSHIP_RESPONSE_REPLAY_RULES.voidKMax,
+      },
     });
     await tm1.initialize();
     tm1.startGame();
@@ -233,16 +244,8 @@ describe('03 跨设备继续当前修行测试（真实 Supabase 查询与动作
       client_session_id: 'client-corrupted-cross',
       started_at: '2026-08-27T10:00:00.000Z',
       replay_seed: 42,
-      rules_snapshot: {
-        rulesVersion: 7,
-        gameMode: 'volatility_trade',
-        volatility: {
-          model: 'trend_window',
-          scale: 4,
-          bandFactors: { conflict: 3, generation: 2, same_element: 1, neutral: 1 },
-        },
-        scoreRules: { baseScore: 10, seasonMultiplier: 1.5, comboMultiplier: 1.2 },
-      },
+      // 规则快照本身必须完整合法；本例要验证的是事件链破坏，而不是放行坏快照。
+      rules_snapshot: cloneReplayRulesSnapshot(TREND_WINDOW_REPLAY_RULES),
       status: 'started',
       rounds_completed: 1,
       final_score: 10,

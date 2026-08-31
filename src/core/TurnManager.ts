@@ -18,7 +18,7 @@ import {
   getBalanceProfileById,
   getDefaultBalanceProfileForRules,
 } from './BalanceProfile.ts';
-import { MathRandomSource, type RandomSource } from './RandomSource.ts';
+import { MathRandomSource, SeededRandomSource, isStatefulRandomSource, type RandomSource } from './RandomSource.ts';
 import { calculateHoldingSettlement } from './SettlementPreviewCalculator.ts';
 import {
   GameSaveService,
@@ -30,6 +30,7 @@ import {
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
+  RULES_VERSION_RELATIONSHIP_RESPONSE,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOLATILE,
   RULES_VERSION_TRADE,
@@ -59,6 +60,7 @@ import {
   pickWindowLength,
   getTrendDecayFactor,
   computeTrendDelta,
+  relationshipResponseScore,
   DEFAULT_SCORE_VOLATILITY_CONFIG,
   isSupportedVolatilityModel,
   type ScoreVolatilityConfig,
@@ -462,7 +464,13 @@ export class TurnManager {
     },
   ) {
     const balanceConfig = config ?? DEFAULT_BALANCE_CONFIG;
-    const randomSource = random ?? new MathRandomSource();
+    // V10 本地预览必须可续局：使用可序列化 PRNG 游标，存档后跨空亡/换季仍可精确延续。
+    // 旧版本未注入随机源时保留 Math.random 路径，不改变其既有局面。
+    const randomSource = random ?? (
+      options?.rulesVersion === RULES_VERSION_RELATIONSHIP_RESPONSE
+        ? new SeededRandomSource(Math.floor(Math.random() * 0x80000000))
+        : new MathRandomSource()
+    );
     this.balanceConfig = balanceConfig;
     this.random = randomSource;
     this.volatilityRandom = options?.volatilityRandom ?? randomSource;
@@ -472,7 +480,10 @@ export class TurnManager {
       ...options?.volatility,
     };
     this.activeVolatilityConfig = this.scoreVolatilityConfig;
+    // V10 的状态要在卡牌加载、首季 branch roll 就绪后由关系响应建立；此处不能沿用
+    // 旧模型工厂，否则会白白消耗 volatilityRandom，让“无独立随机行情”名不副实。
     this.scoreVolatilityState = this.scoreVolatilityConfig.enabled
+      && this.scoreVolatilityConfig.model !== 'relationship_response'
       ? createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig)
       : null;
     // 构造默认只决定"新局/模拟"的规则；读档后由 importSnapshot 按存档声明覆盖。
@@ -596,13 +607,19 @@ export class TurnManager {
       && (this.activeVolatilityConfig.model ?? 'uniform') === 'trend_window';
   }
 
+  /** V10：评分不再抽独立趋势窗口，而是由本季的干支关系响应状态显现。 */
+  private isRelationshipResponseRulesVersion(): boolean {
+    return this.rulesVersion === RULES_VERSION_RELATIONSHIP_RESPONSE
+      && (this.activeVolatilityConfig.model ?? 'uniform') === 'relationship_response';
+  }
+
   /**
-   * 浓度溢价系数按规则版本门控：仅 V7（trend_window）生效，V6 及以下视为 0。
-   * 设计意图：浓度溢价是 V7 新增机制，V6 保留为历史兼容（design.md 第 6 节）。
+   * 浓度溢价系数按规则版本门控：V7 起成为持仓结算机制，V10 仅替换评分显现，
+   * 因而必须继续继承；V6 及以下视为 0。
    * public：core 投影层（settlementProjection）需按同一门控计算虚拟浓度。
    */
   getConcentrationPremiumFactor(): number {
-    return this.isTrendWindowRulesVersion() ? this.balanceConfig.concentrationPremiumFactor : 0;
+    return this.rulesVersion >= RULES_VERSION_TREND_WINDOW ? this.balanceConfig.concentrationPremiumFactor : 0;
   }
 
   getCardScore(card: JiaziCard, season: string): number {
@@ -630,7 +647,13 @@ export class TurnManager {
     // conflict_banded 按牌级幅度 + 地支共享方向；uniform（兼容默认）按地支整数偏移。
     let score: number;
     const effectiveModel = this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform';
-    if (effectiveModel === 'trend_window' && this.scoreVolatilityState.trendWindowByCardId) {
+    if (effectiveModel === 'relationship_response' && this.scoreVolatilityState.relationshipResponseByCardId) {
+      const response = this.scoreVolatilityState.relationshipResponseByCardId[card.id];
+      if (!response) return this.applyBranchRoll(baseScore, card, season);
+      const progress = this.seasonCycle.getCurrentRoundInSeason() / this.seasonCycle.getCurrentSeasonLength();
+      score = relationshipResponseScore(card, response.entryScore, response.targetScore, progress);
+      return score;
+    } else if (effectiveModel === 'trend_window' && this.scoreVolatilityState.trendWindowByCardId) {
       // trend_window：每张牌独立趋势方向 + 窗口长度 + 衰减
       const cardTrend = this.scoreVolatilityState.trendWindowByCardId[card.id];
       if (!cardTrend) {
@@ -784,6 +807,18 @@ export class TurnManager {
       deltaByDiZhi: { ...this.scoreVolatilityState.deltaByDiZhi },
     };
     const model = this.scoreVolatilityState.model ?? 'uniform';
+    if (model === 'relationship_response') {
+      return {
+        ...base,
+        model: 'relationship_response',
+        relationshipResponseByCardId: Object.fromEntries(
+          Object.entries(this.scoreVolatilityState.relationshipResponseByCardId ?? {}).map(([id, entry]) => [
+            Number(id),
+            { entryScore: entry.entryScore, targetScore: entry.targetScore },
+          ]),
+        ),
+      };
+    }
     if (model === 'trend_window') {
       const bandFactors = this.scoreVolatilityState.bandFactors ?? this.activeVolatilityConfig.bandFactors;
       return {
@@ -821,6 +856,17 @@ export class TurnManager {
     if (!this.isVolatilityRulesVersion() || !this.scoreVolatilityState) return null;
 
     const model = this.scoreVolatilityState.model ?? this.activeVolatilityConfig.model ?? 'uniform';
+    if (model === 'relationship_response') {
+      const response = this.scoreVolatilityState.relationshipResponseByCardId?.[card.id];
+      if (!response) return null;
+      const length = this.seasonCycle.getCurrentSeasonLength();
+      const currentRound = this.seasonCycle.getCurrentRoundInSeason();
+      const current = relationshipResponseScore(card, response.entryScore, response.targetScore, currentRound / length);
+      const prior = relationshipResponseScore(card, response.entryScore, response.targetScore, Math.max(0, currentRound - 1) / length);
+      if (current > prior) return 'rising';
+      if (current < prior) return 'falling';
+      return 'steady';
+    }
     if (model === 'trend_window') {
       const trend = this.scoreVolatilityState.trendWindowByCardId?.[card.id];
       if (!trend) return null;
@@ -870,6 +916,8 @@ export class TurnManager {
     if (this.isTrendWindowRulesVersion()) {
       const allCardIds = this.cardDataBank.getAllCards().map(c => c.id);
       this.scoreVolatilityState = createTrendWindowState(this.volatilityRandom, allCardIds);
+    } else if (this.isRelationshipResponseRulesVersion()) {
+      this.refreshRelationshipResponse(this.getInitialRelationshipEntryScores());
     }
 
     this.currentRound = 1;
@@ -1039,10 +1087,18 @@ export class TurnManager {
       // - path 只供批 2 动画做「剩余 K 逐回合倒数 + 当前位置逐回合递增」表达（2026-08-14 用户拍板）。
       const path: VoidStep[] = [];
       for (let step = 0; step < k; step++) {
+        const relationshipEntryScores = this.isRelationshipResponseRulesVersion()
+          ? this.captureRelationshipResponseScores()
+          : null;
         const crossedSeason = this.seasonCycle.advance();
         // V6 空亡跨季：季节时钟每跨一季即重掷地支波动（与服务端重放随机消耗序列一致，
         // 与 advanceTurn 换季点同口径——季内恒定、每跨一季重掷）。
-        if (crossedSeason) this.refreshBranchRoll();
+        if (crossedSeason) {
+          this.refreshBranchRoll();
+          if (this.isRelationshipResponseRulesVersion()) {
+            this.refreshRelationshipResponse(relationshipEntryScores!);
+          }
+        }
         path.push({
           season: this.seasonCycle.getCurrentSeason(),
           roundInSeason: this.seasonCycle.getCurrentRoundInSeason(),
@@ -1598,18 +1654,29 @@ export class TurnManager {
       return;
     }
 
+    // V10 必须在季节时钟切换前读取旧季实际收盘分；切换后再以新季 target 建立响应。
+    // 不能在 advance() 之后补算，否则 entry 会被新季基础分覆盖而造成断层。
+    const relationshipEntryScores = this.isRelationshipResponseRulesVersion()
+      ? this.captureRelationshipResponseScores()
+      : null;
+
     // 季节检查
     const seasonChanged = this.seasonCycle.advance();
     if (seasonChanged) {
-      this.refreshScoreVolatility();
-      // V6 换季重掷：与 refreshScoreVolatility 同点（V5 及以下恒空转，不消耗随机数）。
-      this.refreshBranchRoll();
+      if (this.isRelationshipResponseRulesVersion()) {
+        this.refreshBranchRoll();
+        this.refreshRelationshipResponse(relationshipEntryScores!);
+      } else {
+        this.refreshScoreVolatility();
+        // V6 换季重掷：与 refreshScoreVolatility 同点（V5 及以下恒空转，不消耗随机数）。
+        this.refreshBranchRoll();
+      }
       console.log(`[TurnManager] 季节切换: ${this.seasonCycle.getCurrentSeason()}`);
     } else if (this.scoreVolatilityState) {
       if (this.isTrendWindowRulesVersion()) {
         // trend_window 模型：每张牌独立递减窗口，到期自动重置
         this.decrementTrendWindowRounds();
-      } else {
+      } else if (!this.isRelationshipResponseRulesVersion()) {
         // 旧模型：全局 remainingRounds 递减
         this.scoreVolatilityState.remainingRounds--;
         if (this.scoreVolatilityState.remainingRounds <= 0) {
@@ -1764,6 +1831,7 @@ export class TurnManager {
       balanceProfileId: this.balanceProfileId ?? undefined,
       balanceProfileVersion: this.balanceProfileVersion ?? undefined,
       balanceConfig: this.balanceProfileId ? { ...this.balanceConfig } : undefined,
+      randomState: this.exportRandomState() ?? undefined,
       isLocalOnly: this.isLocalOnly ? true : undefined,
     };
   }
@@ -1796,8 +1864,14 @@ export class TurnManager {
       !isSupportedVolatilityModel(declaredModel)
     ) {
       throw new Error(
-        `不支持的波动模型 model=${declaredModel}（只支持 uniform / conflict_banded），拒绝读档`,
+        `不支持的波动模型 model=${declaredModel}，拒绝读档`,
       );
+    }
+    if (
+      declaredRules === RULES_VERSION_RELATIONSHIP_RESPONSE &&
+      declaredModel !== 'relationship_response'
+    ) {
+      throw new Error('rulesVersion=10 存档必须使用 relationship_response 波动模型，拒绝读档');
     }
     if (
       isVolatileRules &&
@@ -1920,6 +1994,17 @@ export class TurnManager {
                   remainingRounds: entry.remainingRounds,
                   windowLength: entry.windowLength,
                 },
+              ]),
+            ),
+          }
+          : {}),
+        ...(savedModel === 'relationship_response' && data.scoreVolatility.relationshipResponseByCardId
+          ? {
+            model: 'relationship_response' as const,
+            relationshipResponseByCardId: Object.fromEntries(
+              Object.entries(data.scoreVolatility.relationshipResponseByCardId).map(([id, entry]) => [
+                Number(id),
+                { entryScore: entry.entryScore, targetScore: entry.targetScore },
               ]),
             ),
           }
@@ -2071,6 +2156,28 @@ export class TurnManager {
       }
     }
     this.isLocalOnly = Boolean(data.isLocalOnly);
+    this.importRandomState(data.randomState);
+  }
+
+  private exportRandomState(): NonNullable<GameSnapshot['randomState']> | null {
+    const main = isStatefulRandomSource(this.random) ? this.random.exportState() : undefined;
+    const volatility = isStatefulRandomSource(this.volatilityRandom) ? this.volatilityRandom.exportState() : undefined;
+    const branchRoll = isStatefulRandomSource(this.branchRollRandom) ? this.branchRollRandom.exportState() : undefined;
+    return main || volatility || branchRoll ? { main, volatility, branchRoll } : null;
+  }
+
+  private importRandomState(state: GameSnapshot['randomState']): void {
+    if (!state) return;
+    const entries: Array<[RandomSource, { algorithm: 'mulberry32'; state: number } | undefined]> = [
+      [this.random, state.main],
+      [this.volatilityRandom, state.volatility],
+      [this.branchRollRandom, state.branchRoll],
+    ];
+    for (const [source, snapshot] of entries) {
+      if (snapshot && isStatefulRandomSource(source) && !source.importState(snapshot)) {
+        throw new Error('存档 randomState 非法，拒绝读档');
+      }
+    }
   }
 
   /**
@@ -2160,6 +2267,23 @@ export class TurnManager {
           if (wl !== 2 && wl !== 3 && wl !== 4) {
             throw new Error(`trend_window 存档的 trendWindowByCardId[${id}].windowLength=${wl} 必须是 2|3|4，拒绝读档`);
           }
+        }
+      }
+    } else if ((model ?? 'uniform') === 'relationship_response') {
+      const response = vol.relationshipResponseByCardId;
+      if (!isNonNilRecord(response)) {
+        throw new Error('relationship_response 存档的 scoreVolatility.relationshipResponseByCardId 必须是对象，拒绝读档');
+      }
+      const expectedIds = Array.from({ length: 60 }, (_, index) => String(index + 1));
+      if (Object.keys(response).length !== expectedIds.length || !expectedIds.every((id) => id in response)) {
+        throw new Error('relationship_response 存档必须包含 60 张甲子牌的 entry/target 状态，拒绝读档');
+      }
+      for (const id of expectedIds) {
+        const entry = response[Number(id)];
+        if (!isNonNilRecord(entry) ||
+          typeof entry.entryScore !== 'number' || !Number.isFinite(entry.entryScore) ||
+          typeof entry.targetScore !== 'number' || !Number.isFinite(entry.targetScore)) {
+          throw new Error(`relationship_response 存档的 relationshipResponseByCardId[${id}] 必须含有限 entryScore/targetScore，拒绝读档`);
         }
       }
     } else if (requireTradeFields) {
@@ -2734,12 +2858,17 @@ export class TurnManager {
     this.scoreVolatilityState = this.isVolatilityRulesVersion()
       ? (this.isTrendWindowRulesVersion()
           ? createTrendWindowState(this.volatilityRandom, this.cardDataBank.getAllCards().map(c => c.id))
-          : createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig))
+          : this.isRelationshipResponseRulesVersion()
+            ? null
+            : createScoreVolatilityState(this.volatilityRandom, this.scoreVolatilityConfig))
       : null;
     // V6+ 开新局：按构造默认规则重掷首季 roll（V5 及以下置 null，不消耗 roll 随机数）。
     this.branchRollState = this.initialRulesVersion >= RULES_VERSION_BRANCH_ROLL
       ? createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex())
       : null;
+    if (this.isRelationshipResponseRulesVersion()) {
+      this.refreshRelationshipResponse(this.getInitialRelationshipEntryScores());
+    }
     this.qiManager.reset();
     this.scoreManager.reset();
     this.handManager.reset();
@@ -2797,6 +2926,7 @@ export class TurnManager {
     // 绝不在换季/倒计时归零时静默重建波动状态——否则旧档会被当前构建的开关
     // "半开不开"地套上波动，未知版本也会被错当波动规则。
     if (!this.isVolatilityRulesVersion()) return;
+    if (this.isRelationshipResponseRulesVersion()) return;
     if (this.isTrendWindowRulesVersion()) {
       // trend_window 模型：为所有牌生成新的独立趋势窗口
       const allCardIds = this.cardDataBank.getAllCards().map(c => c.id);
@@ -2817,6 +2947,56 @@ export class TurnManager {
   private refreshBranchRoll(): void {
     if (!this.isBranchRollRulesVersion()) return;
     this.branchRollState = createBranchRollState(this.branchRollRandom, this.seasonCycle.getCurrentSeasonIndex());
+  }
+
+  /** V10 当前季目标分：沿用 V6 的藏干 roll，但不叠加旧 trend_window 偏移。 */
+  private getRelationshipResponseTargetScore(card: JiaziCard): number {
+    const season = this.seasonCycle.getCurrentSeason();
+    const baseScore = card.getSeasonScore(season, this.balanceConfig);
+    return this.applyBranchRoll(baseScore, card, season);
+  }
+
+  /** 换季前的实际收盘分，作为下一季全部卡牌的 entryScore。 */
+  private captureRelationshipResponseScores(): Record<number, number> {
+    const season = this.seasonCycle.getCurrentSeason();
+    return Object.fromEntries(
+      this.cardDataBank.getAllCards()
+        .filter((card) => !isVoidCard(card))
+        .map((card) => [card.id, this.getCardScore(card, season)]),
+    );
+  }
+
+  /** 开局没有前一轮状态时，以相邻上一季的既有季节评分作为入场基准。 */
+  private getInitialRelationshipEntryScores(): Record<number, number> {
+    const seasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+    const index = this.seasonCycle.getCurrentSeasonIndex() % seasons.length;
+    const previous = seasons[(index + seasons.length - 1) % seasons.length]!;
+    return Object.fromEntries(
+      this.cardDataBank.getAllCards()
+        .filter((card) => !isVoidCard(card))
+        .map((card) => [card.id, card.getSeasonScore(previous, this.balanceConfig)]),
+    );
+  }
+
+  /** 建立本季冻结的 V10 entry/target 状态；不消耗任何随机源。 */
+  private refreshRelationshipResponse(entryScores: Record<number, number>): void {
+    const relationshipResponseByCardId: Record<number, { entryScore: number; targetScore: number }> = {};
+    for (const card of this.cardDataBank.getAllCards()) {
+      if (isVoidCard(card)) continue;
+      const targetScore = this.getRelationshipResponseTargetScore(card);
+      const rawEntryScore = entryScores[card.id] ?? targetScore;
+      relationshipResponseByCardId[card.id] = {
+        entryScore: Object.is(rawEntryScore, -0) ? 0 : rawEntryScore,
+        // JSON 会把 -0 序列化为 0；写入状态时统一归零，保证 save → load 深度一致。
+        targetScore: Object.is(targetScore, -0) ? 0 : targetScore,
+      };
+    }
+    this.scoreVolatilityState = {
+      model: 'relationship_response',
+      remainingRounds: 0,
+      deltaByDiZhi: {},
+      relationshipResponseByCardId,
+    };
   }
 
   /**

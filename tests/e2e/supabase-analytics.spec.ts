@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import { selectPublicCard } from './public-card-history';
-import { TREND_WINDOW_REPLAY_RULES } from '../../src/core/ReplayRules';
 
 test.describe('Supabase 匿名身份与遥测', () => {
   test.skip(
@@ -15,16 +14,16 @@ test.describe('Supabase 匿名身份与遥测', () => {
       (window as any).__JIAZI_E2E__ = true;
     });
     await context.clearCookies();
-    await page.goto('/?rules=v9');
+    await page.goto('/');
     await page.evaluate(() => {
       localStorage.clear();
       sessionStorage.clear();
     });
   });
 
-  test('V9 新局等待服务端 seed，并在完整 60 回合后校验入榜（单空亡生产默认）', async ({ page }) => {
+  test('V10 新局等待服务端 seed，并在完整 60 回合后校验入榜（干支关系响应生产默认）', async ({ page }) => {
     test.setTimeout(240_000);
-    await page.goto('/?rules=v9');
+    await page.goto('/');
 
     await expect(page.getByRole('button', { name: '查看修行档案' }).first()).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: '查看修行档案' }).first().click();
@@ -61,7 +60,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
       await confirmOverrideBtn.click();
     }
 
-    // 关键断言 1：客户端等待并成功接收 start-verified-session 返回的 V9 单空亡规则快照与 seed。
+    // 关键断言 1：客户端等待并成功接收 start-verified-session 返回的 V10 规则快照与 seed。
     const startRes = await startVerifiedResponse;
     if (!startRes.ok()) {
       console.error('startVerifiedResponse failed:', startRes.status(), await startRes.text());
@@ -71,7 +70,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(startPayload.session_id).toBeTruthy();
     expect(typeof startPayload.seed).toBe('number');
     expect(startPayload.rules_snapshot).toMatchObject({
-      rulesVersion: 9,
+      rulesVersion: 10,
     });
 
     // 关键断言 2：进入对局界面，买入第一张牌并验证遥测事件上传。
@@ -90,7 +89,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     }
     expect(uploadRes.ok()).toBe(true);
 
-    // 推进到终局：V9 循环调息直到「结束游戏」按钮出现（第 60 回合终局）。
+    // 推进到终局：V10 循环调息直到「结束游戏」按钮出现（第 60 回合终局）。
     while (true) {
       const endBtn = page.getByRole('button', { name: '结束游戏' });
       if (await endBtn.isVisible().catch(() => false)) break;
@@ -133,7 +132,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     expect(result).toMatchObject({
       verified: true,
       leaderboard_submitted: true,
-      rules_version: '9',
+      rules_version: '10',
     });
 
     // 终局后，GameOverModal 会展示校验结果
@@ -145,9 +144,9 @@ test.describe('Supabase 匿名身份与遥测', () => {
     await expect(page.getByRole('dialog', { name: '排行榜' }).getByText('E2E测试').first()).toBeVisible({ timeout: 10_000 });
   });
 
-  test('真实 Supabase：受损 V7 局跨设备恢复与免惩罚重置闭环（验证真实 DB 会话、事件表、RLS 与 ledger 完整性）', async ({ page }) => {
+  test('真实 Supabase：受损 V10 局跨设备恢复与免惩罚重置闭环（验证真实 DB 会话、事件表、RLS 与 ledger 完整性）', async ({ page }) => {
     test.setTimeout(120_000);
-    await page.goto('/?rules=v9');
+    await page.goto('/');
 
     // 1. 同意授权并生成玩家 ID
     await expect(page.getByRole('button', { name: '查看修行档案' }).first()).toBeVisible({ timeout: 15_000 });
@@ -158,7 +157,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     await expect(page.getByText('恢复码（换设备找回凭据，请妥善保存）')).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: '关闭' }).click();
 
-    // 2. 在真实 Supabase 中为该玩家通过 start-verified-session 真实创建包含 seed 与 snapshot 的 V7 会话，并写入破坏牌池守恒的动作链
+    // 2. 在真实 Supabase 中为该玩家通过 start-verified-session 真实创建 V10 会话，并写入破坏牌池守恒的动作链
     const setupResult = await page.evaluate(async () => {
       const client = (window as any).__SUPABASE_CLIENT__;
       if (!client) throw new Error('window.__SUPABASE_CLIENT__ not found');
@@ -171,8 +170,8 @@ test.describe('Supabase 匿名身份与遥测', () => {
       // 真实调用 start-verified-session 服务端接口创建会话
       const { data: startData, error: startError } = await client.functions.invoke('start-verified-session', {
         body: {
-          client_session_id: `client-v9-${Date.now()}`,
-          requested_rules_version: '9',
+          client_session_id: `client-v10-${Date.now()}`,
+          requested_rules_version: '10',
           app_version: '0.2.0',
           consent_version: '1',
         },
@@ -252,7 +251,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
 
   test('真实 Supabase：公共 upsert_game_session RPC 严格拒绝客户端直接传入 corrupted_recovery（防伪安全闸门）', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.goto('/?rules=v9');
+    await page.goto('/');
 
     await expect(page.getByRole('button', { name: '查看修行档案' }).first()).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: '查看修行档案' }).first().click();
@@ -294,7 +293,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
 
   test('真实 Supabase：离线终止重连，自动同步 abandoned 并在账本记录坚持度中断', async ({ page }) => {
     test.setTimeout(90_000);
-    await page.goto('/?rules=v9');
+    await page.goto('/');
 
     await expect(page.getByRole('button', { name: '查看修行档案' }).first()).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: '查看修行档案' }).first().click();
@@ -375,7 +374,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
 
   test('真实 Supabase：跨设备行动冲突（并发 sequence 竞态），弹窗选择「继续最新云端对局」成功接续', async ({ page }) => {
     test.setTimeout(90_000);
-    await page.goto('/?rules=v9');
+    await page.goto('/');
 
     await expect(page.getByRole('button', { name: '查看修行档案' }).first()).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: '查看修行档案' }).first().click();
@@ -393,8 +392,8 @@ test.describe('Supabase 匿名身份与遥测', () => {
       // 真实调用 start-verified-session 服务端接口创建会话
       const { data: startData, error: startError } = await client.functions.invoke('start-verified-session', {
         body: {
-          client_session_id: `client-v9-${Date.now()}`,
-          requested_rules_version: '9',
+          client_session_id: `client-v10-${Date.now()}`,
+          requested_rules_version: '10',
           app_version: '0.2.0',
           consent_version: '1',
         },

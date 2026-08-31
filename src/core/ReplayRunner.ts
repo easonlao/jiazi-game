@@ -24,6 +24,10 @@ export interface ReplayRequest {
   volatility?: Partial<ScoreVolatilityConfig>;
   scoreRules?: Partial<ScoreRules>;
   voidCardCount?: number;
+  /** 空亡时间吞噬 K 下界；云端会话必须使用规则快照冻结值。 */
+  voidKMin?: number;
+  /** 空亡时间吞噬 K 上界；云端会话必须使用规则快照冻结值。 */
+  voidKMax?: number;
   /** 是否要求对局必须已完成 60 回合并进入 game_over。结算时为 true，进行中局受损校验时为 false。默认 true。 */
   requireCompleted?: boolean;
   /** 平衡档案标识 */
@@ -141,7 +145,11 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
     volatilityRandom: random,
     // V6 地支波动：与服务端重放透传同一 seeded 源（客户端局 = 服务端重放同 roll）。
     branchRollRandom: random,
-    voidConfig: { voidCardCount: replayVoidCardCount },
+    voidConfig: {
+      voidCardCount: replayVoidCardCount,
+      voidKMin: request.voidKMin,
+      voidKMax: request.voidKMax,
+    },
     balanceProfileId: request.balanceProfileId,
     balanceProfileVersion: request.balanceProfileVersion,
   });

@@ -20,6 +20,7 @@ import {
   CURRENT_REPLAY_RULES,
   CLEAN_POOL_REPLAY_RULES,
   SINGLE_VOID_REPLAY_RULES,
+  RELATIONSHIP_RESPONSE_REPLAY_RULES,
   VOID_REPLAY_RULES,
   CURRENT_RULES_VERSION,
   DEFAULT_BALANCE_CONFIG,
@@ -73,6 +74,8 @@ export type { FxSeasonEvent, FxMarginCallEvent, FxDeltaEvent, FxRoundEvent, FxBu
 
 /** 防止 React StrictMode 下 initialize 被重复调用 */
 let _initializing = false;
+/** 未发布规则的本地预览门控；V10 已成为生产默认，不再因 `?rules=v10` 强制离线。 */
+let _forceLocalRulesPreview = false;
 
 let _telemetryController: TelemetryController | null = null;
 let _telemetryInitPromise: Promise<void> | null = null;
@@ -143,6 +146,21 @@ function getTelemetryGameMeta(tm?: TurnManager) {
     rules_version: String(resolvedRulesVersion),
     game_mode: volatility ? 'volatility_trade' : 'base',
     volatility_enabled: volatility,
+  };
+}
+
+/**
+ * 云端会话与跨设备恢复只读取创建时冻结的空亡参数，不能回退到新版本运行时默认值。
+ * V1–V4 没有空亡牌；历史快照未带 K 时保留其既有 2–8 解释。
+ */
+function getVoidConfigFromRulesSnapshot(snapshot: { rulesVersion: number; voidCardCount?: unknown; voidKMin?: unknown; voidKMax?: unknown }) {
+  const voidCardCount = typeof snapshot.voidCardCount === 'number'
+    ? snapshot.voidCardCount
+    : (snapshot.rulesVersion >= 5 ? 3 : 0);
+  return {
+    voidCardCount,
+    voidKMin: typeof snapshot.voidKMin === 'number' ? snapshot.voidKMin : undefined,
+    voidKMax: typeof snapshot.voidKMax === 'number' ? snapshot.voidKMax : undefined,
   };
 }
 
@@ -898,12 +916,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     _initializing = true;
     try {
       // 本地规则版本选择（配置驱动，符合「环境差异只通过配置驱动」铁律）：
-      // 1. `?rules=v4|v5|v6|v7|v8|v9` URL 参数——E2E 用 `?rules=v4` 跑确定性流程回归；`v8` 保留历史对照，`v9` 为当前单空亡规则。
+      // 1. `?rules=v4|v5|v6|v7|v8|v9|v10` URL 参数——仅旧规则用于本地回归预览。
       // 2. `VITE_RULES_VERSION=5` env——本地预览 V5 空亡（不进 git 的 .env.local）。
-      // 3. 缺省 = 生产默认 CURRENT_REPLAY_RULES（V9：单空亡）。
+      // 3. 缺省 = 生产默认 CURRENT_REPLAY_RULES（V10：干支关系响应）。
       const urlRules = typeof window !== 'undefined' && window.location
         ? new URLSearchParams(window.location.search).get('rules')
         : null;
+      _forceLocalRulesPreview = urlRules !== null && urlRules !== 'v10';
       const previewRules = urlRules === 'v4'
         ? BALANCED_TRADE_REPLAY_RULES
         : urlRules === 'v5'
@@ -916,6 +935,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 ? CLEAN_POOL_REPLAY_RULES
                 : urlRules === 'v9'
                   ? SINGLE_VOID_REPLAY_RULES
+                  : urlRules === 'v10'
+                    ? RELATIONSHIP_RESPONSE_REPLAY_RULES
                   : import.meta.env.VITE_RULES_VERSION === '5'
                     ? VOID_REPLAY_RULES
                     : CURRENT_REPLAY_RULES;
@@ -1003,6 +1024,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   async startGame(localOnly = false) {
+    const effectiveLocalOnly = localOnly || _forceLocalRulesPreview;
     const currentIdentity = _telemetryController?.getState().identity ?? get().telemetryState?.identity;
     const pendingRecovery = readPendingCorruptedRecovery(localStorageProvider, currentIdentity?.player_id);
     if (get().recoveringCorruptedGame) {
@@ -1018,9 +1040,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const controller = _telemetryController;
     const telemetryState = controller?.getState() ?? null;
-    const shouldAwaitVerifiedStart = !localOnly && telemetryState?.consent?.granted === true;
+    const shouldAwaitVerifiedStart = !effectiveLocalOnly && telemetryState?.consent?.granted === true;
 
-    set({ startingGame: true, startGameError: null, isLocalOnlyGame: localOnly === true });
+    set({ startingGame: true, startGameError: null, isLocalOnlyGame: effectiveLocalOnly });
     try {
       if (shouldAwaitVerifiedStart && controller) {
         await ensureTelemetryInit();
@@ -1044,10 +1066,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         const random = new SeededRandomSource(prepared.seed);
         const snapshot = prepared.rules_snapshot;
-        const snapshotVoidCardCount = (snapshot as { voidCardCount?: number }).voidCardCount;
-        const resolvedVoidCardCount = snapshotVoidCardCount !== undefined
-          ? snapshotVoidCardCount
-          : (snapshot.rulesVersion >= 5 ? 3 : 0);
+        const voidConfig = getVoidConfigFromRulesSnapshot(snapshot);
         const baseBalanceConfig = snapshot.balanceConfig
           ? { ...DEFAULT_BALANCE_CONFIG, ...snapshot.balanceConfig }
           : undefined;
@@ -1057,7 +1076,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           scoreRules: snapshot.scoreRules,
           volatility: snapshot.volatility,
           volatilityRandom: random,
-          voidConfig: { voidCardCount: resolvedVoidCardCount },
+          branchRollRandom: random,
+          voidConfig,
           balanceProfileId: snapshot.balanceProfileId,
           balanceProfileVersion: snapshot.balanceProfileVersion,
         });
@@ -1094,16 +1114,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
 
       tm.clearSave();
-      tm.setLocalOnly(localOnly === true);
+      tm.setLocalOnly(effectiveLocalOnly);
       set({
         hasSave: false,
         _endedSessionId: null,
         verificationState: null,
-        isLocalOnlyGame: localOnly === true,
+        isLocalOnlyGame: effectiveLocalOnly,
       });
       tm.reset();
       tm.startGame();
-      if (!localOnly) {
+      if (!effectiveLocalOnly) {
         _cultivationLedger.startNewGame(tm.getRulesVersion(), undefined, tm.getBalanceProfileId());
         refreshCultivationLedgerOverview(set, get);
       }
@@ -1112,8 +1132,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         selectedPublicCard: -1, selectedHandCard: -1, useLeverage: false,
         pendingAction: null, settlementPreview: null, buySettlementEvent: null,
       });
-      if (localOnly && telemetryState?.consent?.granted) {
-        get().showToast('已开始本地对局，本局不上云端榜');
+      if (effectiveLocalOnly && telemetryState?.consent?.granted) {
+        get().showToast(_forceLocalRulesPreview ? '已开始旧规则本地预览，本局不上云端榜' : '已开始本地对局，本局不上云端榜');
       }
       flushPendingVoidToasts(get);
       return true;
@@ -1121,11 +1141,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       console.error('[store] 开局失败:', error);
       controller?.abandonSession('reset');
       const detail = error instanceof Error ? error.message : '未知异常';
-      const message = localOnly
+      const message = effectiveLocalOnly
         ? `本地开局失败（${detail}），请重试`
         : `云端开局异常（${detail}）。可重试，或改为本地开局（本局不上云端榜）。`;
       set({ startGameError: message });
-      get().showToast(localOnly ? `本地开局失败：${detail}` : `云端开局异常：${detail}`);
+      get().showToast(effectiveLocalOnly ? `本地开局失败：${detail}` : `云端开局异常：${detail}`);
       return false;
     } finally {
       set({ startingGame: false });
@@ -1136,10 +1156,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const cloudSession = session ?? get().telemetryState?.activeCloudSession;
     if (!cloudSession) return false;
     const snapshot = cloudSession.rules_snapshot;
-    const snapshotVoidCardCount = (snapshot as { voidCardCount?: number }).voidCardCount;
-    const resolvedVoidCardCount = snapshotVoidCardCount !== undefined
-      ? snapshotVoidCardCount
-      : (snapshot.rulesVersion >= 5 ? 3 : 0);
+    const voidConfig = getVoidConfigFromRulesSnapshot(snapshot);
     const random = new SeededRandomSource(cloudSession.seed);
     const baseBalanceConfig = snapshot.balanceConfig
       ? { ...DEFAULT_BALANCE_CONFIG, ...snapshot.balanceConfig }
@@ -1151,7 +1168,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       volatility: snapshot.volatility,
       volatilityRandom: random,
       branchRollRandom: random,
-      voidConfig: { voidCardCount: resolvedVoidCardCount },
+      voidConfig,
       balanceProfileId: snapshot.balanceProfileId,
       balanceProfileVersion: snapshot.balanceProfileVersion,
     });

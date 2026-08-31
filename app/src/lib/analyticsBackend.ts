@@ -271,12 +271,7 @@ function parseVerifiedSessionStart(data: unknown): VerifiedSessionStart | null {
     typeof scoreRules.holdBonus !== 'number' ||
     typeof scoreRules.sellMultiplier !== 'number'
   ) return null;
-  // V8+ (clean_pool) 规则快照严格校验：防止同版本配置漂移与坏快照静默进入
-  if (rulesVersion >= 8) {
-    const voidCount = (snapshot as { voidCardCount?: unknown }).voidCardCount;
-    if (voidCount !== undefined && (typeof voidCount !== 'number' || !Number.isInteger(voidCount) || voidCount < 0 || voidCount > 10)) return null;
-    if (volatility.model !== 'trend_window') return null;
-  }
+  // 完整冻结契约由 startVerifiedSession 返回细分错误；此处只做结构解析，避免吞掉可诊断的漂移原因。
   return {
     session_id,
     started_at,
@@ -762,7 +757,7 @@ export class SupabaseAnalyticsBackend implements AnalyticsBackend {
       const client_session_id = typeof data.client_session_id === 'string' ? data.client_session_id : undefined;
       const seed = data.replay_seed;
       const snapshot = data.rules_snapshot;
-      if (!session_id || typeof seed !== 'number' || !snapshot) return null;
+      if (!session_id || typeof seed !== 'number' || !snapshot || !validateRulesSnapshotContract(snapshot).valid) return null;
 
       let actions: ReplayAction[] = [];
       let last_event_sequence = 0;

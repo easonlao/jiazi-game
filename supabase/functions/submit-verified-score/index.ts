@@ -8,6 +8,7 @@ import {
 import {
   CURRENT_REPLAY_RULES,
   getReplayRulesByVersion,
+  validateRulesSnapshotContract,
   type ReplayRulesSnapshot,
 } from '../../../src/core/ReplayRules.ts';
 import { normalizeVerifiedScore } from '../../../src/core/VerifiedScore.ts';
@@ -131,10 +132,12 @@ Deno.serve(async (req) => {
   // 规则版本门控：只接受注册表内可校验的版本（票 04 修正案 = V4 生产默认 + V5 增量）。
   // 会话 rules_version 与规则快照的 rulesVersion 必须同时落在注册表且互相一致；
   // V1-V3 历史对局只读，不重放、不上新榜（既有行为）。V4 判定与直用 CURRENT_REPLAY_RULES 一致。
-  const sessionRules = getReplayRulesByVersion(Number(session.rules_version));
+  const sessionRulesVersion = Number(session.rules_version);
+  const sessionRules = getReplayRulesByVersion(sessionRulesVersion);
   if (
     !sessionRules ||
-    session.rules_snapshot.rulesVersion !== sessionRules.rulesVersion
+    session.rules_snapshot.rulesVersion !== sessionRules.rulesVersion ||
+    !validateRulesSnapshotContract(session.rules_snapshot, sessionRulesVersion).valid
   ) {
     return json({ error: 'rules_version_not_supported' }, 422);
   }
@@ -151,6 +154,8 @@ Deno.serve(async (req) => {
       voidCardCount: (rulesSnapshot as { voidCardCount?: number }).voidCardCount !== undefined
         ? (rulesSnapshot as { voidCardCount?: number }).voidCardCount
         : (rulesSnapshot.rulesVersion >= 5 ? 3 : 0),
+      voidKMin: (rulesSnapshot as { voidKMin?: number }).voidKMin,
+      voidKMax: (rulesSnapshot as { voidKMax?: number }).voidKMax,
       balanceProfileId: rulesSnapshot.balanceProfileId,
       balanceProfileVersion: rulesSnapshot.balanceProfileVersion,
       balanceConfig: rulesSnapshot.balanceConfig,

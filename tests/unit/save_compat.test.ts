@@ -17,12 +17,13 @@ import {
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_CLEAN_POOL,
+  RULES_VERSION_RELATIONSHIP_RESPONSE,
   RULES_VERSION_TRADE,
   RULES_VERSION_VOLATILE,
 } from '../../src/core/GameSaveService';
 import { BAND_FACTOR } from '../../src/core/ScoreVolatility';
 import { createBranchRollState } from '../../src/core/BranchRoll';
-import { TREND_WINDOW_REPLAY_RULES, CLEAN_POOL_REPLAY_RULES } from '../../src/core/ReplayRules';
+import { TREND_WINDOW_REPLAY_RULES, CLEAN_POOL_REPLAY_RULES, RELATIONSHIP_RESPONSE_REPLAY_RULES } from '../../src/core/ReplayRules';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { GameSnapshot } from '../../src/core/GameSaveService';
@@ -848,5 +849,35 @@ describe('BalanceProfile 平衡档案存档兼容性与结算一致性（GameSna
     expect(tm.getState()).toBe('game_over');
     expect(tm.getScore()).toBeGreaterThan(0);
     expect(tm.getRoundLog().length).toBeGreaterThan(0);
+  });
+
+  it('V10 关系响应档从 LocalStorage 往返：60 张 entry/target 保持且不回退为 V9 趋势窗口', async () => {
+    const cardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => cardData }));
+    const sourceRandom = new SeededRandomSource(2468);
+    const source = new TurnManager(undefined, sourceRandom, {
+      rulesVersion: RULES_VERSION_RELATIONSHIP_RESPONSE,
+      scoreRules: RELATIONSHIP_RESPONSE_REPLAY_RULES.scoreRules,
+      volatility: RELATIONSHIP_RESPONSE_REPLAY_RULES.volatility,
+      volatilityRandom: sourceRandom,
+      branchRollRandom: sourceRandom,
+      voidConfig: { voidCardCount: 0 },
+    });
+    await source.initialize();
+    source.startGame();
+    expect(source.executeWait()).toBe(true);
+
+    const storage = new LocalStorageMock();
+    const writer = new GameSaveService(storage);
+    expect(writer.save(() => source.exportSnapshot())).toBe(true);
+
+    const restored = await makeTm(1357);
+    const reader = new GameSaveService(storage);
+    expect(reader.load((data) => restored.importSnapshot(data))).toBe(true);
+    const state = restored.getScoreVolatilityState()!;
+    expect(restored.getRulesVersion()).toBe(RULES_VERSION_RELATIONSHIP_RESPONSE);
+    expect(state.model).toBe('relationship_response');
+    expect(Object.keys(state.relationshipResponseByCardId ?? {})).toHaveLength(60);
+    expect(state.trendWindowByCardId).toBeUndefined();
   });
 });

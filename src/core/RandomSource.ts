@@ -12,6 +12,17 @@ export interface RandomSource {
   int(min: number, maxExclusive: number): number;
 }
 
+/** 可序列化的伪随机状态；只用于本地存档续局，不写入云端事件。 */
+export interface SeededRandomState {
+  algorithm: 'mulberry32';
+  state: number;
+}
+
+export interface StatefulRandomSource extends RandomSource {
+  exportState(): SeededRandomState;
+  importState(state: SeededRandomState): boolean;
+}
+
 /** 默认随机源：包装 Math.random */
 export class MathRandomSource implements RandomSource {
   next(): number {
@@ -41,4 +52,19 @@ export class SeededRandomSource implements RandomSource {
   int(min: number, maxExclusive: number): number {
     return min + Math.floor(this.next() * (maxExclusive - min));
   }
+
+  exportState(): SeededRandomState {
+    return { algorithm: 'mulberry32', state: this.state };
+  }
+
+  importState(snapshot: SeededRandomState): boolean {
+    if (snapshot?.algorithm !== 'mulberry32' || !Number.isSafeInteger(snapshot.state)) return false;
+    this.state = snapshot.state >>> 0;
+    return true;
+  }
+}
+
+export function isStatefulRandomSource(source: RandomSource): source is StatefulRandomSource {
+  return typeof (source as Partial<StatefulRandomSource>).exportState === 'function' &&
+    typeof (source as Partial<StatefulRandomSource>).importState === 'function';
 }

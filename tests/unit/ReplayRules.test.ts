@@ -8,7 +8,7 @@ import {
 
 describe('ReplayRules', () => {
   describe('validateRulesSnapshotContract', () => {
-    it('should validate canonical V9 snapshot (single void current rules)', () => {
+    it('should validate canonical V10 snapshot (relationship response current rules)', () => {
       // Must be a complete match
       const snapshot = JSON.parse(JSON.stringify(CURRENT_REPLAY_RULES));
       const res = validateRulesSnapshotContract(snapshot);

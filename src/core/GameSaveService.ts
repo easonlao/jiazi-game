@@ -45,6 +45,7 @@ import {
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
+  RULES_VERSION_RELATIONSHIP_RESPONSE,
   CURRENT_RULES_VERSION,
   type SupportedRulesVersion,
   isSupportedRulesVersion,
@@ -61,6 +62,7 @@ export {
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
+  RULES_VERSION_RELATIONSHIP_RESPONSE,
   CURRENT_RULES_VERSION,
   type SupportedRulesVersion,
   isSupportedRulesVersion,
@@ -145,6 +147,15 @@ export interface GameSnapshot {
   balanceProfileVersion?: number;
   /** 平衡数值配置快照（可选） */
   balanceConfig?: Partial<BalanceConfig>;
+  /**
+   * 可序列化随机源的游标。V10 本地局用它确保空亡跨季/地支 roll 后读档仍与不中断局一致；
+   * 无法序列化的旧本地随机源不写此字段，仍按既有兼容路径读取。
+   */
+  randomState?: {
+    main?: { algorithm: 'mulberry32'; state: number };
+    volatility?: { algorithm: 'mulberry32'; state: number };
+    branchRoll?: { algorithm: 'mulberry32'; state: number };
+  };
   /** 本地试玩/降级局标记：若为 true 则该存档属于本地试玩，读档时不恢复账号修行账本。 */
   isLocalOnly?: boolean;
 }

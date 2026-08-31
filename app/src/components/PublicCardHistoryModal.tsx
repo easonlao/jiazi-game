@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { JiaziCard, TurnManager } from '@core/index';
 import type { RoundLogEntry } from '@core/index';
+import { RULES_VERSION_RELATIONSHIP_RESPONSE } from '@core/index';
 import { buildPublicCardHistoryView } from '../lib/publicCardHistory';
 import { elementScoreColor } from './CardVisual';
 
@@ -50,6 +51,7 @@ export function PublicCardHistoryModal({
   onClose: () => void;
 }) {
   const view = useMemo(() => buildPublicCardHistoryView(card, turnManager, roundLog), [card, roundLog, turnManager]);
+  const isRelationshipResponse = turnManager.getRulesVersion() === RULES_VERSION_RELATIONSHIP_RESPONSE;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -506,6 +508,22 @@ export function PublicCardHistoryModal({
             <div className="rounded-xl border border-wood-light/70 bg-white/50 px-3 py-2 text-xs leading-relaxed text-ink-light">
               部分历史回合未记录确切季节，未标注确定背景。
             </div>
+          )}
+
+          {isRelationshipResponse && (
+            <section
+              className="rounded-2xl border border-wood-light/65 bg-white/45 px-3 py-3"
+              aria-labelledby="card-history-response-title"
+              data-testid="card-history-relationship-explanation"
+            >
+              <h3 id="card-history-response-title" className="text-sm font-bold text-ink">此牌为何起伏</h3>
+              <p className="mt-1 text-xs leading-relaxed text-ink-light">
+                四季先定大势；天干先应，地支藏干随后承接，干支同气、相生或相冲会让这一季的评分以不同节奏靠近当季位置。
+              </p>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-light">
+                纳灵、释灵和持仓不会推高或压低牌价；也没有临时的“市场事件”。本局起伏只来自开局后已确定的季节与干支关系响应。
+              </p>
+            </section>
           )}
 
           <section aria-labelledby="card-history-trades-title">

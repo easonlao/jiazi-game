@@ -26,6 +26,7 @@ export {
   TREND_WINDOW_REPLAY_RULES,
   CLEAN_POOL_REPLAY_RULES,
   SINGLE_VOID_REPLAY_RULES,
+  RELATIONSHIP_RESPONSE_REPLAY_RULES,
   SUPPORTED_REPLAY_RULES,
   getReplayRulesByVersion,
   CURRENT_REPLAY_RULES,
@@ -41,6 +42,7 @@ export type {
   TrendWindowReplayRulesSnapshot,
   CleanPoolReplayRulesSnapshot,
   SingleVoidReplayRulesSnapshot,
+  RelationshipResponseReplayRulesSnapshot,
 } from './ReplayRules';
 
 export { SeasonCycle, LAZY_SEASON_LENGTH_DISTRIBUTION } from './SeasonCycle';
@@ -72,6 +74,7 @@ export {
   V7_STANDARD_PROFILE,
   V8_STANDARD_PROFILE,
   V9_STANDARD_PROFILE,
+  V10_RELATIONSHIP_RESPONSE_PROFILE,
   EA_DEFAULT_BALANCE_PROFILE,
   SUPPORTED_BALANCE_PROFILES,
   getBalanceProfileById,
@@ -105,6 +108,7 @@ export {
   getTrendDecayFactor,
   computeTrendDelta,
   createTrendWindowState,
+  relationshipResponseScore,
   TREND_WINDOW_WEIGHTS,
   TREND_WINDOW_PROBABILITIES,
   TREND_FLAT_DELTA,
@@ -123,6 +127,7 @@ export {
   CURRENT_RULES_VERSION,
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
+  RULES_VERSION_RELATIONSHIP_RESPONSE,
   isSupportedRulesVersion,
   isTradeRulesVersion,
   RULES_BASE,

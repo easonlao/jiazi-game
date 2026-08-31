@@ -8,7 +8,7 @@ import { Element, YinYang } from './JiaziCard.ts';
  * - conflict_banded（候选模型）：按卡牌天干/地支五行冲突分档推导牌级幅度，
  *   地支族共享方向（-1/-0.5/0/0.5/1），持续 1-3 回合后重掷。
  */
-export type VolatilityModel = 'uniform' | 'conflict_banded' | 'trend_window';
+export type VolatilityModel = 'uniform' | 'conflict_banded' | 'trend_window' | 'relationship_response';
 
 /** 卡牌波动档位（从现有天干/地支五行关系推导，不读分数、不新增第二套牌型数据）。 */
 export type RelationBand = 'stable' | 'mixed' | 'conflict' | 'earth';
@@ -80,6 +80,8 @@ export interface ScoreVolatilitySnapshot {
   bandFactors?: Partial<Record<RelationBand, number>>;
   /** trend_window 模型：每张牌独立的趋势状态（方向、剩余回合、窗口长度）。 */
   trendWindowByCardId?: Record<number, { direction: 1 | -1 | 0; remainingRounds: number; windowLength: number }>;
+  /** V10：本季起点与季末目标；评分只由这个冻结状态、季内进度与现有干支关系推导。 */
+  relationshipResponseByCardId?: Record<number, { entryScore: number; targetScore: number }>;
 }
 
 const DI_ZHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
@@ -218,6 +220,43 @@ export function computeTrendDelta(direction: 1 | -1 | 0, amplitude: number, deca
   return direction * amplitude * decayFactor;
 }
 
+// ─── relationship_response（V10）模型 ────────────────────────────────
+
+/**
+ * V10 的季内价格显现。它不读取玩家持仓或买卖记录，也不掷新的随机数：
+ * - 天干（现有评分权重 0.5）先随季节目标收敛；
+ * - 地支藏干（0.3）在前段滞后承接；
+ * - 干支关系（0.2）决定回归波的幅度，而非另加一套独立行情。
+ *
+ * 进度到季末时 wave 必为 0、三个响应都收敛到 1，因而精确落在 targetScore。
+ */
+export function relationshipResponseScore(
+  card: JiaziCard,
+  entryScore: number,
+  targetScore: number,
+  progress: number,
+): number {
+  const p = Math.max(0, Math.min(1, progress));
+  const stemResponse = 1 - Math.pow(1 - p, 1.55);
+  const branchProgress = Math.max(0, (p - 0.16) / 0.84);
+  const branchResponse = 1 - Math.pow(1 - branchProgress, 1.25);
+  const relationResponse = 1 - Math.pow(1 - p, 1.35);
+  const settlement = 0.5 * stemResponse + 0.3 * branchResponse + 0.2 * relationResponse;
+
+  const delta = targetScore - entryScore;
+  const bandFactor: Record<RelationBand, number> = {
+    stable: 0.95,
+    mixed: 1.1,
+    conflict: 0.72,
+    earth: 0.3,
+  };
+  const polarity = card.yinYang === YinYang.YANG ? 1.1 : 0.9;
+  const amplitude = Math.min(10, Math.abs(delta) * (0.22 + bandFactor[relationBand(card)] * 0.12) * polarity);
+  const relationWave = Math.sin(2 * Math.PI * p) + 0.32 * Math.sin(4 * Math.PI * p);
+  const direction = delta === 0 ? 0 : Math.sign(delta);
+  return Math.round(entryScore + delta * settlement + direction * amplitude * relationWave);
+}
+
 /**
  * 为所有牌生成初始趋势窗口状态（构造 / 换季 / 倒计时归零时调用）。
  * 每张牌独立抽取方向与窗口长度。
@@ -242,5 +281,5 @@ export function createTrendWindowState(
 
 /** 判断一个波动模型值是否被当前代码支持（缺省/undefined 不算未知，属旧格式）。 */
 export function isSupportedVolatilityModel(model: unknown): model is VolatilityModel {
-  return model === 'uniform' || model === 'conflict_banded' || model === 'trend_window';
+  return model === 'uniform' || model === 'conflict_banded' || model === 'trend_window' || model === 'relationship_response';
 }

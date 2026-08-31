@@ -71,7 +71,7 @@ describe('Issue 06: 稳定的 EA 试验分组与确定性分流', () => {
     const nullResult = assignPlayerToExperiment('player-uuid-123', null);
     expect(nullResult.experimentId).toBeNull();
     expect(nullResult.variantId).toBeNull();
-    expect(nullResult.profile.profileId).toBe('v9_standard');
+    expect(nullResult.profile.profileId).toBe('v10_relationship_response');
   });
 
   it('多分组权重按比例分配', () => {

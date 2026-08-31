@@ -3,6 +3,7 @@ import {
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
+  RULES_VERSION_RELATIONSHIP_RESPONSE,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOID,
   type SupportedRulesVersion,
@@ -18,6 +19,7 @@ export type BalanceProfileId =
   | 'v8_standard'
   | 'v9_standard'
   | 'v9_ea_tuned'
+  | 'v10_relationship_response'
   | (string & {});
 
 /**
@@ -107,7 +109,18 @@ export const V9_EA_TUNED_PROFILE: BalanceProfile = Object.freeze({
 
 export const V9_EA_CANDIDATE_PROFILE: BalanceProfile = V9_EA_TUNED_PROFILE;
 
-export const EA_DEFAULT_BALANCE_PROFILE: BalanceProfile = V9_STANDARD_PROFILE;
+/** V10 干支关系响应生产档案。 */
+export const V10_RELATIONSHIP_RESPONSE_PROFILE: BalanceProfile = Object.freeze({
+  profileId: 'v10_relationship_response',
+  profileVersion: 1,
+  rulesVersion: RULES_VERSION_RELATIONSHIP_RESPONSE,
+  name: 'V10 干支关系响应',
+  description: '天干先应、地支滞后与关系回归的季内评分显现',
+  balanceConfig: Object.freeze({ ...DEFAULT_BALANCE_CONFIG, concentrationPremiumFactor: 1 }),
+  voidCardCount: VOID_CARD_COUNT,
+});
+
+export const EA_DEFAULT_BALANCE_PROFILE: BalanceProfile = V10_RELATIONSHIP_RESPONSE_PROFILE;
 
 export const SUPPORTED_BALANCE_PROFILES: readonly BalanceProfile[] = Object.freeze([
   V4_STANDARD_PROFILE,
@@ -117,6 +130,7 @@ export const SUPPORTED_BALANCE_PROFILES: readonly BalanceProfile[] = Object.free
   V8_STANDARD_PROFILE,
   V9_STANDARD_PROFILE,
   V9_EA_TUNED_PROFILE,
+  V10_RELATIONSHIP_RESPONSE_PROFILE,
 ]);
 
 export function getBalanceProfileById(profileId: string): BalanceProfile | undefined {
@@ -137,6 +151,8 @@ export function getDefaultBalanceProfileForRules(rulesVersion: number): BalanceP
       return V8_STANDARD_PROFILE;
     case RULES_VERSION_SINGLE_VOID:
       return V9_STANDARD_PROFILE;
+    case RULES_VERSION_RELATIONSHIP_RESPONSE:
+      return V10_RELATIONSHIP_RESPONSE_PROFILE;
     default:
       if (rulesVersion >= RULES_VERSION_SINGLE_VOID) {
         return V9_STANDARD_PROFILE;

@@ -3,6 +3,7 @@ import {
   RULES_VERSION_BRANCH_ROLL,
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
+  RULES_VERSION_RELATIONSHIP_RESPONSE,
   RULES_VERSION_TRADE,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOID,
@@ -209,6 +210,25 @@ export const SINGLE_VOID_REPLAY_RULES: SingleVoidReplayRulesSnapshot = {
 };
 
 /**
+ * V10 干支关系响应：保留 V9 的牌池、空亡与交易结算，只替换季内评分的显现节奏。
+ * 这不是玩家订单流：状态完全由开季 entry/target、季内进度与既有干支关系推导。
+ */
+export interface RelationshipResponseReplayRulesSnapshot extends Omit<SingleVoidReplayRulesSnapshot, 'rulesVersion'> {
+  rulesVersion: typeof RULES_VERSION_RELATIONSHIP_RESPONSE;
+  relationshipResponse: { enabled: true; formulaVersion: 1 };
+}
+
+export const RELATIONSHIP_RESPONSE_REPLAY_RULES: RelationshipResponseReplayRulesSnapshot = {
+  ...SINGLE_VOID_REPLAY_RULES,
+  rulesVersion: RULES_VERSION_RELATIONSHIP_RESPONSE,
+  volatility: {
+    ...SINGLE_VOID_REPLAY_RULES.volatility,
+    model: 'relationship_response',
+  },
+  relationshipResponse: { enabled: true, formulaVersion: 1 },
+};
+
+/**
  * 服务端可创建/校验的新会话规则版本注册表（按版本号升序）。
  *
  * 2026-08-14 用户拍板：生产默认翻转为 V5（空亡）——排行榜清理 V4 旧数据后，
@@ -224,6 +244,7 @@ export const SUPPORTED_REPLAY_RULES: readonly ReplayRulesSnapshot[] = [
   TREND_WINDOW_REPLAY_RULES,
   CLEAN_POOL_REPLAY_RULES,
   SINGLE_VOID_REPLAY_RULES,
+  RELATIONSHIP_RESPONSE_REPLAY_RULES,
 ];
 
 /** 按规则版本号取冻结快照；未注册版本返回 undefined（函数层据此拒绝 409/422）。 */
@@ -231,8 +252,8 @@ export function getReplayRulesByVersion(version: number): ReplayRulesSnapshot | 
   return SUPPORTED_REPLAY_RULES.find((rules) => rules.rulesVersion === version);
 }
 
-/** 新局与服务端新会话使用的当前规则快照（V9：单空亡）。 */
-export const CURRENT_REPLAY_RULES = SINGLE_VOID_REPLAY_RULES;
+/** 新局与服务端新会话使用的当前规则快照（V10：干支关系响应）。 */
+export const CURRENT_REPLAY_RULES = RELATIONSHIP_RESPONSE_REPLAY_RULES;
 
 export interface ContractValidationResult {
   valid: boolean;
@@ -280,6 +301,7 @@ export function cloneReplayRulesSnapshot<T extends ReplayRulesSnapshot = ReplayR
     scoreRules: source.scoreRules ? { ...source.scoreRules } : undefined,
     ...((source as any).branchRoll ? { branchRoll: { ...(source as any).branchRoll } } : {}),
     ...((source as any).trendWindow ? { trendWindow: { ...(source as any).trendWindow } } : {}),
+    ...((source as any).relationshipResponse ? { relationshipResponse: { ...(source as any).relationshipResponse } } : {}),
     ...(source.balanceConfig ? { balanceConfig: { ...source.balanceConfig } } : {}),
   };
   return base as T;

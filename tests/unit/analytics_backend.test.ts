@@ -356,12 +356,7 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
       client_session_id: 'client-sess-abc',
       started_at: '2026-08-27T10:00:00.000Z',
       replay_seed: 42,
-      rules_snapshot: {
-        rulesVersion: 7,
-        scoreRules: {},
-        volatility: {},
-        voidCardCount: 2,
-      },
+      rules_snapshot: cloneReplayRulesSnapshot(),
       status: 'started',
       rounds_completed: 3,
       final_score: 50,
@@ -427,7 +422,7 @@ describe('SupabaseAnalyticsBackend session lifecycle', () => {
     expect(active?.session_id).toBe('db-uuid-session-123');
     expect(active?.client_session_id).toBe('client-sess-abc');
     expect(active?.seed).toBe(42);
-    expect(active?.rules_snapshot.rulesVersion).toBe(7);
+    expect(active?.rules_snapshot.rulesVersion).toBe(CURRENT_RULES_VERSION);
     expect(eventsEqMock).toHaveBeenCalledWith('player_id', 'player-1');
     expect(eventsEqMock).toHaveBeenCalledWith('session_id', 'db-uuid-session-123');
     expect(active?.actions).toEqual([
@@ -562,7 +557,7 @@ describe('SupabaseAnalyticsBackend recoverCorruptedSession & activeSession revis
       id: 'sess-1',
       started_at: '2026-08-10T00:00:00.000Z',
       replay_seed: 123,
-      rules_snapshot: { rulesVersion: 8, volatility: true },
+      rules_snapshot: cloneReplayRulesSnapshot(),
       rounds_completed: 2,
       final_score: 50,
       session_revision: 5,
