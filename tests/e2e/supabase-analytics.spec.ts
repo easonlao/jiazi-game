@@ -22,7 +22,8 @@ test.describe('Supabase 匿名身份与遥测', () => {
   });
 
   test('V10 新局等待服务端 seed，并在完整 60 回合后校验入榜（干支关系响应生产默认）', async ({ page }) => {
-    test.setTimeout(240_000);
+    // 真实云端的 60 回合会串行上传事件；跨区域网络下 240 秒不足以覆盖最慢一次完整链路。
+    test.setTimeout(420_000);
     await page.goto('/');
 
     await expect(page.getByRole('button', { name: '查看修行档案' }).first()).toBeVisible({ timeout: 15_000 });
@@ -48,7 +49,7 @@ test.describe('Supabase 匿名身份与遥测', () => {
     const startVerifiedResponse = page.waitForResponse(
       (response) => response.url().includes('/functions/v1/start-verified-session') &&
         response.request().method() === 'POST',
-      { timeout: 30_000 },
+      { timeout: 60_000 },
     );
 
     const startButton = page.getByRole('button', { name: '开始游戏' });

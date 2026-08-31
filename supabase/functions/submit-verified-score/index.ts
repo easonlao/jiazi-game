@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
   if (sessionError) return json({ error: 'internal_error' }, 500);
   if (!session) return json({ error: 'session_not_found' }, 404);
   const sessionProfileId = (session.rules_snapshot as { balanceProfileId?: string })?.balanceProfileId ?? null;
-  const sessionRulesVersion = session.rules_version;
+  const sessionRulesVersionRaw = session.rules_version;
 
   if (session.verified_at) {
     const { data: leaderboardEntry, error: leaderboardError } = await supabase
@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
           .insert({
             public_player_id: profile.public_player_id,
             score: verifiedScore,
-            rules_version: String(sessionRulesVersion),
+            rules_version: String(sessionRulesVersionRaw),
             balance_profile_id: sessionProfileId,
             session_id: session.id,
           });
@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
       player_id: link.player_id,
       local_game_id: session.id,
       game_session_id: session.id,
-      rules_version: Number(sessionRulesVersion),
+      rules_version: Number(sessionRulesVersionRaw),
       balance_profile_id: sessionProfileId,
       started_at: session.started_at,
       ended_at: session.verified_at,
@@ -129,9 +129,9 @@ Deno.serve(async (req) => {
   if (!Number.isSafeInteger(session.replay_seed) || !isReplayRulesSnapshot(session.rules_snapshot)) {
     return json({ error: 'session_not_verifiable' }, 409);
   }
-  // 规则版本门控：只接受注册表内可校验的版本（票 04 修正案 = V4 生产默认 + V5 增量）。
+  // 规则版本门控：只接受注册表内可校验的版本（当前新局为 V10，旧局按各自冻结快照解释）。
   // 会话 rules_version 与规则快照的 rulesVersion 必须同时落在注册表且互相一致；
-  // V1-V3 历史对局只读，不重放、不上新榜（既有行为）。V4 判定与直用 CURRENT_REPLAY_RULES 一致。
+  // V1-V3 历史对局只读，不重放、不上新榜；新局版本必须与快照契约一致。
   const sessionRulesVersion = Number(session.rules_version);
   const sessionRules = getReplayRulesByVersion(sessionRulesVersion);
   if (
