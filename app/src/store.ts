@@ -386,6 +386,8 @@ interface GameStore {
   refreshCloudLeaderboard: () => Promise<void>;
   /** 重试最近一局的云端校验（failed/rejected 时有效，不抛错） */
   retryVerification: () => void;
+  /** 旧版本对局重放被拒绝时，经服务端确认后技术结束本局（不计放弃、不入档） */
+  recoverRejectedVerification: () => Promise<boolean>;
 
   // 交易看板（行迹）
   dashboardOpen: boolean;
@@ -1002,7 +1004,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
         });
         set({ telemetryState: _telemetryController.getState() });
         refreshCultivationLedgerOverview(set, get);
-        void ensureTelemetryInit();
+        void ensureTelemetryInit().then(() => {
+          const controller = _telemetryController;
+          const telemetry = controller?.getState();
+          const activeSession = telemetry?.activeCloudSession;
+          const pendingRecord = activeSession
+            ? controller?.verification.get(activeSession.session_id) ?? null
+            : null;
+
+          // 刷新页面后仅恢复“仍是云端活动会话”的校验提示。这样旧局既不会污染首页，
+          // 又能让版本升级前完成、现被重放拒绝的那一局继续走技术结束流程。
+          if (
+            pendingRecord &&
+            pendingRecord.playerId === telemetry?.identity?.player_id &&
+            get().gameState === 'init' &&
+            get()._endedSessionId === null
+          ) {
+            set({
+              _endedSessionId: pendingRecord.sessionId,
+              verificationState: pendingRecord,
+            });
+          }
+        });
       }
 
       // 检查是否有未完成的受损对局技术恢复（按当前已立档/默认玩家隔离读取）
@@ -1498,6 +1521,50 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!sessionId) return;
     // 状态由 onVerificationChange 回写（重新进入 pending），这里无需手动 set。
     _telemetryController?.retryVerification(sessionId);
+  },
+
+  async recoverRejectedVerification(): Promise<boolean> {
+    const sessionId = get()._endedSessionId;
+    const verification = get().verificationState;
+    if (
+      !sessionId ||
+      verification?.status !== 'rejected' ||
+      verification.message !== 'replay_rejected'
+    ) {
+      return false;
+    }
+
+    set({ recoveringCorruptedGame: true, corruptedRecoveryError: null });
+    await ensureTelemetryInit();
+    const controller = _telemetryController;
+    if (!controller) {
+      set({
+        recoveringCorruptedGame: false,
+        corruptedRecoveryError: '云端身份尚未就绪，请稍后重试。',
+      });
+      return false;
+    }
+
+    const recovered = await controller.discardSessionWithoutPenalty('corrupted_recovery', sessionId);
+    if (!recovered) {
+      set({
+        recoveringCorruptedGame: false,
+        corruptedRecoveryError: '本局技术结束尚未完成，请检查网络后重试。',
+      });
+      return false;
+    }
+
+    controller.removeVerification(sessionId);
+    set({
+      recoveringCorruptedGame: false,
+      corruptedRecoveryError: null,
+      verificationState: null,
+      _endedSessionId: null,
+      pendingCorruptedSessionId: null,
+      pendingCorruptedRecord: null,
+    });
+    get().showToast('旧版本对局已技术结束，不计入放弃或修行档案');
+    return true;
   },
 
   async retryCorruptedRecovery(): Promise<boolean> {

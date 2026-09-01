@@ -470,6 +470,31 @@ describe('TelemetryController leaderboard eligibility', () => {
   });
 });
 
+describe('TelemetryController completed-session technical recovery', () => {
+  it('已结束且校验失败的会话会先读取云端 revision，再请求技术恢复', async () => {
+    const storage = new MemoryStorage();
+    seedIdentity(storage, true);
+    const backend = createBackend();
+    backend.fetchActiveGameSession.mockResolvedValue({
+      session_id: 'legacy-rejected-session',
+      session_revision: 36,
+      last_event_sequence: 36,
+      rounds_completed: 60,
+      actions: Array.from({ length: 60 }, () => ({ type: 'wait' })),
+    } as any);
+    const controller = new TelemetryController({ storage, backend });
+
+    await controller.init();
+    const recovered = await controller.discardSessionWithoutPenalty(
+      'corrupted_recovery',
+      'legacy-rejected-session',
+    );
+
+    expect(recovered).toBe(true);
+    expect(backend.recoverCorruptedSession).toHaveBeenCalledWith('legacy-rejected-session', 36);
+  });
+});
+
 describe('TelemetryController.updateDisplayName', () => {
   beforeEach(() => {
     vi.restoreAllMocks();

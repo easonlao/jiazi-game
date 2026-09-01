@@ -43,6 +43,7 @@ export function StartScreen({
   const retryCorruptedRecovery = useGameStore((s) => s.retryCorruptedRecovery);
   const verificationState = useGameStore((s) => s.verificationState);
   const retryVerification = useGameStore((s) => s.retryVerification);
+  const recoverRejectedVerification = useGameStore((s) => s.recoverRejectedVerification);
   const identity = telemetryState?.identity ?? null;
   const consent = telemetryState?.consent ?? null;
   const consentGranted = consent?.granted ?? false;
@@ -143,14 +144,30 @@ export function StartScreen({
 
       {hasCloudIdentity && (verificationState?.status === 'failed' || verificationState?.status === 'rejected') && (
         <div role="alert" className="w-full max-w-xs rounded-xl border border-qi-critical/40 bg-qi-critical/10 px-3 py-2.5 text-xs leading-relaxed text-ink">
-          <p className="font-serif font-bold">本局云端校验未完成</p>
-          <p className="mt-0.5 text-ink-light">成长记录暂未更新，可稍后重试。</p>
-          <button
-            onClick={retryVerification}
-            className="mt-2 rounded-lg border border-qi-critical/50 bg-parchment px-3 py-1.5 text-xs font-bold text-qi-critical transition-colors hover:bg-qi-critical hover:text-parchment"
-          >
-            重试云端校验
-          </button>
+          {verificationState.status === 'rejected' && verificationState.message === 'replay_rejected' ? (
+            <>
+              <p className="font-serif font-bold">旧版本对局无法校验</p>
+              <p className="mt-0.5 text-ink-light">本局来自旧版本，无法按当前规则安全重放。技术结束不会计为放弃，也不会写入修行档案。</p>
+              <button
+                onClick={() => void recoverRejectedVerification()}
+                disabled={recoveringCorruptedGame}
+                className="mt-2 rounded-lg border border-qi-critical/50 bg-parchment px-3 py-1.5 text-xs font-bold text-qi-critical transition-colors hover:bg-qi-critical hover:text-parchment disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {recoveringCorruptedGame ? '正在技术结束…' : '技术结束本局（不计放弃）'}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="font-serif font-bold">本局云端校验未完成</p>
+              <p className="mt-0.5 text-ink-light">成长记录暂未更新，可稍后重试。</p>
+              <button
+                onClick={retryVerification}
+                className="mt-2 rounded-lg border border-qi-critical/50 bg-parchment px-3 py-1.5 text-xs font-bold text-qi-critical transition-colors hover:bg-qi-critical hover:text-parchment"
+              >
+                重试云端校验
+              </button>
+            </>
+          )}
         </div>
       )}
 

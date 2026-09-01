@@ -1112,9 +1112,9 @@ export class TelemetryController {
   /** 免惩罚技术放弃当前受损会话（经服务端重放验证后写入 corrupted_recovery，不写入 abandoned，不计入坚持度未完成惩罚）。返回是否成功确认落库。 */
   async discardSessionWithoutPenalty(
     reason: 'corrupted_recovery' = 'corrupted_recovery',
-    targetSessionId?: string,
+    requestedSessionId?: string,
   ): Promise<boolean> {
-    const sessId = targetSessionId ?? this.session?.session_id ?? this.state.activeCloudSession?.session_id;
+    const sessId = requestedSessionId ?? this.session?.session_id ?? this.state.activeCloudSession?.session_id;
     const identity = this.state.identity;
 
     // 若本地纯离线试玩且无任何在线会话关联，视为成功
@@ -1127,81 +1127,97 @@ export class TelemetryController {
       console.warn('[telemetry] discardSessionWithoutPenalty 失败：玩家身份尚未就绪');
       return false;
     }
+    if (!sessId) {
+      console.warn('[telemetry] discardSessionWithoutPenalty 失败：缺少云端会话标识');
+      return false;
+    }
+    const targetSessionId = sessId;
 
-    // 跨设备冲突检查：若本地正在进行活跃会话，且云端存在比本地受损上下文更晚的有效对局，识别为冲突并交由玩家决策
-    if (this.session) {
-      try {
-        const activeCloud = await this.backend.fetchActiveGameSession(identity.player_id);
-        if (activeCloud && activeCloud.session_id === sessId) {
-          const cloudRounds = activeCloud.rounds_completed;
-          const cloudActions = activeCloud.actions?.length ?? 0;
-          const localRounds = this.sessionProgress.rounds ?? 0;
-          const localActions = this.session?.replayActions?.length ?? 0;
-
-          if (cloudRounds > localRounds || cloudActions > localActions) {
-            console.warn(`[telemetry] discardSessionWithoutPenalty 检测到跨设备冲突: 云端第 ${cloudRounds} 轮 > 本地受损第 ${localRounds} 轮`);
-            this.setState({
-              terminationConflict: {
-                sessionId: sessId,
-                kind: 'corrupted_recovery',
-                localTermination: {
-                  sessionId: sessId,
-                  playerId: identity.player_id,
-                  reason: 'corrupted_recovery' as any,
-                  roundsCompleted: localRounds,
-                  finalScore: this.sessionProgress.final_score ?? 0,
-                  occurredAt: new Date().toISOString(),
-                  status: 'pending',
-                  clientActionCount: localActions,
-                  kind: 'corrupted_recovery',
-                  expectedSessionRevision: this.session?.sessionRevision ?? this.session?.lastEventSequence ?? localActions,
-                  expectedLastEventSequence: this.session?.sessionRevision ?? this.session?.lastEventSequence ?? localActions,
-                },
-                cloudSession: activeCloud,
-              },
-            });
-            return false;
-          }
-        }
-      } catch (e) {
-        // 忽略检查异常，继续执行
+    // 结束后的校验失败已清空 this.session / activeCloudSession。技术恢复仍需从云端
+    // 取回该局的最新 revision，才能通过 private.finalize_corrupted_recovery 的并发保护。
+    // 同时，进行中会话也复用这次读取做跨设备冲突检查。
+    let latestTargetSession = this.state.activeCloudSession?.session_id === targetSessionId
+      ? this.state.activeCloudSession
+      : null;
+    try {
+      const activeCloud = await this.backend.fetchActiveGameSession(identity.player_id);
+      if (activeCloud?.session_id === targetSessionId) {
+        latestTargetSession = activeCloud;
+        this.setState({ activeCloudSession: activeCloud });
       }
+
+      // 跨设备冲突检查：若本地正在进行活跃会话，且云端存在比本地受损上下文更晚的有效对局，识别为冲突并交由玩家决策
+      if (this.session && activeCloud && activeCloud.session_id === targetSessionId) {
+        const cloudRounds = activeCloud.rounds_completed;
+        const cloudActions = activeCloud.actions?.length ?? 0;
+        const localRounds = this.sessionProgress.rounds ?? 0;
+        const localActions = this.session?.replayActions?.length ?? 0;
+
+        if (cloudRounds > localRounds || cloudActions > localActions) {
+          console.warn(`[telemetry] discardSessionWithoutPenalty 检测到跨设备冲突: 云端第 ${cloudRounds} 轮 > 本地受损第 ${localRounds} 轮`);
+          this.setState({
+            terminationConflict: {
+              sessionId: targetSessionId,
+              kind: 'corrupted_recovery',
+              localTermination: {
+                sessionId: targetSessionId,
+                playerId: identity.player_id,
+                reason: 'corrupted_recovery' as any,
+                roundsCompleted: localRounds,
+                finalScore: this.sessionProgress.final_score ?? 0,
+                occurredAt: new Date().toISOString(),
+                status: 'pending',
+                clientActionCount: localActions,
+                kind: 'corrupted_recovery',
+                expectedSessionRevision: this.session?.sessionRevision ?? this.session?.lastEventSequence ?? localActions,
+                expectedLastEventSequence: this.session?.sessionRevision ?? this.session?.lastEventSequence ?? localActions,
+              },
+              cloudSession: activeCloud,
+            },
+          });
+          return false;
+        }
+      }
+    } catch {
+      // 读取失败时继续走现有会话 revision；Edge Function 仍会做最终并发校验。
     }
 
     // 服务端受控验证并原子写入 corrupted_recovery
     let ok = false;
-    if (sessId) {
-      const expectedRevision = this.session?.sessionRevision ?? this.state.activeCloudSession?.session_revision ?? this.session?.lastEventSequence ?? this.state.activeCloudSession?.last_event_sequence ?? 0;
-      const res = await this.backend.recoverCorruptedSession(sessId, expectedRevision);
-      ok = res.success;
-      if (!ok) {
-        if (res.isConflict) {
-          const latestCloud = await this.backend.fetchActiveGameSession(identity.player_id);
-          if (latestCloud) {
-            this.setState({
-              terminationConflict: {
-                sessionId: sessId,
+    const expectedRevision = this.session?.sessionRevision
+      ?? latestTargetSession?.session_revision
+      ?? this.session?.lastEventSequence
+      ?? latestTargetSession?.last_event_sequence
+      ?? 0;
+    const res = await this.backend.recoverCorruptedSession(targetSessionId, expectedRevision);
+    ok = res.success;
+    if (!ok) {
+      if (res.isConflict) {
+        const latestCloud = await this.backend.fetchActiveGameSession(identity.player_id);
+        if (latestCloud) {
+          this.setState({
+            terminationConflict: {
+              sessionId: targetSessionId,
+              kind: 'corrupted_recovery',
+              localTermination: {
+                sessionId: targetSessionId,
+                playerId: identity.player_id,
+                reason: 'corrupted_recovery' as any,
+                roundsCompleted: this.sessionProgress.rounds ?? 0,
+                finalScore: this.sessionProgress.final_score ?? 0,
+                occurredAt: new Date().toISOString(),
+                status: 'pending',
+                clientActionCount: this.session?.replayActions?.length ?? 0,
                 kind: 'corrupted_recovery',
-                localTermination: {
-                  sessionId: sessId,
-                  playerId: identity.player_id,
-                  reason: 'corrupted_recovery' as any,
-                  roundsCompleted: this.sessionProgress.rounds ?? 0,
-                  finalScore: this.sessionProgress.final_score ?? 0,
-                  occurredAt: new Date().toISOString(),
-                  status: 'pending',
-                  clientActionCount: this.session?.replayActions?.length ?? 0,
-                  kind: 'corrupted_recovery',
-                  expectedSessionRevision: expectedRevision,
-                  expectedLastEventSequence: expectedRevision,
-                },
-                cloudSession: latestCloud,
+                expectedSessionRevision: expectedRevision,
+                expectedLastEventSequence: expectedRevision,
               },
-            });
-          }
+              cloudSession: latestCloud,
+            },
+          });
         }
-        console.warn('[telemetry] discardSessionWithoutPenalty recoverCorruptedSession 失败', res.error);
       }
+      console.warn('[telemetry] discardSessionWithoutPenalty recoverCorruptedSession 失败', res.error);
     }
 
     if (ok) {
@@ -1341,6 +1357,11 @@ export class TelemetryController {
   /** 对 failed / rejected 的会话重新提交校验；状态不合法时返回 null。 */
   retryVerification(sessionId: string): VerificationRecord | null {
     return this.verification.retry(sessionId);
+  }
+
+  /** 技术恢复完成后移除本地失败校验记录，避免首页在刷新后继续提示旧局可重试。 */
+  removeVerification(sessionId: string): void {
+    this.verification.remove(sessionId);
   }
 
   private defaultDisplayName(): string {

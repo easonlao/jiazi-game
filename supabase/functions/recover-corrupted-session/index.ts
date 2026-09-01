@@ -120,6 +120,8 @@ Deno.serve(async (req) => {
         voidCardCount: (session.rules_snapshot as { voidCardCount?: number }).voidCardCount !== undefined
           ? (session.rules_snapshot as { voidCardCount?: number }).voidCardCount
           : (session.rules_snapshot.rulesVersion >= 5 ? 3 : 0),
+        voidKMin: (session.rules_snapshot as { voidKMin?: number }).voidKMin,
+        voidKMax: (session.rules_snapshot as { voidKMax?: number }).voidKMax,
         balanceProfileId: (session.rules_snapshot as { balanceProfileId?: string }).balanceProfileId,
         balanceProfileVersion: (session.rules_snapshot as { balanceProfileVersion?: number }).balanceProfileVersion,
         balanceConfig: (session.rules_snapshot as { balanceConfig?: any }).balanceConfig,

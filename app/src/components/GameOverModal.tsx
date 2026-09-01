@@ -33,6 +33,8 @@ export function GameOverModal() {
   const verificationState = useGameStore((s) => s.verificationState);
   const telemetryState = useGameStore((s) => s.telemetryState);
   const retryVerification = useGameStore((s) => s.retryVerification);
+  const recoverRejectedVerification = useGameStore((s) => s.recoverRejectedVerification);
+  const recoveringCorruptedGame = useGameStore((s) => s.recoveringCorruptedGame);
   const cloudIdentityReady = Boolean(
     telemetryState?.consent?.granted && telemetryState.identity?.leaderboard_eligible,
   );
@@ -178,16 +180,31 @@ export function GameOverModal() {
             )}
             {(verificationState?.status === 'rejected' || verificationState?.status === 'failed') && (
               <div>
-                <p className="text-xs text-qi-critical">
-                  {verificationState.status === 'rejected' ? '云端校验未通过' : '云端校验失败（网络/服务异常）'}
-                  {verificationState.message ? `：${verificationState.message}` : ''}
-                </p>
-                <button
-                  onClick={retryVerification}
-                  className="mt-1.5 text-[11px] font-bold text-ink underline underline-offset-2"
-                >
-                  重试校验
-                </button>
+                {verificationState.status === 'rejected' && verificationState.message === 'replay_rejected' ? (
+                  <>
+                    <p className="text-xs text-qi-critical">本局来自旧版本，无法按当前规则安全重放。技术结束不会计为放弃，也不会写入修行档案。</p>
+                    <button
+                      onClick={() => void recoverRejectedVerification()}
+                      disabled={recoveringCorruptedGame}
+                      className="mt-1.5 text-[11px] font-bold text-ink underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {recoveringCorruptedGame ? '正在技术结束…' : '技术结束本局（不计放弃）'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-qi-critical">
+                      {verificationState.status === 'rejected' ? '云端校验未通过' : '云端校验失败（网络/服务异常）'}
+                      {verificationState.message ? `：${verificationState.message}` : ''}
+                    </p>
+                    <button
+                      onClick={retryVerification}
+                      className="mt-1.5 text-[11px] font-bold text-ink underline underline-offset-2"
+                    >
+                      重试校验
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
