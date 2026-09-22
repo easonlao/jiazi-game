@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore, seasonDisplay } from '../store';
-import { BRANCH_ROLL_DI_ZHI, ALL_SECTS, SEASON_ACTIVE_SECTS } from '@core/index';
+import { BRANCH_ROLL_DI_ZHI, ALL_SECTS, SEASON_ACTIVE_SECTS, SINGLE_YEAR_BOONS } from '@core/index';
 
 const roundAnimStyle = {
   animation: 'roundPop 0.4s ease-out',
@@ -27,6 +27,7 @@ export function TopPanel() {
   const year = useGameStore((s) => s.year);
   const turn = useGameStore((s) => s.turn);
   const quota = useGameStore((s) => s.quota);
+  const activeBoon = useGameStore((s) => s.activeBoon);
   const score = useGameStore((s) => s.score);
   const scoreDelta = useGameStore((s) => s.scoreDelta);
   // V6 地支偏移条（票 03）：12 地支效果值；非 V6 为 null → 整条不渲染（V5 零回归）
@@ -67,6 +68,15 @@ export function TopPanel() {
             <span className="text-[11px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300/80 shadow-xs tabular-nums">
               第 {year} 年 · {turn}/20 轮
             </span>
+            {activeBoon && activeBoon !== 'none' && SINGLE_YEAR_BOONS[activeBoon as keyof typeof SINGLE_YEAR_BOONS] && (
+              <span
+                className="text-[10px] font-bold text-teal-800 bg-teal-100/90 px-2 py-0.5 rounded-full border border-teal-300/80 shadow-xs"
+                title={SINGLE_YEAR_BOONS[activeBoon as keyof typeof SINGLE_YEAR_BOONS]?.description}
+                data-testid="active-boon-badge"
+              >
+                ✨【{SINGLE_YEAR_BOONS[activeBoon as keyof typeof SINGLE_YEAR_BOONS]?.name}】{SINGLE_YEAR_BOONS[activeBoon as keyof typeof SINGLE_YEAR_BOONS]?.shortDesc}
+              </span>
+            )}
           </div>
           <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-light tabular-nums">
             <span className="font-medium text-ink">季内第 {roundInSeason} 回合</span>

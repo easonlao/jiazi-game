@@ -28,6 +28,11 @@ import {
   type AcceptDemandResult,
   type DeclineDemandResult,
 } from './SectManager.ts';
+import {
+  type SingleYearBoonId,
+  SINGLE_YEAR_BOONS,
+  type SingleYearBoon,
+} from './SingleYearBoon.ts';
 import { type BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
 import {
   getBalanceProfileById,
@@ -509,6 +514,8 @@ export class TurnManager {
   private quota: number = 650;
   /** 天劫门槛折扣率，默认 1.0 */
   private quotaDiscount: number = 1.0;
+  /** 当岁激活的单岁护航造化机缘，默认 none (V11) */
+  private activeBoon: SingleYearBoonId = 'none';
   /** 成功存活/突破的完整年岁数累计 */
   private totalYearsSurvived: number = 0;
   /** 最近一次天劫大考结算结果 */
@@ -2216,6 +2223,7 @@ export class TurnManager {
       baseQuota: this.baseQuota,
       quota: this.quota,
       quotaDiscount: this.quotaDiscount,
+      activeBoon: this.activeBoon,
       totalYearsSurvived: this.totalYearsSurvived,
       pool: {
         deckIds: this.cardPoolManager.getDeck().map(c => c.id),
@@ -2493,6 +2501,19 @@ export class TurnManager {
     this.baseQuota = typeof data.baseQuota === 'number' ? data.baseQuota : 650;
     this.quota = typeof data.quota === 'number' ? data.quota : 650;
     this.quotaDiscount = typeof data.quotaDiscount === 'number' ? data.quotaDiscount : 1.0;
+    this.activeBoon = (data.activeBoon as SingleYearBoonId) ?? 'none';
+    if (this.activeBoon === 'xumi') {
+      this.handManager.setMaxLeyline(3);
+    } else {
+      this.handManager.setMaxLeyline(data.maxLeyline ?? HandManager.DEFAULT_MAX_LEYLINE);
+    }
+    if (this.activeBoon === 'taiyi') {
+      this.qiManager.setMaxQi(130);
+      this.qiManager.setExtraRegen(5);
+    } else {
+      this.qiManager.setMaxQi(this.balanceConfig.maxQi);
+      this.qiManager.setExtraRegen(0);
+    }
     this.totalYearsSurvived = typeof data.totalYearsSurvived === 'number' ? data.totalYearsSurvived : Math.max(0, this.year - 1);
     this.lastTribulationResult = null;
 
@@ -2983,9 +3004,14 @@ export class TurnManager {
     return this.handManager.canBuy();
   }
 
-  /** 是否处于地脉软超限状态 */
+  /** 是否处于地脉软超限状态（容量满或超额） */
   isLeylineSoftCapped(): boolean {
     return this.handManager.isLeylineSoftCapped();
+  }
+
+  /** 是否处于地脉严格溢出超限状态（牌数严格大于当前上限，如 3 缩 2 存量 3 张） */
+  isLeylineOverCapacity(): boolean {
+    return this.handManager.isLeylineOverCapacity();
   }
 
   // =========================================================================
@@ -3224,6 +3250,16 @@ export class TurnManager {
     this.quota = Math.round(this.baseQuota * this.quotaDiscount);
   }
 
+  /** 获取当前年岁激活的单岁护航机缘 (V11) */
+  getActiveBoon(): SingleYearBoonId {
+    return this.activeBoon;
+  }
+
+  /** 获取当前年岁额外每轮回复神识量（太乙金丹提供 +5） */
+  getExtraRegen(): number {
+    return this.qiManager.getExtraRegen();
+  }
+
   /** 获取成功存活/突破的完整年岁数累计 */
   getTotalYearsSurvived(): number {
     return this.totalYearsSurvived;
@@ -3340,13 +3376,17 @@ export class TurnManager {
    * 迈入新岁 (Advance To Next Year - V11)
    * 
    * 渡劫成功后调用：
+   * - 强制重置上一年单岁造化（Anti-Snowballing，防滚雪球）；
+   * - 注入并激活新岁选定的 3 选 1 护航机缘（须弥芥子 / 太乙金丹 / 欺天灵符）；
    * - 将修为重置为结转道基 carryover (溢出修为的 35%)；
    * - 存活年岁增加，year++，turn 重置为 1；
    * - 每年天劫基准门槛递增 1.95x：baseQuota = round(baseQuota * 1.95), quota = round(baseQuota * quotaDiscount)；
    * - 重置宗门怒意；
    * - 刷新公共卡池，恢复状态至 player_action，启动新一岁周天运转。
    */
-  advanceToNextYear(options?: { quotaDiscount?: number }): boolean {
+  advanceToNextYear(
+    boonOrOptions?: SingleYearBoonId | { quotaDiscount?: number; boonId?: SingleYearBoonId }
+  ): boolean {
     if (!this.lastTribulationResult || !this.lastTribulationResult.success) {
       return false;
     }
@@ -3358,20 +3398,50 @@ export class TurnManager {
     this.year++;
     this.turn = 1;
 
-    if (options?.quotaDiscount !== undefined) {
-      this.quotaDiscount = options.quotaDiscount;
+    // 1. 强制重置上一岁造化与加成 (Anti-Snowballing 严禁滚雪球永久累加)
+    this.handManager.setMaxLeyline(HandManager.DEFAULT_MAX_LEYLINE);
+    this.qiManager.setMaxQi(this.balanceConfig.maxQi);
+    this.qiManager.setExtraRegen(0);
+    this.quotaDiscount = 1.0;
+    this.activeBoon = 'none';
+
+    // 2. 解析新岁选定的造化机缘
+    let chosenBoon: SingleYearBoonId = 'none';
+    if (typeof boonOrOptions === 'string') {
+      chosenBoon = boonOrOptions;
+    } else if (boonOrOptions && typeof boonOrOptions === 'object') {
+      if (boonOrOptions.boonId) {
+        chosenBoon = boonOrOptions.boonId;
+      }
+      if (boonOrOptions.quotaDiscount !== undefined) {
+        this.quotaDiscount = boonOrOptions.quotaDiscount;
+      }
     }
 
+    // 3. 激活新岁造化效果
+    if (chosenBoon === 'xumi') {
+      this.activeBoon = 'xumi';
+      this.handManager.setMaxLeyline(3);
+    } else if (chosenBoon === 'taiyi') {
+      this.activeBoon = 'taiyi';
+      this.qiManager.setMaxQi(130);
+      this.qiManager.setExtraRegen(5);
+    } else if (chosenBoon === 'qitian') {
+      this.activeBoon = 'qitian';
+      this.quotaDiscount = 0.8;
+    }
+
+    // 4. 计算新岁天劫门槛
     this.baseQuota = Math.round(this.baseQuota * 1.95);
     this.quota = Math.round(this.baseQuota * this.quotaDiscount);
 
-    // 清空宗门怒意
+    // 5. 清空宗门怒意
     this.sectManager.clearAnger();
 
-    // 重新规划当季宗门
+    // 6. 重新规划当季宗门
     this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
 
-    // 抽新公共牌
+    // 7. 抽新公共牌
     this.drawPublicCards();
 
     this.lastTribulationResult = null;
@@ -4040,3 +4110,9 @@ export class TurnManager {
     return true;
   }
 }
+
+export {
+  type SingleYearBoonId,
+  SINGLE_YEAR_BOONS,
+  type SingleYearBoon,
+};

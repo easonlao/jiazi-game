@@ -143,6 +143,8 @@ export interface GameSnapshot {
   quota?: number;
   /** 天劫门槛折扣率 (V11 引入，默认 1.0) */
   quotaDiscount?: number;
+  /** 当岁激活的单岁护航造化机缘 (V11 引入，默认 none) */
+  activeBoon?: string;
   /** 成功存活年岁数累计 (V11 引入，默认 0) */
   totalYearsSurvived?: number;
   pool: CardPoolSnapshot;

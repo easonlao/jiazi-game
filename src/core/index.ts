@@ -197,3 +197,6 @@ export {
   SECOND_LEVERAGE_AVOID_SEASON_END,
 } from './LeverageStrategy';
 export type { LeverageDecisionContext } from './LeverageStrategy';
+
+export { SINGLE_YEAR_BOONS } from './SingleYearBoon';
+export type { SingleYearBoonId, SingleYearBoon } from './SingleYearBoon';

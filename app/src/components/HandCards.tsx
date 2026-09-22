@@ -224,11 +224,21 @@ export function HandCards() {
             <span className="text-[10px] text-sky-800 bg-sky-100/90 px-1.5 py-0.5 rounded font-sans">
               暗牌 · 0维持费 · 避巡视
             </span>
-            {isLeylineSoftCapped && (
-              <span className="text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded font-mono font-bold">
-                ⚠️软超限拦截
+            {leyline.filter((s) => s).length > maxLeyline ? (
+              <span
+                className="text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse"
+                data-testid="leyline-overflow-badge"
+              >
+                ⚠️地脉超限 ({leyline.filter((s) => s).length}/{maxLeyline}) · 只出不进
               </span>
-            )}
+            ) : isLeylineSoftCapped ? (
+              <span
+                className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-mono font-bold"
+                data-testid="leyline-full-badge"
+              >
+                ⚠️已满仓 ({maxLeyline}/{maxLeyline}) · 只出不进
+              </span>
+            ) : null}
           </h3>
 
           {selectedLeylineCard >= 0 && leyline[selectedLeylineCard] && (

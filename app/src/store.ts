@@ -33,6 +33,8 @@ import {
   type SectInfo,
   type PendingBuyback,
   type TribulationResult,
+  type SingleYearBoonId,
+  SINGLE_YEAR_BOONS,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -272,6 +274,8 @@ interface GameStore {
   tribulationResult: TribulationResult | null;
   /** V11 年岁体系：天劫大考结算弹窗是否打开 */
   isTribulationModalOpen: boolean;
+  /** V11 单岁护航造化机缘 */
+  activeBoon: SingleYearBoonId;
   publicCards: JiaziCard[];
   leverageMultiplier: number;
   /** 以下数值来自核心 BalanceConfig，前端渲染一律读取，禁止硬编码 */
@@ -447,7 +451,7 @@ interface GameStore {
   acceptSectDemand: () => void;
   declineSectDemand: () => void;
   closeTribulationModal: () => void;
-  advanceToNextYear: () => boolean;
+  advanceToNextYear: (boonId?: SingleYearBoonId) => boolean;
   toggleLeverage: () => void;
   executeBuy: () => boolean;
   executeSell: () => boolean;
@@ -849,6 +853,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   totalYearsSurvived: 0,
   tribulationResult: null,
   isTribulationModalOpen: false,
+  activeBoon: 'none',
   publicCards: [],
   leverageMultiplier: 1,
   maxQi: 80,
@@ -960,6 +965,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       baseQuota: tm.getBaseQuota(),
       quota: tm.getQuota(),
       quotaDiscount: tm.getQuotaDiscount(),
+      activeBoon: tm.getActiveBoon(),
       totalYearsSurvived: tm.getTotalYearsSurvived(),
       tribulationResult: tm.getLastTribulationResult(),
       publicCards: [...tm.getPublicCards()],
@@ -2051,14 +2057,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
   closeTribulationModal() {
     set({ isTribulationModalOpen: false });
   },
-  advanceToNextYear() {
+  advanceToNextYear(boonId?: SingleYearBoonId) {
     const tm = get().turnManager;
     if (!tm) return false;
-    const ok = tm.advanceToNextYear();
+    const ok = tm.advanceToNextYear(boonId);
     if (ok) {
       set({ isTribulationModalOpen: false });
       get()._sync();
-      get().showToast(`🌅 迈入甲子历 第 ${tm.getYear()} 年！新岁天劫门槛：${tm.getQuota().toLocaleString()} 修为！`);
+      const boonNotice = boonId && boonId !== 'none' ? `（加持【${SINGLE_YEAR_BOONS[boonId]?.name}】）` : '';
+      get().showToast(`🌅 迈入甲子历 第 ${tm.getYear()} 年${boonNotice}！新岁天劫门槛：${tm.getQuota().toLocaleString()} 修为！`);
     }
     return ok;
   },

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useGameStore } from '../store';
+import { type SingleYearBoonId, SINGLE_YEAR_BOONS } from '@core/index';
 
 export function TribulationModal() {
   const isTribulationModalOpen = useGameStore((s) => s.isTribulationModalOpen);
@@ -6,6 +8,8 @@ export function TribulationModal() {
   const closeTribulationModal = useGameStore((s) => s.closeTribulationModal);
   const advanceToNextYear = useGameStore((s) => s.advanceToNextYear);
   const totalYearsSurvived = useGameStore((s) => s.totalYearsSurvived);
+
+  const [selectedBoon, setSelectedBoon] = useState<Exclude<SingleYearBoonId, 'none'>>('xumi');
 
   if (!isTribulationModalOpen || !tribulationResult) return null;
 
@@ -28,7 +32,7 @@ export function TribulationModal() {
       data-testid="tribulation-modal"
     >
       <div
-        className={`relative w-full max-w-md rounded-2xl border-2 p-6 text-stone-100 shadow-2xl ${
+        className={`relative w-full max-w-lg rounded-2xl border-2 p-6 text-stone-100 shadow-2xl ${
           success
             ? 'border-emerald-500/80 bg-gradient-to-b from-stone-950 via-stone-900 to-emerald-950/60'
             : 'border-rose-500/80 bg-gradient-to-b from-stone-950 via-stone-900 to-rose-950/60'
@@ -140,15 +144,58 @@ export function TribulationModal() {
           )}
         </div>
 
+        {/* 单岁造化三选一选择区 (V11) */}
+        {success && (
+          <div className="mt-4 text-left" data-testid="boon-selection-section">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                <span>✨ 择取新岁护航机缘（三选一 · 仅限新岁有效）</span>
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.keys(SINGLE_YEAR_BOONS) as (keyof typeof SINGLE_YEAR_BOONS)[]).map((key) => {
+                const boon = SINGLE_YEAR_BOONS[key];
+                const isSelected = selectedBoon === boon.id;
+                return (
+                  <button
+                    key={boon.id}
+                    type="button"
+                    onClick={() => setSelectedBoon(boon.id)}
+                    data-testid={`boon-option-${boon.id}`}
+                    className={`flex flex-col justify-between p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-emerald-400 bg-emerald-950/80 shadow-md shadow-emerald-900/50 ring-2 ring-emerald-400/80'
+                        : 'border-stone-800 bg-stone-900/70 hover:border-stone-700 text-stone-300'
+                    }`}
+                  >
+                    <div>
+                      <div className={`font-serif text-xs font-bold flex items-center justify-between ${isSelected ? 'text-emerald-300' : 'text-stone-200'}`}>
+                        <span>{boon.name}</span>
+                        {isSelected && <span className="text-[11px] text-emerald-400">✓</span>}
+                      </div>
+                      <div className="mt-1 text-[10px] font-semibold text-amber-300/90 leading-tight">
+                        {boon.shortDesc}
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[10px] text-stone-400 leading-snug line-clamp-3">
+                      {boon.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* 底部交互按键 */}
         <div className="mt-5 flex gap-3">
           {success ? (
             <button
-              onClick={() => advanceToNextYear()}
+              onClick={() => advanceToNextYear(selectedBoon)}
               className="w-full cursor-pointer rounded-lg border border-emerald-500 bg-gradient-to-r from-emerald-600 to-teal-600 py-2.5 font-serif text-sm font-bold text-white shadow-lg shadow-emerald-950/50 hover:brightness-110 active:scale-98 transition-all"
               data-testid="tribulation-advance-btn"
             >
-              迈入新岁 · 突破进阶 ➔
+              承载【{SINGLE_YEAR_BOONS[selectedBoon]?.name}】· 迈入新岁 ➔
             </button>
           ) : (
             <button

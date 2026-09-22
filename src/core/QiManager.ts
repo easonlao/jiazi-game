@@ -13,6 +13,7 @@ export class QiManager {
 
   private qi: number;
   private maxQi: number;
+  private extraRegen: number = 0;
 
   constructor(initialQi?: number, config?: BalanceConfig) {
     this.cfg = config ?? DEFAULT_BALANCE_CONFIG;
@@ -46,6 +47,29 @@ export class QiManager {
    */
   getMaxQi(): number {
     return this.maxQi;
+  }
+
+  /**
+   * 设置神识上限（支持单岁机缘如太乙金丹临时扩充至 130，到期复原 100）
+   * @param max 最大神识值
+   */
+  setMaxQi(max: number): void {
+    this.maxQi = max;
+    if (this.qi > this.maxQi) {
+      this.qi = this.maxQi;
+    }
+  }
+
+  /**
+   * 设置每回合额外回神（支持太乙金丹 +5 回神）
+   */
+  setExtraRegen(amount: number): void {
+    this.extraRegen = Math.max(0, amount);
+  }
+
+  /** 获取当前额外回神量 */
+  getExtraRegen(): number {
+    return this.extraRegen;
   }
 
   /**
@@ -105,11 +129,11 @@ export class QiManager {
   }
 
   /**
-   * 获取每回合的基础自然回复神识量
+   * 获取每回合的基础自然回复神识量（含单岁机缘如太乙金丹提供的 extraRegen）
    * @returns 基础回复神识量 (默认为 10)
    */
   getBaseRecovery(): number {
-    return this.cfg.baseRecovery;
+    return this.cfg.baseRecovery + this.extraRegen;
   }
 
   /**
@@ -146,6 +170,8 @@ export class QiManager {
    * 重置神识资源管理器至初始状态
    */
   reset(): void {
+    this.maxQi = this.cfg.maxQi;
+    this.extraRegen = 0;
     this.qi = this.cfg.initialQi;
   }
 }

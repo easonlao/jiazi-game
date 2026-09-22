@@ -202,6 +202,11 @@ export class HandManager {
     return this.leyline.length >= this.maxLeyline;
   }
 
+  /** 是否处于严格溢出超限状态（数量严格大于当前上限，如 3 缩 2 存量 3 张） */
+  isLeylineOverCapacity(): boolean {
+    return this.leyline.length > this.maxLeyline;
+  }
+
   /**
    * 直接购买卡牌潜入地脉
    * @returns 成功放置的地脉索引；若满仓（软超限拦截）则返回 -1
