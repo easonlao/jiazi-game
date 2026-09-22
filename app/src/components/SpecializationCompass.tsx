@@ -27,29 +27,20 @@ export function SpecializationCompass() {
   const hasAnyBoost = Object.values(elemMultipliers).some((m) => m > 1.0) || grandCycles > 0;
 
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-wood-light/40 bg-white/60 px-2.5 py-1.5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold font-serif text-ink flex items-center gap-1">
-            <span className="text-amber-600">☯</span>
-            <span>五行道基专精</span>
-          </span>
-          <span className="text-[10px] text-ink-light">
-            {hasAnyBoost ? '炼化与释灵正向增幅' : '暂无增益 (引动三合成就专精)'}
-          </span>
-        </div>
-
+    <div className="flex items-center justify-between gap-1 rounded-lg border border-wood-light/40 bg-white/60 px-2 py-1 shadow-xs">
+      <div className="flex items-center gap-1 shrink-0">
+        <span className="text-[11px] font-bold font-serif text-ink flex items-center gap-0.5">
+          <span className="text-amber-600">☯</span>
+          <span>五行专精</span>
+        </span>
         {grandCycles > 0 && (
-          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gradient-to-r from-amber-500/20 to-purple-500/20 border border-amber-400/50 shadow-xs animate-pulse">
-            <span className="text-[10px]">🎆</span>
-            <span className="text-[10px] font-bold text-amber-900">
-              混元大圆满 ×{grandCycles}
-            </span>
-          </div>
+          <span className="text-[9px] font-bold text-amber-900 bg-amber-100 px-1 py-0.5 rounded border border-amber-300">
+            混元×{grandCycles}
+          </span>
         )}
       </div>
 
-      <div className="grid grid-cols-5 gap-1 pt-0.5">
+      <div className="flex items-center gap-1 min-w-0">
         {ELEMENT_METAS.map((meta) => {
           const mult = elemMultipliers[meta.key] ?? 1.0;
           const count = triadCounts[meta.key] ?? 0;
@@ -59,26 +50,15 @@ export function SpecializationCompass() {
           return (
             <div
               key={meta.key}
-              className={`flex flex-col items-center justify-center rounded p-1 transition-all border ${
+              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono transition-all border ${
                 isBoosted
-                  ? `${meta.bg} ${meta.border} shadow-xs font-medium`
-                  : 'bg-slate-50/50 border-slate-200/60 opacity-70'
+                  ? `${meta.bg} ${meta.border} font-bold ${meta.text}`
+                  : 'bg-slate-50/50 border-slate-200/60 text-slate-500 opacity-70'
               }`}
-              title={`${meta.name}行专精: Lv.${count} (炼化/释灵正向收益 ×${mult.toFixed(2)})`}
+              title={`${meta.name}行专精: Lv.${count} (炼化/释灵 ×${mult.toFixed(2)})`}
             >
-              <div className="flex items-center gap-0.5">
-                <span className={`text-xs font-bold ${meta.color}`}>{meta.char}</span>
-                {count > 0 && (
-                  <span className="text-[9px] font-mono font-bold text-amber-800 bg-amber-100/80 px-0.5 rounded">
-                    L{count}
-                  </span>
-                )}
-              </div>
-              <span
-                className={`text-[10px] font-mono tabular-nums leading-none mt-0.5 ${
-                  isBoosted ? `${meta.text} font-bold` : 'text-slate-400'
-                }`}
-              >
+              <span className={`font-bold ${meta.color}`}>{meta.char}</span>
+              <span className="tabular-nums leading-none">
                 {isBoosted ? `+${pct}%` : '1.0x'}
               </span>
             </div>

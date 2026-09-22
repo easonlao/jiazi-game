@@ -47,9 +47,9 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
     : publicCards.map((card, i) => (i === slot ? 'void' as const : card));
 
   return (
-    <div className="flex flex-col gap-1 px-4 py-1.5 max-md:py-1">
+    <div className="flex flex-col gap-1 px-3 py-1">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold font-serif text-ink">周遭灵气</h3>
+        <h3 className="text-xs font-bold font-serif text-ink">周遭灵气</h3>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-ink-light">
             {gameState === 'player_action' ? '选灵气后操作' : gameState === 'void_round' ? '空亡吞噬中...' : '天时流转中...'}
@@ -229,24 +229,19 @@ function PublicCardItem({
 /** 当季元素提示：告诉玩家当前季节哪种元素的牌评分最高 */
 function SeasonHint({ season, volatilityActive }: { season: string; volatilityActive: boolean }) {
   const map: Record<string, { element: string; cls: string; text: string }> = {
-    spring: { element: '木', cls: 'text-emerald-700', text: '当前是春季，木牌评分最高' },
-    summer: { element: '火', cls: 'text-red-600', text: '当前是夏季，火牌评分最高' },
-    autumn: { element: '金', cls: 'text-slate-600', text: '当前是秋季，金牌评分最高' },
-    winter: { element: '水', cls: 'text-sky-600', text: '当前是冬季，水牌评分最高' },
+    spring: { element: '木', cls: 'text-emerald-700', text: '春季木旺' },
+    summer: { element: '火', cls: 'text-red-600', text: '夏季火旺' },
+    autumn: { element: '金', cls: 'text-slate-600', text: '秋季金旺' },
+    winter: { element: '水', cls: 'text-sky-600', text: '冬季水旺' },
   };
   const info = map[season];
   if (!info) return null;
   return (
-    <div className="mb-1 flex flex-wrap items-center gap-1">
-      <div className={`text-xs font-medium ${info.cls} bg-white/60 border border-wood-light rounded px-2 py-1`}>
-        {info.text} · 土牌四季稳定
-      </div>
+    <div className="flex items-center justify-between text-[10px] px-2 py-0.5 rounded bg-white/60 border border-wood-light/50 text-ink-light leading-none">
+      <span className={`font-medium ${info.cls}`}>{info.text} · 土牌四季平稳</span>
       {volatilityActive && (
-        <span
-          data-volatility-experiment
-          className="rounded border border-wood-light/70 bg-white/60 px-1.5 py-1 text-[10px] text-ink-light"
-        >
-          短期波动 · 括号内为相对基础评分变化，换季重算
+        <span data-volatility-experiment className="text-wood-mid">
+          短期波动(换季重算)
         </span>
       )}
     </div>

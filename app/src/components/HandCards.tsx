@@ -68,7 +68,7 @@ export function HandCards() {
   const isLeylineSoftCapped = leyline.filter((s) => s !== null).length >= maxLeyline;
 
   return (
-    <div className="flex flex-col gap-2 px-4 py-1.5 max-md:py-1">
+    <div className="flex flex-col gap-1 px-3 py-1">
       {/* 三合大成仪式弹窗 */}
       <TriadCelebrationModal />
 
@@ -77,13 +77,13 @@ export function HandCards() {
 
       {/* 天象契合 · 引动三合横幅 */}
       {availableTriads.length > 0 && (
-        <div className="flex flex-col gap-1.5 rounded-lg border border-amber-400/70 bg-gradient-to-r from-amber-500/15 via-purple-500/15 to-indigo-500/15 p-2 shadow-xs">
+        <div className="flex flex-col gap-1 rounded-lg border border-amber-400/70 bg-gradient-to-r from-amber-500/15 via-purple-500/15 to-indigo-500/15 p-1.5 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
               <span>⚡</span>
               <span>天象契合 · 可引动三合大阵</span>
             </span>
-            <span className="text-[10px] text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded font-mono">
+            <span className="text-[10px] text-amber-800 bg-amber-100/90 px-1 py-0.5 rounded font-mono">
               神韵消解 · 槽位立刻腾空
             </span>
           </div>
@@ -94,18 +94,18 @@ export function HandCards() {
                 key={triad.element}
                 onClick={() => claimTriad(triad.element)}
                 disabled={gameState !== 'player_action'}
-                className={`w-full py-1.5 px-3 rounded shadow-xs flex items-center justify-between transition-all ${
+                className={`w-full py-1 px-2.5 rounded shadow-xs flex items-center justify-between transition-all ${
                   gameState === 'player_action'
                     ? 'bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-bold text-xs active:scale-[0.99] cursor-pointer ring-1 ring-amber-400/40'
                     : 'bg-stone-300 text-stone-500 cursor-not-allowed text-xs'
                 }`}
               >
-                <span className="flex items-center gap-1.5">
-                  <span className="text-sm">🌟</span>
+                <span className="flex items-center gap-1">
+                  <span className="text-xs">🌟</span>
                   <span>引动【{triad.name}】({triad.triad.branches.join('·')})</span>
                 </span>
-                <span className="text-[10px] font-mono bg-black/20 px-2 py-0.5 rounded">
-                  +{triad.bonus}修为 · 回满神识 · {triad.element}专精+25%
+                <span className="text-[9px] font-mono bg-black/20 px-1.5 py-0.5 rounded">
+                  +{triad.bonus}修为 · 回满神识 · {triad.element}+25%
                 </span>
               </button>
             ))}
@@ -114,14 +114,14 @@ export function HandCards() {
       )}
 
       {/* 活跃丹田横带 */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold font-serif text-ink flex items-center gap-1.5">
+          <h3 className="text-xs font-bold font-serif text-ink flex items-center gap-1">
             <span>活跃丹田</span>
-            <span className="text-xs font-mono font-normal text-ink-light">
+            <span className="text-[11px] font-mono font-normal text-ink-light">
               {hand.filter((s) => s).length}/3
             </span>
-            <span className="text-[10px] text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded font-sans">
+            <span className="text-[9px] text-amber-800 bg-amber-100/90 px-1 py-0.2 rounded font-sans">
               明牌 · 每轮炼化
             </span>
           </h3>
@@ -130,7 +130,7 @@ export function HandCards() {
             <button
               onClick={() => moveToLeyline(selectedHandCard)}
               disabled={gameState !== 'player_action' || isLeylineSoftCapped || qi < 5}
-              className={`text-[11px] px-2 py-0.5 rounded font-bold transition-all shadow-sm ${
+              className={`text-[10px] px-1.5 py-0.5 rounded font-bold transition-all shadow-sm ${
                 gameState === 'player_action' && !isLeylineSoftCapped && qi >= 5
                   ? 'bg-sky-600 text-white hover:bg-sky-700 active:scale-95'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -144,7 +144,7 @@ export function HandCards() {
 
         {!hasDantianCards ? (
           <div
-            className="relative flex min-h-20 items-center justify-center text-center text-ink-light text-xs border border-dashed border-wood-light rounded-lg"
+            className="relative flex h-14 items-center justify-center text-center text-ink-light text-xs border border-dashed border-wood-light rounded-lg"
           >
             三丹田空置 · 纳灵公共灵气开始炼化
             {marginCallEvent?.detail?.marginCallDetails.length ? (
@@ -214,29 +214,29 @@ export function HandCards() {
       </div>
 
       {/* 潜伏地脉横带 */}
-      <div className="flex flex-col gap-1 mt-1 pt-1.5 border-t border-wood-light/40">
+      <div className="flex flex-col gap-0.5 mt-0.5 pt-1 border-t border-wood-light/40">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold font-serif text-ink flex items-center gap-1.5">
+          <h3 className="text-xs font-bold font-serif text-ink flex items-center gap-1">
             <span>潜伏地脉</span>
-            <span className="text-xs font-mono font-normal text-ink-light">
+            <span className="text-[11px] font-mono font-normal text-ink-light">
               {leyline.filter((s) => s).length}/{maxLeyline}
             </span>
-            <span className="text-[10px] text-sky-800 bg-sky-100/90 px-1.5 py-0.5 rounded font-sans">
+            <span className="text-[9px] text-sky-800 bg-sky-100/90 px-1 py-0.2 rounded font-sans">
               暗牌 · 0维持费 · 避巡视
             </span>
             {leyline.filter((s) => s).length > maxLeyline ? (
               <span
-                className="text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse"
+                className="text-[9px] text-rose-700 bg-rose-100 px-1 py-0.2 rounded font-mono font-bold animate-pulse"
                 data-testid="leyline-overflow-badge"
               >
-                ⚠️地脉超限 ({leyline.filter((s) => s).length}/{maxLeyline}) · 只出不进
+                ⚠️超限 ({leyline.filter((s) => s).length}/{maxLeyline})
               </span>
             ) : isLeylineSoftCapped ? (
               <span
-                className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-mono font-bold"
+                className="text-[9px] text-amber-700 bg-amber-100 px-1 py-0.2 rounded font-mono font-bold"
                 data-testid="leyline-full-badge"
               >
-                ⚠️已满仓 ({maxLeyline}/{maxLeyline}) · 只出不进
+                ⚠️满仓 ({maxLeyline}/{maxLeyline})
               </span>
             ) : null}
           </h3>
@@ -309,7 +309,7 @@ function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shatte
   return (
     <div
       data-hand-card-slot={slotIndex}
-      className={`flex items-center justify-center rounded-lg border-2 border-dashed border-wood-light bg-white/50 h-24 ${
+      className={`flex items-center justify-center rounded-lg border-2 border-dashed border-wood-light bg-white/50 h-16 ${
         shattered ? 'mc-shatter-slot' : 'slot-breathe'
       }`}
     >
@@ -321,7 +321,7 @@ function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shatte
 function EmptyLeylineSlot({ index }: { index: number }) {
   return (
     <div
-      className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-sky-800/30 bg-sky-950/5 h-20 text-center"
+      className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-sky-800/30 bg-sky-950/5 h-14 text-center"
     >
       <span className="text-xs text-sky-800 font-medium">地脉 {index + 1} (空)</span>
       <span className="text-[9px] text-slate-500">潜伏冷库 · 避风避灾</span>
@@ -359,16 +359,16 @@ function LeylineCardView({
   return (
     <div
       onClick={onSelect}
-      className={`cursor-pointer rounded-lg border p-2 flex flex-col justify-between transition-all duration-150 ${
+      className={`cursor-pointer rounded-lg border p-1.5 flex flex-col justify-between transition-all duration-150 ${
         selected
           ? 'border-sky-500 bg-sky-950/30 shadow-md ring-2 ring-sky-400'
           : 'border-slate-300 bg-slate-50 hover:border-slate-400'
       }`}
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <span className="text-xs font-bold text-slate-900">{slot.card.name}</span>
-          <span className="text-[9px] px-1 py-0.5 rounded bg-slate-200 text-slate-700 font-mono">
+          <span className="text-[9px] px-1 py-0.2 rounded bg-slate-200 text-slate-700 font-mono">
             {slot.card.mainElement}
           </span>
         </div>
@@ -377,15 +377,15 @@ function LeylineCardView({
         </span>
       </div>
 
-      <div className="flex items-center justify-between text-[10px] my-1 text-slate-600">
+      <div className="flex items-center justify-between text-[10px] my-0.5 text-slate-600">
         <span>买入: {buyScore}</span>
         <span className={`font-mono font-bold ${delta >= 0 ? 'text-amber-700' : 'text-rose-700'}`}>
           Δ{delta >= 0 ? '+' : ''}{delta} (暗存)
         </span>
       </div>
 
-      <div className="text-[9px] text-sky-800">
-        暗牌深锁 · 0维持费 · 避巡视
+      <div className="text-[9px] text-sky-800 leading-none">
+        暗牌 · 0维持费 · 避巡视
       </div>
     </div>
   );
