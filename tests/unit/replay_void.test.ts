@@ -27,9 +27,11 @@ import {
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
   RULES_VERSION_RELATIONSHIP_RESPONSE,
+  RULES_VERSION_V11,
   TREND_WINDOW_REPLAY_RULES,
   CLEAN_POOL_REPLAY_RULES,
   RELATIONSHIP_RESPONSE_REPLAY_RULES,
+  V11_MACRO_ROGUELIKE_REPLAY_RULES,
   SeededRandomSource,
   SUPPORTED_REPLAY_RULES,
   TurnManager,
@@ -229,12 +231,13 @@ describe('函数层 V5 路径（共享核心；Edge Function 无法在 vitest �
     expect(getReplayRulesByVersion(7)).toBe(TREND_WINDOW_REPLAY_RULES);
     expect(getReplayRulesByVersion(8)).toBe(CLEAN_POOL_REPLAY_RULES);
     expect(getReplayRulesByVersion(10)).toBe(RELATIONSHIP_RESPONSE_REPLAY_RULES);
+    expect(getReplayRulesByVersion(11)).toBe(V11_MACRO_ROGUELIKE_REPLAY_RULES);
     expect(getReplayRulesByVersion(3)).toBeUndefined();
     expect(getReplayRulesByVersion(2)).toBeUndefined();
     expect(getReplayRulesByVersion(NaN)).toBeUndefined();
-    expect(SUPPORTED_REPLAY_RULES.map((rules) => rules.rulesVersion)).toEqual([4, 5, 6, 7, 8, 9, 10]);
-    // V10 是生产默认，V9 仍在注册表中用于历史会话的冻结解释。
-    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_RELATIONSHIP_RESPONSE);
+    expect(SUPPORTED_REPLAY_RULES.map((rules) => rules.rulesVersion)).toEqual([4, 5, 6, 7, 8, 9, 10, 11]);
+    // V11 是生产默认，历史版本仍在注册表中用于历史会话的冻结解释。
+    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_V11);
     expect(RELATIONSHIP_RESPONSE_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_RELATIONSHIP_RESPONSE);
     expect(SUPPORTED_REPLAY_RULES[0]).toBe(BALANCED_TRADE_REPLAY_RULES);
   });

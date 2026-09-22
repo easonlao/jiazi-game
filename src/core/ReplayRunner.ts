@@ -7,6 +7,7 @@ import type { ScoreRules } from './ScoreManager.ts';
 import type { ScoreVolatilityConfig } from './ScoreVolatility.ts';
 import { type BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
 import { TurnManager, type GameState } from './TurnManager.ts';
+import type { SingleYearBoonId } from './SingleYearBoon.ts';
 
 /** 玩家在一局游戏中提交给服务端的最小动作集合。 */
 export type ReplayAction =
@@ -14,7 +15,15 @@ export type ReplayAction =
   | { type: 'sell'; slotIndex: number }
   | { type: 'wait' }
   | { type: 'lock'; cardIndex: number }
-  | { type: 'unlock'; cardIndex: number };
+  | { type: 'unlock'; cardIndex: number }
+  | { type: 'buy_to_leyline'; cardIndex: number; leverage: boolean }
+  | { type: 'move_to_leyline'; slotIndex: number }
+  | { type: 'move_to_dantian'; slotIndex: number }
+  | { type: 'sell_leyline'; slotIndex: number }
+  | { type: 'claim_triad'; element?: string }
+  | { type: 'accept_sect_demand' }
+  | { type: 'decline_sect_demand' }
+  | { type: 'advance_year'; boonId?: SingleYearBoonId };
 
 /** 服务端会话创建时冻结的规则输入。客户端不得用最终分数替代这些字段。 */
 export interface ReplayRequest {
@@ -44,6 +53,9 @@ export interface ReplayResult {
   completed: boolean;
   rounds: number;
   rulesVersion: SupportedRulesVersion;
+  year?: number;
+  turn?: number;
+  totalYearsSurvived?: number;
 }
 
 /** 防止恶意请求用超长动作序列消耗服务端重放资源；服务端还应限制请求体大小。 */
@@ -98,6 +110,37 @@ function applyAction(turnManager: TurnManager, action: ReplayAction, actionIndex
     case 'unlock':
       assertNonNegativeInteger(action.cardIndex, 'cardIndex', actionIndex);
       accepted = turnManager.executeUnlockCard(action.cardIndex);
+      break;
+    case 'buy_to_leyline':
+      assertNonNegativeInteger(action.cardIndex, 'cardIndex', actionIndex);
+      if (typeof action.leverage !== 'boolean') {
+        throw new ReplayValidationError('leverage 必须是布尔值', actionIndex);
+      }
+      accepted = turnManager.executeBuyToLeyline(action.cardIndex, action.leverage);
+      break;
+    case 'move_to_leyline':
+      assertNonNegativeInteger(action.slotIndex, 'slotIndex', actionIndex);
+      accepted = turnManager.executeMoveToLeyline(action.slotIndex);
+      break;
+    case 'move_to_dantian':
+      assertNonNegativeInteger(action.slotIndex, 'slotIndex', actionIndex);
+      accepted = turnManager.executeMoveToDantian(action.slotIndex);
+      break;
+    case 'sell_leyline':
+      assertNonNegativeInteger(action.slotIndex, 'slotIndex', actionIndex);
+      accepted = turnManager.executeSellLeyline(action.slotIndex);
+      break;
+    case 'claim_triad':
+      accepted = turnManager.claimTriad(action.element) !== null;
+      break;
+    case 'accept_sect_demand':
+      accepted = turnManager.acceptSectDemand() !== null;
+      break;
+    case 'decline_sect_demand':
+      accepted = turnManager.declineSectDemand() !== null;
+      break;
+    case 'advance_year':
+      accepted = turnManager.advanceToNextYear(action.boonId);
       break;
     default:
       throw new ReplayValidationError('不支持的行动类型', actionIndex);
@@ -167,7 +210,11 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
 
   const requireCompleted = request.requireCompleted ?? true;
   if (requireCompleted && turnManager.getState() !== 'game_over') {
-    throw new ReplayValidationError('对局未完成 60 回合', null);
+    const isV11 = request.rulesVersion >= 11;
+    throw new ReplayValidationError(
+      isV11 ? '对局未终局（身死道消）' : '对局未完成 60 回合',
+      null,
+    );
   }
 
   return {
@@ -176,6 +223,13 @@ export async function replayGame(request: ReplayRequest): Promise<ReplayResult> 
     completed: turnManager.getState() === 'game_over',
     rounds: turnManager.getState() === 'game_over' ? turnManager.getTotalRounds() : Math.max(0, turnManager.getCurrentRound() - 1),
     rulesVersion: turnManager.getRulesVersion(),
+    ...(turnManager.getRulesVersion() >= 11
+      ? {
+          year: turnManager.getYear(),
+          turn: turnManager.getTurn(),
+          totalYearsSurvived: turnManager.getTotalYearsSurvived(),
+        }
+      : {}),
   };
 }
 

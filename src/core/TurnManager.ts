@@ -51,6 +51,8 @@ import {
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
   RULES_VERSION_RELATIONSHIP_RESPONSE,
+  RULES_VERSION_V11,
+  CURRENT_RULES_VERSION,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOLATILE,
   RULES_VERSION_TRADE,
@@ -583,7 +585,7 @@ export class TurnManager {
     // V10 本地预览必须可续局：使用可序列化 PRNG 游标，存档后跨空亡/换季仍可精确延续。
     // 旧版本未注入随机源时保留 Math.random 路径，不改变其既有局面。
     const randomSource = random ?? (
-      options?.rulesVersion === RULES_VERSION_RELATIONSHIP_RESPONSE
+      options?.rulesVersion !== undefined && options.rulesVersion >= RULES_VERSION_RELATIONSHIP_RESPONSE
         ? new SeededRandomSource(Math.floor(Math.random() * 0x80000000))
         : new MathRandomSource()
     );
@@ -727,9 +729,9 @@ export class TurnManager {
       && (this.activeVolatilityConfig.model ?? 'uniform') === 'trend_window';
   }
 
-  /** V10：评分不再抽独立趋势窗口，而是由本季的干支关系响应状态显现。 */
+  /** V10/V11：评分不再抽独立趋势窗口，而是由本季的干支关系响应状态显现。 */
   private isRelationshipResponseRulesVersion(): boolean {
-    return this.rulesVersion === RULES_VERSION_RELATIONSHIP_RESPONSE
+    return this.rulesVersion >= RULES_VERSION_RELATIONSHIP_RESPONSE
       && (this.activeVolatilityConfig.model ?? 'uniform') === 'relationship_response';
   }
 
@@ -1151,18 +1153,20 @@ export class TurnManager {
     this.capturePublicCardHistorySnapshot();
 
     // 4. 五大古宗巡视判定 (V11)
-    const patrolResult = this.sectManager.advancePatrols(
-      this.seasonCycle.getCurrentSeason(),
-      this.handManager.getHand(),
-      this.handManager.getLeylineCards(),
-      (card, season) => this.getCardScore(card, season),
-    );
+    if (this.rulesVersion >= 11) {
+      const patrolResult = this.sectManager.advancePatrols(
+        this.seasonCycle.getCurrentSeason(),
+        this.handManager.getHand(),
+        this.handManager.getLeylineCards(),
+        (card, season) => this.getCardScore(card, season),
+      );
 
-    if (patrolResult.triggeredSect) {
-      if (patrolResult.pendingBuyback) {
-        this.onSectBuyback?.(patrolResult.pendingBuyback);
-      } else if (patrolResult.leylineEvaded) {
-        this.onLeylineEvaded?.(patrolResult.triggeredSect);
+      if (patrolResult.triggeredSect) {
+        if (patrolResult.pendingBuyback) {
+          this.onSectBuyback?.(patrolResult.pendingBuyback);
+        } else if (patrolResult.leylineEvaded) {
+          this.onLeylineEvaded?.(patrolResult.triggeredSect);
+        }
       }
     }
 
@@ -1309,13 +1313,13 @@ export class TurnManager {
    * 第 60 回合被吞噬时直接终局（空亡回合已在归档时完成记录，跳过终局归档避免重复）。
    */
   private advanceAfterVoid(): void {
-    const isRound20Action = this.turn >= 20;
+    const isRound20Action = this.rulesVersion >= 11 && this.turn >= 20;
     this.currentRound++;
     if (this.rulesVersion < 11 && this.currentRound > TurnManager.TOTAL_ROUNDS) {
       this.endGame();
       return;
     }
-    if (!isRound20Action) {
+    if (this.rulesVersion >= 11 && !isRound20Action) {
       this.turn++;
     }
     this.processRound();
@@ -2024,7 +2028,7 @@ export class TurnManager {
    * 推进游戏回合以及季节流转
    */
   private advanceTurn(): void {
-    const isRound20Action = this.turn >= 20;
+    const isRound20Action = this.rulesVersion >= 11 && this.turn >= 20;
 
     this.currentRound++;
 
@@ -2052,7 +2056,9 @@ export class TurnManager {
         // V6 换季重掷：与 refreshScoreVolatility 同点（V5 及以下恒空转，不消耗随机数）。
         this.refreshBranchRoll();
       }
-      this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
+      if (this.rulesVersion >= 11) {
+        this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
+      }
       console.log(`[TurnManager] 季节切换: ${this.seasonCycle.getCurrentSeason()}`);
     } else if (this.scoreVolatilityState) {
       if (this.isTrendWindowRulesVersion()) {
@@ -2067,7 +2073,7 @@ export class TurnManager {
       }
     }
 
-    if (!isRound20Action) {
+    if (this.rulesVersion >= 11 && !isRound20Action) {
       this.turn++;
     }
 
@@ -2287,10 +2293,10 @@ export class TurnManager {
       );
     }
     if (
-      declaredRules === RULES_VERSION_RELATIONSHIP_RESPONSE &&
+      declaredRules >= RULES_VERSION_RELATIONSHIP_RESPONSE &&
       declaredModel !== 'relationship_response'
     ) {
-      throw new Error('rulesVersion=10 存档必须使用 relationship_response 波动模型，拒绝读档');
+      throw new Error(`rulesVersion=${declaredRules} 存档必须使用 relationship_response 波动模型，拒绝读档`);
     }
     if (
       isVolatileRules &&

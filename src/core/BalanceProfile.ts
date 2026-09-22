@@ -4,6 +4,7 @@ import {
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
   RULES_VERSION_RELATIONSHIP_RESPONSE,
+  RULES_VERSION_V11,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOID,
   type SupportedRulesVersion,
@@ -20,6 +21,7 @@ export type BalanceProfileId =
   | 'v9_standard'
   | 'v9_ea_tuned'
   | 'v10_relationship_response'
+  | 'v11_standard'
   | (string & {});
 
 /**
@@ -120,7 +122,18 @@ export const V10_RELATIONSHIP_RESPONSE_PROFILE: BalanceProfile = Object.freeze({
   voidCardCount: VOID_CARD_COUNT,
 });
 
-export const EA_DEFAULT_BALANCE_PROFILE: BalanceProfile = V10_RELATIONSHIP_RESPONSE_PROFILE;
+/** V11 宏观 Roguelike 体系生产档案。 */
+export const V11_STANDARD_PROFILE: BalanceProfile = Object.freeze({
+  profileId: 'v11_standard',
+  profileVersion: 1,
+  rulesVersion: RULES_VERSION_V11,
+  name: 'V11 宏观 Roguelike',
+  description: '年岁周期、天劫大考、地支三合、五大古宗与潜伏地脉',
+  balanceConfig: Object.freeze({ ...DEFAULT_BALANCE_CONFIG, concentrationPremiumFactor: 1 }),
+  voidCardCount: VOID_CARD_COUNT,
+});
+
+export const EA_DEFAULT_BALANCE_PROFILE: BalanceProfile = V11_STANDARD_PROFILE;
 
 export const SUPPORTED_BALANCE_PROFILES: readonly BalanceProfile[] = Object.freeze([
   V4_STANDARD_PROFILE,
@@ -131,6 +144,7 @@ export const SUPPORTED_BALANCE_PROFILES: readonly BalanceProfile[] = Object.free
   V9_STANDARD_PROFILE,
   V9_EA_TUNED_PROFILE,
   V10_RELATIONSHIP_RESPONSE_PROFILE,
+  V11_STANDARD_PROFILE,
 ]);
 
 export function getBalanceProfileById(profileId: string): BalanceProfile | undefined {
@@ -153,7 +167,12 @@ export function getDefaultBalanceProfileForRules(rulesVersion: number): BalanceP
       return V9_STANDARD_PROFILE;
     case RULES_VERSION_RELATIONSHIP_RESPONSE:
       return V10_RELATIONSHIP_RESPONSE_PROFILE;
+    case RULES_VERSION_V11:
+      return V11_STANDARD_PROFILE;
     default:
+      if (rulesVersion >= RULES_VERSION_V11) {
+        return V11_STANDARD_PROFILE;
+      }
       if (rulesVersion >= RULES_VERSION_SINGLE_VOID) {
         return V9_STANDARD_PROFILE;
       }

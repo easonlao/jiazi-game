@@ -6,6 +6,7 @@ import {
   CURRENT_REPLAY_RULES,
   RELATIONSHIP_RESPONSE_REPLAY_RULES,
   RULES_VERSION_RELATIONSHIP_RESPONSE,
+  RULES_VERSION_V11,
   SeededRandomSource,
   TurnManager,
   replayGame,
@@ -33,11 +34,11 @@ async function makeV10(seed = 42, voidCardCount = 0): Promise<TurnManager> {
 }
 
 describe('V10 干支关系响应', () => {
-  it('V10 是生产默认规则，V9 仍保留给历史对局解释', () => {
+  it('V10 规则定义与快照保持冻结，生产默认已升级至 V11', () => {
     expect(RELATIONSHIP_RESPONSE_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_RELATIONSHIP_RESPONSE);
     expect(RELATIONSHIP_RESPONSE_REPLAY_RULES.volatility.model).toBe('relationship_response');
     expect(RELATIONSHIP_RESPONSE_REPLAY_RULES.relationshipResponse).toEqual({ enabled: true, formulaVersion: 1 });
-    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_RELATIONSHIP_RESPONSE);
+    expect(CURRENT_REPLAY_RULES.rulesVersion).toBe(RULES_VERSION_V11);
   });
 
   it('首季建立 60 张冻结 entry/target，季末精确收敛到 target', async () => {

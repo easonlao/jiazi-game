@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { TurnManager, calculateAnnualQuota, type TribulationResult } from '../../src/core/TurnManager';
+import { RULES_VERSION_V11 } from '../../src/core/RulesConstants';
 import { JiaziCard, Element, YinYang } from '../../src/core/JiaziCard';
 import { useGameStore, bindTurnManagerCallbacks } from '../../app/src/store';
 
@@ -21,14 +22,11 @@ const localStorageMock = {
 };
 Object.defineProperty(global, 'localStorage', { value: localStorageMock });
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 // 模拟 60 甲子卡牌库
-const mockCardData = [
-  { id: 1, name: '甲子', tianGan: '甲', diZhi: '子', tianGanElement: 'wood', diZhiElement: 'water', mainElement: 'wood', yinYang: 'yang' },
-  { id: 2, name: '乙丑', tianGan: '乙', diZhi: '丑', tianGanElement: 'wood', diZhiElement: 'earth', mainElement: 'wood', yinYang: 'yin' },
-  { id: 3, name: '丙寅', tianGan: '丙', diZhi: '寅', tianGanElement: 'fire', diZhiElement: 'wood', mainElement: 'fire', yinYang: 'yang' },
-  { id: 4, name: '丁卯', tianGan: '丁', diZhi: '卯', tianGanElement: 'fire', diZhiElement: 'wood', mainElement: 'fire', yinYang: 'yin' },
-  { id: 5, name: '戊辰', tianGan: '戊', diZhi: '辰', tianGanElement: 'earth', diZhiElement: 'earth', mainElement: 'earth', yinYang: 'yang' },
-];
+const mockCardData = JSON.parse(readFileSync(resolve(process.cwd(), 'assets/data/jiazi_cards.json'), 'utf-8'));
 
 global.fetch = vi.fn().mockImplementation(() =>
   Promise.resolve({
@@ -52,9 +50,14 @@ function createCard(id: number, name: string, mainElement: Element): JiaziCard {
 describe('Annual Tribulation and Carryover (年岁大考、天劫雷火出清与 35% 结转道基)', () => {
   let turnManager: TurnManager;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorageMock.clear();
-    turnManager = new TurnManager();
+    turnManager = new TurnManager(undefined, undefined, {
+      rulesVersion: RULES_VERSION_V11,
+      volatility: { enabled: true, model: 'relationship_response' },
+      voidConfig: { voidCardCount: 0 },
+    });
+    await turnManager.initialize();
     turnManager.startGame();
   });
 
@@ -260,7 +263,7 @@ describe('Annual Tribulation and Carryover (年岁大考、天劫雷火出清与
   });
 
   describe('6. 存档与快照持久化', () => {
-    it('GameSnapshot 完整导出并还原 year, turn, quota, baseQuota, totalYearsSurvived', () => {
+    it('GameSnapshot 完整导出并还原 year, turn, quota, baseQuota, totalYearsSurvived', async () => {
       // 设定跨岁后状态
       turnManager.getScoreManager().setScore(1000);
       turnManager.evaluateTribulation();
@@ -286,7 +289,12 @@ describe('Annual Tribulation and Carryover (年岁大考、天劫雷火出清与
       expect(snapshot.totalYearsSurvived).toBe(1);
 
       // 还原至全新 TurnManager
-      const newTurnManager = new TurnManager();
+      const newTurnManager = new TurnManager(undefined, undefined, {
+        rulesVersion: RULES_VERSION_V11,
+        volatility: { enabled: true, model: 'relationship_response' },
+        voidConfig: { voidCardCount: 0 },
+      });
+      await newTurnManager.initialize();
       newTurnManager.importSnapshot(snapshot);
 
       expect(newTurnManager.getYear()).toBe(2);
@@ -300,7 +308,11 @@ describe('Annual Tribulation and Carryover (年岁大考、天劫雷火出清与
 
   describe('7. 前端 UI Store 状态同步与交互', () => {
     it('GameStore 正确同步年岁状态，天劫降临时自动弹出大考弹窗', async () => {
-      const tm = new TurnManager();
+      const tm = new TurnManager(undefined, undefined, {
+        rulesVersion: RULES_VERSION_V11,
+        volatility: { enabled: true, model: 'relationship_response' },
+        voidConfig: { voidCardCount: 0 },
+      });
       await tm.initialize();
       useGameStore.setState({ turnManager: tm });
       bindTurnManagerCallbacks(tm, useGameStore.setState, useGameStore.getState);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { TurnManager } from '../../src/core/TurnManager';
+import { RULES_VERSION_V11 } from '../../src/core/RulesConstants';
 import { JiaziCard, Element, YinYang } from '../../src/core/JiaziCard';
 import { ALL_SECTS, SectManager, SEASON_ACTIVE_SECTS } from '../../src/core/SectManager';
 import { useGameStore, bindTurnManagerCallbacks } from '../../app/src/store';
@@ -191,7 +192,10 @@ describe('Sect Patrols and Penalties (五大古宗巡视与处置系统)', () =>
 
     beforeEach(async () => {
       localStorageMock.clear();
-      turnManager = new TurnManager();
+      turnManager = new TurnManager(undefined, undefined, {
+        rulesVersion: RULES_VERSION_V11,
+        voidConfig: { voidCardCount: 0 },
+      });
       await turnManager.initialize();
       turnManager.startGame();
     });

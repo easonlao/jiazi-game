@@ -4,6 +4,7 @@ import {
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
   RULES_VERSION_RELATIONSHIP_RESPONSE,
+  RULES_VERSION_V11,
   RULES_VERSION_TRADE,
   RULES_VERSION_TREND_WINDOW,
   RULES_VERSION_VOID,
@@ -229,6 +230,18 @@ export const RELATIONSHIP_RESPONSE_REPLAY_RULES: RelationshipResponseReplayRules
 };
 
 /**
+ * V11 宏观 Roguelike：继承 V10 干支关系响应，增加年岁渡劫、三合、宗门巡查与潜伏地脉。
+ */
+export interface V11MacroRoguelikeReplayRulesSnapshot extends Omit<RelationshipResponseReplayRulesSnapshot, 'rulesVersion'> {
+  rulesVersion: typeof RULES_VERSION_V11;
+}
+
+export const V11_MACRO_ROGUELIKE_REPLAY_RULES: V11MacroRoguelikeReplayRulesSnapshot = {
+  ...RELATIONSHIP_RESPONSE_REPLAY_RULES,
+  rulesVersion: RULES_VERSION_V11,
+};
+
+/**
  * 服务端可创建/校验的新会话规则版本注册表（按版本号升序）。
  *
  * 2026-08-14 用户拍板：生产默认翻转为 V5（空亡）——排行榜清理 V4 旧数据后，
@@ -236,6 +249,7 @@ export const RELATIONSHIP_RESPONSE_REPLAY_RULES: RelationshipResponseReplayRules
  * 2026-08-15 新增 V6（地支波动）：注册表内可创建显式实验会话，生产默认不翻转（票 05）。
  * 2026-08-28 新增 V8（牌池守恒）：生产默认翻转为 V8。
  * 2026-08-30 新增 V9（单空亡）：保留 V8，避免改写进行中云端对局的冻结快照。
+ * 2026-09-22 新增 V11（宏观 Roguelike）：生产默认翻转为 V11。
  */
 export const SUPPORTED_REPLAY_RULES: readonly ReplayRulesSnapshot[] = [
   BALANCED_TRADE_REPLAY_RULES,
@@ -245,6 +259,7 @@ export const SUPPORTED_REPLAY_RULES: readonly ReplayRulesSnapshot[] = [
   CLEAN_POOL_REPLAY_RULES,
   SINGLE_VOID_REPLAY_RULES,
   RELATIONSHIP_RESPONSE_REPLAY_RULES,
+  V11_MACRO_ROGUELIKE_REPLAY_RULES,
 ];
 
 /** 按规则版本号取冻结快照；未注册版本返回 undefined（函数层据此拒绝 409/422）。 */
@@ -252,8 +267,8 @@ export function getReplayRulesByVersion(version: number): ReplayRulesSnapshot | 
   return SUPPORTED_REPLAY_RULES.find((rules) => rules.rulesVersion === version);
 }
 
-/** 新局与服务端新会话使用的当前规则快照（V10：干支关系响应）。 */
-export const CURRENT_REPLAY_RULES = RELATIONSHIP_RESPONSE_REPLAY_RULES;
+/** 新局与服务端新会话使用的当前规则快照（V11：宏观 Roguelike）。 */
+export const CURRENT_REPLAY_RULES = V11_MACRO_ROGUELIKE_REPLAY_RULES;
 
 export interface ContractValidationResult {
   valid: boolean;

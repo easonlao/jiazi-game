@@ -29,6 +29,7 @@ export {
   CLEAN_POOL_REPLAY_RULES,
   SINGLE_VOID_REPLAY_RULES,
   RELATIONSHIP_RESPONSE_REPLAY_RULES,
+  V11_MACRO_ROGUELIKE_REPLAY_RULES,
   SUPPORTED_REPLAY_RULES,
   getReplayRulesByVersion,
   CURRENT_REPLAY_RULES,
@@ -45,6 +46,7 @@ export type {
   CleanPoolReplayRulesSnapshot,
   SingleVoidReplayRulesSnapshot,
   RelationshipResponseReplayRulesSnapshot,
+  V11MacroRoguelikeReplayRulesSnapshot,
 } from './ReplayRules';
 
 export { SeasonCycle, LAZY_SEASON_LENGTH_DISTRIBUTION } from './SeasonCycle';
@@ -88,6 +90,7 @@ export {
   V8_STANDARD_PROFILE,
   V9_STANDARD_PROFILE,
   V10_RELATIONSHIP_RESPONSE_PROFILE,
+  V11_STANDARD_PROFILE,
   EA_DEFAULT_BALANCE_PROFILE,
   SUPPORTED_BALANCE_PROFILES,
   getBalanceProfileById,
@@ -141,6 +144,7 @@ export {
   RULES_VERSION_CLEAN_POOL,
   RULES_VERSION_SINGLE_VOID,
   RULES_VERSION_RELATIONSHIP_RESPONSE,
+  RULES_VERSION_V11,
   isSupportedRulesVersion,
   isTradeRulesVersion,
   RULES_BASE,
