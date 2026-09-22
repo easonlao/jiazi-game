@@ -133,6 +133,18 @@ export interface GameSnapshot {
   grandCycles?: number;
   /** 五大古宗巡视与执法状态快照 (V11) */
   sectState?: SectStateSnapshot;
+  /** 当前年岁 (V11 引入，默认 1) */
+  year?: number;
+  /** 当前年内回合数 1~20 (V11 引入，默认 1) */
+  turn?: number;
+  /** 当年天劫基准门槛 (V11 引入，默认 650) */
+  baseQuota?: number;
+  /** 当年天劫实际考核门槛 (V11 引入，默认 650) */
+  quota?: number;
+  /** 天劫门槛折扣率 (V11 引入，默认 1.0) */
+  quotaDiscount?: number;
+  /** 成功存活年岁数累计 (V11 引入，默认 0) */
+  totalYearsSurvived?: number;
   pool: CardPoolSnapshot;
   /** 锁定中的公共牌 ID 列表（锁定机制） */
   lockedCardIds?: number[];

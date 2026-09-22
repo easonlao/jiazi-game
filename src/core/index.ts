@@ -1,4 +1,4 @@
-export { TurnManager } from './TurnManager';
+export { TurnManager, calculateAnnualQuota } from './TurnManager';
 export type {
   GameState,
   ActionType,
@@ -11,6 +11,8 @@ export type {
   DecisionEntry,
   VoidTriggerInfo,
   VoidStep,
+  TribulationClearedCard,
+  TribulationResult,
 } from './TurnManager';
 
 export { replayGame, replayGamePrefix, ReplayValidationError, MAX_REPLAY_ACTIONS } from './ReplayRunner';

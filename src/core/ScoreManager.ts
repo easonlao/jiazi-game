@@ -87,10 +87,10 @@ export class ScoreManager {
    * @param settle 终局出清收益累计（老存档无此字段时默认 0）
    * @param triad 三合成局大阵修为累计（老存档无此字段时默认 0）
    */
-  setScore(score: number, hold: number, sell: number, marginCallPenalty: number = 0, settle: number = 0, triad: number = 0): void {
+  setScore(score: number, hold?: number, sell?: number, marginCallPenalty: number = 0, settle: number = 0, triad: number = 0): void {
     this.score = score;
-    this.totalHoldEarnings = hold;
-    this.totalSellEarnings = sell;
+    if (hold !== undefined) this.totalHoldEarnings = hold;
+    if (sell !== undefined) this.totalSellEarnings = sell;
     this.totalMarginCallPenalty = marginCallPenalty;
     this.totalSettleEarnings = settle;
     this.totalTriadEarnings = triad;

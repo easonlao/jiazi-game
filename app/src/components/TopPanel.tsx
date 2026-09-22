@@ -24,6 +24,9 @@ export function TopPanel() {
   const currentRound = useGameStore((s) => s.currentRound);
   const totalRounds = useGameStore((s) => s.totalRounds);
   const roundInSeason = useGameStore((s) => s.roundInSeason);
+  const year = useGameStore((s) => s.year);
+  const turn = useGameStore((s) => s.turn);
+  const quota = useGameStore((s) => s.quota);
   const score = useGameStore((s) => s.score);
   const scoreDelta = useGameStore((s) => s.scoreDelta);
   // V6 地支偏移条（票 03）：12 地支效果值；非 V6 为 null → 整条不渲染（V5 零回归）
@@ -54,18 +57,32 @@ export function TopPanel() {
     <div className="flex flex-col bg-[#faf6ee] border-b border-wood-light">
       <div className="flex items-start gap-2 px-3 sm:px-4 py-2 max-md:py-1.5">
         <div className="min-w-0 flex-1">
-          <h1 className={`text-lg font-bold font-serif ${seasonTheme.text}`}>
-            {/* key 变化触发切换动画，提示回合推进 */}
-            <span key={currentRound} className="inline-block" style={roundAnimStyle}>
-              {seasonDisplay(season)} · 天时
+          <div className="flex items-center gap-2">
+            <h1 className={`text-lg font-bold font-serif ${seasonTheme.text}`}>
+              {/* key 变化触发切换动画，提示回合推进 */}
+              <span key={currentRound} className="inline-block" style={roundAnimStyle}>
+                {seasonDisplay(season)} · 天时
+              </span>
+            </h1>
+            <span className="text-[11px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300/80 shadow-xs tabular-nums">
+              第 {year} 年 · {turn}/20 轮
             </span>
-          </h1>
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-light tabular-nums">
-            <span className="font-bold text-ink">第 {currentRound} 回合 / {totalRounds}</span>
-            <span>季内第 {roundInSeason} 回合</span>
           </div>
-          <div className="mt-0.5 h-1 w-32 overflow-hidden rounded-full bg-wood-light/50" aria-label={`甲子进度 ${currentRound}/${totalRounds}`}>
-            <div className={`h-full rounded-full ${seasonTheme.bar}`} style={{ width: `${Math.min(100, (currentRound / totalRounds) * 100)}%` }} />
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-light tabular-nums">
+            <span className="font-medium text-ink">季内第 {roundInSeason} 回合</span>
+            <span className="text-wood-mid">·</span>
+            <div className="flex items-center gap-1.5" title={`天劫门槛目标: ${score.toFixed(0)} / ${quota}`}>
+              <span className="text-[10px] text-wood-dark font-medium">天劫道基:</span>
+              <div className="h-1.5 w-24 sm:w-32 overflow-hidden rounded-full bg-wood-light/60">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${score >= quota ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                  style={{ width: `${Math.min(100, Math.max(0, (score / quota) * 100))}%` }}
+                />
+              </div>
+              <span className={`text-[10px] font-mono font-bold ${score >= quota ? 'text-emerald-700' : 'text-amber-800'}`}>
+                {score.toFixed(0)}/{quota}
+              </span>
+            </div>
           </div>
         </div>
         {gameState === 'player_action' && (

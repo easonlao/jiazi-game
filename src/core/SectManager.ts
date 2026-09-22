@@ -205,6 +205,17 @@ export class SectManager {
     this.pendingBuyback = null;
   }
 
+  /** 清除所有宗门怒意（新岁渡劫成功后调用） */
+  clearAnger(): void {
+    this.anger = {
+      metal: 0,
+      wood: 0,
+      fire: 0,
+      water: 0,
+      earth: 0,
+    };
+  }
+
   /**
    * 季节切换或新局启动时，调度当季两宗门的巡视倒计时
    * 错峰出巡，永不发生同轮碰撞

@@ -32,6 +32,7 @@ import {
   SEASON_ACTIVE_SECTS,
   type SectInfo,
   type PendingBuyback,
+  type TribulationResult,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -255,6 +256,22 @@ interface GameStore {
   sectCountdowns: Record<string, number>;
   /** V11 当前待决断宗门强征/严惩事件 */
   pendingBuyback: PendingBuyback | null;
+  /** V11 年岁体系：当前年岁 */
+  year: number;
+  /** V11 年岁体系：当前年内回合数 (1~20) */
+  turn: number;
+  /** V11 年岁体系：当年天劫基准门槛 */
+  baseQuota: number;
+  /** V11 年岁体系：当年天劫实际门槛 */
+  quota: number;
+  /** V11 年岁体系：天劫门槛折扣率 */
+  quotaDiscount: number;
+  /** V11 年岁体系：成功存活年岁数累计 */
+  totalYearsSurvived: number;
+  /** V11 年岁体系：天劫大考结算结果 */
+  tribulationResult: TribulationResult | null;
+  /** V11 年岁体系：天劫大考结算弹窗是否打开 */
+  isTribulationModalOpen: boolean;
   publicCards: JiaziCard[];
   leverageMultiplier: number;
   /** 以下数值来自核心 BalanceConfig，前端渲染一律读取，禁止硬编码 */
@@ -429,6 +446,8 @@ interface GameStore {
   clearLastTriadClaim: () => void;
   acceptSectDemand: () => void;
   declineSectDemand: () => void;
+  closeTribulationModal: () => void;
+  advanceToNextYear: () => boolean;
   toggleLeverage: () => void;
   executeBuy: () => boolean;
   executeSell: () => boolean;
@@ -786,6 +805,18 @@ export function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get:
   tm.setOnLeylineEvaded((sect) => {
     get().showToast(`👁️‍🗨️【避祸成功】：${sect.name}神念扫过丹田无功而返！你深藏在【潜伏地脉】的【${sect.elemName}】牌未被发现！`);
   });
+  // V11 岁末天劫大考触发
+  tm.setOnTribulation((result) => {
+    set({
+      tribulationResult: result,
+      isTribulationModalOpen: true,
+    });
+    if (result.success) {
+      get().showToast(`⚡【渡劫成功】：突破第 ${result.year} 劫！溢出真元 35% (+${result.carryover.toLocaleString()}) 结转为新岁初始道基！`);
+    } else {
+      get().showToast(`💥【道消身陨】：真元不足以抗衡岁末九霄天劫，身死道消！`);
+    }
+  });
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -810,6 +841,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   lastTriadClaim: null,
   sectCountdowns: {},
   pendingBuyback: null,
+  year: 1,
+  turn: 1,
+  baseQuota: 650,
+  quota: 650,
+  quotaDiscount: 1.0,
+  totalYearsSurvived: 0,
+  tribulationResult: null,
+  isTribulationModalOpen: false,
   publicCards: [],
   leverageMultiplier: 1,
   maxQi: 80,
@@ -916,6 +955,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       availableTriads: [...tm.checkTriads()],
       sectCountdowns: { ...tm.getSectCountdowns() },
       pendingBuyback: tm.getPendingBuyback(),
+      year: tm.getYear(),
+      turn: tm.getTurn(),
+      baseQuota: tm.getBaseQuota(),
+      quota: tm.getQuota(),
+      quotaDiscount: tm.getQuotaDiscount(),
+      totalYearsSurvived: tm.getTotalYearsSurvived(),
+      tribulationResult: tm.getLastTribulationResult(),
       publicCards: [...tm.getPublicCards()],
       leverageMultiplier: tm.getLeverageMultiplier(),
       maxQi: tm.getMaxQi(),
@@ -2001,6 +2047,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().showToast(`🔥【誓死抗命】：断然拒绝交割！${backlashMsg}`);
       get()._sync();
     }
+  },
+  closeTribulationModal() {
+    set({ isTribulationModalOpen: false });
+  },
+  advanceToNextYear() {
+    const tm = get().turnManager;
+    if (!tm) return false;
+    const ok = tm.advanceToNextYear();
+    if (ok) {
+      set({ isTribulationModalOpen: false });
+      get()._sync();
+      get().showToast(`🌅 迈入甲子历 第 ${tm.getYear()} 年！新岁天劫门槛：${tm.getQuota().toLocaleString()} 修为！`);
+    }
+    return ok;
   },
   toggleLeverage() {
     set((s) => ({ useLeverage: !s.useLeverage }));

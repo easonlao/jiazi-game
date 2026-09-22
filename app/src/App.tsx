@@ -20,6 +20,7 @@ import { CultivationProfileModal } from './components/CultivationProfileModal';
 import { PauseModal } from './components/PauseModal';
 import { TerminationConflictModal } from './components/TerminationConflictModal';
 import { SectPatrolModal } from './components/SectPatrolModal';
+import { TribulationModal } from './components/TribulationModal';
 
 export default function App() {
   const gameState = useGameStore((s) => s.gameState);
@@ -116,6 +117,7 @@ export default function App() {
         <PauseModal />
         <TerminationConflictModal />
         <SectPatrolModal />
+        <TribulationModal />
         <Toast />
       </div>
     </div>

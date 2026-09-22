@@ -84,7 +84,58 @@ import {
 } from './ScoreVolatility.ts';
 
 /** 游戏主状态 */
-export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'void_round' | 'game_over';
+export type GameState = 'init' | 'settlement' | 'draw' | 'qi_recover' | 'player_action' | 'void_round' | 'game_over' | 'tribulation';
+
+/** 天劫雷火出清丹田明牌详情 (V11) */
+export interface TribulationClearedCard {
+  card: JiaziCard;
+  sellYield: number;
+}
+
+/** 天劫大考结算结果 (V11) */
+export interface TribulationResult {
+  /** 是否渡劫成功达标 */
+  success: boolean;
+  /** 所处年岁 */
+  year: number;
+  /** 当年实际考核门槛 */
+  quota: number;
+  /** 当年基准门槛 */
+  baseQuota: number;
+  /** 大考出清前本年累计修为 */
+  scoreBeforeEvaluation: number;
+  /** 丹田被雷火出清的明牌清单 */
+  dantianClearedCards: TribulationClearedCard[];
+  /** 丹田明牌出清变现所得总修为 */
+  dantianSellTotal: number;
+  /** 计入出清后大考最终总修为 */
+  finalScore: number;
+  /** 溢出真元 = max(0, finalScore - quota) */
+  surplus: number;
+  /** 新岁结转道基 (35%) = round(surplus * 0.35) */
+  carryover: number;
+  /** 天劫判词 */
+  message: string;
+}
+
+/**
+ * 计算第 N 年天劫门槛与基准门槛 (V11)
+ * 每年约按 1.95x 递增：Y1: 650, Y2: 1268, Y3: 2473...
+ */
+export function calculateAnnualQuota(
+  year: number,
+  quotaDiscount: number = 1.0,
+  initialBaseQuota: number = 650
+): { baseQuota: number; quota: number } {
+  let currentBase = initialBaseQuota;
+  for (let y = 1; y < year; y++) {
+    currentBase = Math.round(currentBase * 1.95);
+  }
+  return {
+    baseQuota: currentBase,
+    quota: Math.round(currentBase * quotaDiscount),
+  };
+}
 
 /**
  * V5 空亡触发信息（onVoidTrigger 回调载荷；供 UI Toast 提示 / 批 2 动画消费）。
@@ -447,6 +498,22 @@ export class TurnManager {
   /** 本地试玩/降级标记（持久化到存档快照） */
   private isLocalOnly: boolean = false;
 
+  // V11 年岁体系与天劫大考状态
+  /** 当前年岁，1 起步 */
+  private year: number = 1;
+  /** 当前年内回合数，1~20 */
+  private turn: number = 1;
+  /** 当年天劫基准门槛，首年 650 */
+  private baseQuota: number = 650;
+  /** 当年天劫实际考核门槛 */
+  private quota: number = 650;
+  /** 天劫门槛折扣率，默认 1.0 */
+  private quotaDiscount: number = 1.0;
+  /** 成功存活/突破的完整年岁数累计 */
+  private totalYearsSurvived: number = 0;
+  /** 最近一次天劫大考结算结果 */
+  private lastTribulationResult: TribulationResult | null = null;
+
   // 回调
   private onStateChange?: (state: GameState) => void;
   private onTurnStart?: (round: number) => void;
@@ -459,6 +526,8 @@ export class TurnManager {
   private onSectBuyback?: (pending: PendingBuyback) => void;
   /** V11 地脉避灾成功回调（供 UI 弹出避祸 Toast） */
   private onLeylineEvaded?: (sect: SectInfo) => void;
+  /** V11 天劫大考触发回调（供 UI 弹出大考结算弹窗） */
+  private onTribulation?: (result: TribulationResult) => void;
 
   // 存档服务（序列化与 LocalStorage 边界）
   private readonly saveService: GameSaveService;
@@ -1233,12 +1302,19 @@ export class TurnManager {
    * 第 60 回合被吞噬时直接终局（空亡回合已在归档时完成记录，跳过终局归档避免重复）。
    */
   private advanceAfterVoid(): void {
+    const isRound20Action = this.turn >= 20;
     this.currentRound++;
-    if (this.currentRound > TurnManager.TOTAL_ROUNDS) {
+    if (this.rulesVersion < 11 && this.currentRound > TurnManager.TOTAL_ROUNDS) {
       this.endGame();
       return;
     }
+    if (!isRound20Action) {
+      this.turn++;
+    }
     this.processRound();
+    if (isRound20Action) {
+      this.evaluateTribulation();
+    }
   }
 
   /**
@@ -1941,12 +2017,13 @@ export class TurnManager {
    * 推进游戏回合以及季节流转
    */
   private advanceTurn(): void {
+    const isRound20Action = this.turn >= 20;
+
     this.currentRound++;
 
-    // 游戏已到终局：直接结束，不再推进季节循环。
-    // 否则最后一回合恰逢季末时，终局推进会连带换季，前端 diff 会把这次
-    // "换季"误判为真正的季节切换，在游戏结束画面误播季节转换动画。
-    if (this.currentRound > TurnManager.TOTAL_ROUNDS) {
+    // 游戏已到终局：仅在旧规则版本 (rulesVersion < 11) 下受 60 回合硬限制
+    // （在 V11 年岁体系下，周天由 20 回合天劫大考判定生死突破，支持无尽长线）
+    if (this.rulesVersion < 11 && this.currentRound > TurnManager.TOTAL_ROUNDS) {
       this.processRound();
       return;
     }
@@ -1983,8 +2060,17 @@ export class TurnManager {
       }
     }
 
-    // 处理下一回合
+    if (!isRound20Action) {
+      this.turn++;
+    }
+
+    // 处理下一回合 / 第 20 回合推演
     this.processRound();
+
+    // 当在第 20 回合推演结束时，触发天劫大考 evaluateTribulation()
+    if (isRound20Action) {
+      this.evaluateTribulation();
+    }
   }
 
   /**
@@ -2125,6 +2211,12 @@ export class TurnManager {
       grandCycles: this.triadManager.getGrandCycles(),
       totalTriadEarnings: this.scoreManager.getTotalTriadEarnings(),
       sectState: this.sectManager.exportSnapshot(),
+      year: this.year,
+      turn: this.turn,
+      baseQuota: this.baseQuota,
+      quota: this.quota,
+      quotaDiscount: this.quotaDiscount,
+      totalYearsSurvived: this.totalYearsSurvived,
       pool: {
         deckIds: this.cardPoolManager.getDeck().map(c => c.id),
         publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
@@ -2394,6 +2486,15 @@ export class TurnManager {
       this.sectManager.reset();
       this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
     }
+
+    // 4.6 还原年岁体系与天劫大考状态 (V11)
+    this.year = typeof data.year === 'number' ? data.year : 1;
+    this.turn = typeof data.turn === 'number' ? data.turn : ((this.currentRound - 1) % 20 + 1);
+    this.baseQuota = typeof data.baseQuota === 'number' ? data.baseQuota : 650;
+    this.quota = typeof data.quota === 'number' ? data.quota : 650;
+    this.quotaDiscount = typeof data.quotaDiscount === 'number' ? data.quotaDiscount : 1.0;
+    this.totalYearsSurvived = typeof data.totalYearsSurvived === 'number' ? data.totalYearsSurvived : Math.max(0, this.year - 1);
+    this.lastTribulationResult = null;
 
     // 5. 还原神识值（基于最新手牌计算的 totalLockedQi）
     this.qiManager.setQi(data.qi, this.getTotalLockedQi());
@@ -3088,6 +3189,198 @@ export class TurnManager {
     return result;
   }
 
+  // =========================================================================
+  // 年岁周期与天劫大考系统 (V11)
+  // =========================================================================
+
+  /** 获取当前年岁（默认从 1 开始） */
+  getYear(): number {
+    return this.year;
+  }
+
+  /** 获取当前年内回合数（1~20） */
+  getTurn(): number {
+    return this.turn;
+  }
+
+  /** 获取当年天劫基准考核门槛 */
+  getBaseQuota(): number {
+    return this.baseQuota;
+  }
+
+  /** 获取当年天劫实际考核门槛 */
+  getQuota(): number {
+    return this.quota;
+  }
+
+  /** 获取天劫门槛折扣率 */
+  getQuotaDiscount(): number {
+    return this.quotaDiscount;
+  }
+
+  /** 设置天劫门槛折扣率（如机缘欺天灵符减免 20% 时设为 0.8） */
+  setQuotaDiscount(discount: number): void {
+    this.quotaDiscount = discount;
+    this.quota = Math.round(this.baseQuota * this.quotaDiscount);
+  }
+
+  /** 获取成功存活/突破的完整年岁数累计 */
+  getTotalYearsSurvived(): number {
+    return this.totalYearsSurvived;
+  }
+
+  /** 获取最近一次天劫大考结算结果 */
+  getLastTribulationResult(): TribulationResult | null {
+    return this.lastTribulationResult;
+  }
+
+  /** 设置天劫大考触发回调（供 UI 弹出大考结算弹窗） */
+  setOnTribulation(callback: (result: TribulationResult) => void): void {
+    this.onTribulation = callback;
+  }
+
+  /**
+   * 岁末天劫大考结算 (Annual Tribulation Evaluation - V11)
+   * 
+   * 1. 天劫雷火出清活跃丹田明牌 (Q5=B):
+   *    活跃丹田中的明牌全部按当年冬季当季评分主动释灵变现，所得修为并入当岁总修为，随后清空丹田（置为空位）；
+   *    潜伏地脉中的暗牌完好无损跨年存留 (Q1=A)。
+   * 2. 达标核验:
+   *    若 finalScore >= quota (渡劫成功):
+   *      - 消耗当岁基准真元；
+   *      - 溢出真元 surplus = max(0, finalScore - quota)；
+   *      - 新岁结转道基 (35%) carryover = round(surplus * 0.35)；
+   *      - 进入 tribulation 状态等待进阶新岁。
+   *    若 finalScore < quota (渡劫失败):
+   *      - 身死道消 Permadeath 即刻终局 (Q4=A)；
+   *      - isGameOver = true，封存历史战绩，提交终局。
+   */
+  evaluateTribulation(): TribulationResult {
+    const scoreBeforeEvaluation = this.scoreManager.getScore();
+    const tribulationSeason: Season = 'winter';
+
+    // 1. 天劫雷火出清活跃丹田明牌
+    let dantianSellTotal = 0;
+    const dantianClearedCards: TribulationClearedCard[] = [];
+
+    const dantianSlots = this.handManager.getHand();
+    for (let i = 0; i < dantianSlots.length; i++) {
+      const slot = dantianSlots[i];
+      if (slot) {
+        const winterScore = this.getCardScore(slot.card, tribulationSeason);
+        const effectiveLeverage = slot.useLeverage
+          ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
+          : 1;
+        const elemMult = this.getElementMultiplier(slot.card.mainElement);
+        const sellScore = this.scoreManager.calculateSellScore(
+          winterScore,
+          slot.buyScore,
+          effectiveLeverage,
+          elemMult
+        );
+
+        dantianSellTotal += sellScore;
+        dantianClearedCards.push({
+          card: slot.card,
+          sellYield: sellScore,
+        });
+
+        // 移除明牌，腾空槽位，退还锁定神识，并将卡牌归还公共牌堆
+        const soldSlot = this.handManager.sell(i);
+        if (soldSlot) {
+          this.cardPoolManager.returnCards([soldSlot.card]);
+          this.qiManager.recover(soldSlot.lockedQi);
+        }
+      }
+    }
+
+    if (dantianSellTotal !== 0) {
+      this.scoreManager.addSellEarnings(dantianSellTotal);
+    }
+
+    const finalScore = this.scoreManager.getScore();
+    const pass = finalScore >= this.quota;
+    const surplus = Math.max(0, finalScore - this.quota);
+    const carryover = Math.round((surplus * 35) / 100);
+
+    const message = pass
+      ? `渡劫成功！突破第 ${this.year} 劫！九道玄雷涤荡虚妄，留存 35% 溢出底蕴 (+${carryover.toLocaleString()}) 结转为新岁道基。`
+      : `道消身陨！天雷浩荡，真元不足，未渡过第 ${this.year} 劫（门槛 ${this.quota.toLocaleString()}，实际 ${finalScore.toLocaleString()}）。在岁末天劫中化为飞灰。`;
+
+    const result: TribulationResult = {
+      success: pass,
+      year: this.year,
+      quota: this.quota,
+      baseQuota: this.baseQuota,
+      scoreBeforeEvaluation,
+      dantianClearedCards,
+      dantianSellTotal,
+      finalScore,
+      surplus,
+      carryover,
+      message,
+    };
+
+    this.lastTribulationResult = result;
+
+    if (pass) {
+      this.state = 'tribulation';
+      this.onStateChange?.('tribulation');
+    } else {
+      this.state = 'game_over';
+      this.onStateChange?.('game_over');
+      this.endGame();
+    }
+
+    this.onTribulation?.(result);
+    return result;
+  }
+
+  /**
+   * 迈入新岁 (Advance To Next Year - V11)
+   * 
+   * 渡劫成功后调用：
+   * - 将修为重置为结转道基 carryover (溢出修为的 35%)；
+   * - 存活年岁增加，year++，turn 重置为 1；
+   * - 每年天劫基准门槛递增 1.95x：baseQuota = round(baseQuota * 1.95), quota = round(baseQuota * quotaDiscount)；
+   * - 重置宗门怒意；
+   * - 刷新公共卡池，恢复状态至 player_action，启动新一岁周天运转。
+   */
+  advanceToNextYear(options?: { quotaDiscount?: number }): boolean {
+    if (!this.lastTribulationResult || !this.lastTribulationResult.success) {
+      return false;
+    }
+
+    const carryover = this.lastTribulationResult.carryover;
+    this.scoreManager.setScore(carryover);
+
+    this.totalYearsSurvived++;
+    this.year++;
+    this.turn = 1;
+
+    if (options?.quotaDiscount !== undefined) {
+      this.quotaDiscount = options.quotaDiscount;
+    }
+
+    this.baseQuota = Math.round(this.baseQuota * 1.95);
+    this.quota = Math.round(this.baseQuota * this.quotaDiscount);
+
+    // 清空宗门怒意
+    this.sectManager.clearAnger();
+
+    // 重新规划当季宗门
+    this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
+
+    // 抽新公共牌
+    this.drawPublicCards();
+
+    this.lastTribulationResult = null;
+    this.state = 'player_action';
+    this.onStateChange?.('player_action');
+    this.onTurnStart?.(this.currentRound);
+    return true;
+  }
+
   /** 获取公共牌 */
   getPublicCards(): JiaziCard[] {
     return this.cardPoolManager.getPublicCards();
@@ -3575,6 +3868,16 @@ export class TurnManager {
     this.cardPoolManager.initialize(this.buildDeckCards());
 
     this.currentRound = 1;
+    this.year = 1;
+    this.turn = 1;
+    this.baseQuota = 650;
+    this.quota = 650;
+    this.quotaDiscount = 1.0;
+    this.totalYearsSurvived = 0;
+    this.lastTribulationResult = null;
+    this.sectManager.reset();
+    this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
+
     this.state = 'init';
     this.lastAction = null;
     this.selectedCardIndex = -1;
