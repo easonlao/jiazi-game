@@ -238,6 +238,8 @@ interface GameStore {
   score: number;
   deckSize: number;
   hand: (import('@core/HandSlot').HandSlot | null)[];
+  leyline: (import('@core/HandSlot').HandSlot | null)[];
+  maxLeyline: number;
   publicCards: JiaziCard[];
   leverageMultiplier: number;
   /** 以下数值来自核心 BalanceConfig，前端渲染一律读取，禁止硬编码 */
@@ -277,6 +279,7 @@ interface GameStore {
   // 交互状态
   selectedPublicCard: number;
   selectedHandCard: number;
+  selectedLeylineCard: number;
   useLeverage: boolean;
   /** 锁定中的公共牌 ID（锁定机制：占公共位 + 每张每回合 5 神识） */
   lockedCardIds: number[];
@@ -402,6 +405,11 @@ interface GameStore {
   // 操作
   selectPublicCard: (index: number) => void;
   selectHandCard: (index: number) => void;
+  selectLeylineCard: (index: number) => void;
+  moveToLeyline: (dantianIndex: number) => boolean;
+  moveToDantian: (leylineIndex: number) => boolean;
+  buyToLeyline: (cardIndex: number, leverage?: boolean) => boolean;
+  sellLeyline: (index: number) => boolean;
   toggleLeverage: () => void;
   executeBuy: () => boolean;
   executeSell: () => boolean;
@@ -766,6 +774,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   score: 0,
   deckSize: 0,
   hand: [],
+  leyline: [],
+  maxLeyline: 2,
   publicCards: [],
   leverageMultiplier: 1,
   maxQi: 80,
@@ -792,6 +802,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   selectedPublicCard: -1,
   selectedHandCard: -1,
+  selectedLeylineCard: -1,
   useLeverage: false,
   lockedCardIds: [],
   pendingAction: null,
@@ -863,6 +874,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       score: nextScore,
       deckSize: tm.getDeckSize(),
       hand: [...tm.getHand()],
+      leyline: [...tm.getLeyline()],
+      maxLeyline: tm.getMaxLeyline(),
       publicCards: [...tm.getPublicCards()],
       leverageMultiplier: tm.getLeverageMultiplier(),
       maxQi: tm.getMaxQi(),
@@ -1845,7 +1858,63 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   selectHandCard(index) {
     const current = get().selectedHandCard;
-    set({ selectedHandCard: current === index ? -1 : index });
+    set({ selectedHandCard: current === index ? -1 : index, selectedLeylineCard: -1 });
+  },
+  selectLeylineCard(index) {
+    const current = get().selectedLeylineCard;
+    set({ selectedLeylineCard: current === index ? -1 : index, selectedHandCard: -1 });
+  },
+  moveToLeyline(dantianIndex) {
+    const tm = get().turnManager;
+    if (!tm) return false;
+    const ok = tm.moveToLeyline(dantianIndex);
+    if (ok) {
+      set({ selectedHandCard: -1, selectedLeylineCard: -1 });
+      get()._sync();
+      _showActionToast(get, '下沉地脉成功');
+    } else {
+      get().showToast('下沉地脉失败（神识不足或地脉已满）');
+    }
+    return ok;
+  },
+  moveToDantian(leylineIndex) {
+    const tm = get().turnManager;
+    if (!tm) return false;
+    const ok = tm.moveToDantian(leylineIndex);
+    if (ok) {
+      set({ selectedHandCard: -1, selectedLeylineCard: -1 });
+      get()._sync();
+      _showActionToast(get, '升入丹田成功');
+    } else {
+      get().showToast('升入丹田失败（丹田已满）');
+    }
+    return ok;
+  },
+  buyToLeyline(cardIndex, leverage = false) {
+    const tm = get().turnManager;
+    if (!tm) return false;
+    const ok = tm.buyToLeyline(cardIndex, leverage);
+    if (ok) {
+      set({ selectedPublicCard: -1, useLeverage: false });
+      get()._sync();
+      _showActionToast(get, '潜脉纳灵成功');
+    } else {
+      get().showToast('潜入地脉失败（神识不足或地脉已满）');
+    }
+    return ok;
+  },
+  sellLeyline(index) {
+    const tm = get().turnManager;
+    if (!tm) return false;
+    const ok = tm.sellLeyline(index);
+    if (ok) {
+      set({ selectedLeylineCard: -1 });
+      get()._sync();
+      _showActionToast(get, '地脉释灵成功');
+    } else {
+      get().showToast('地脉释灵失败');
+    }
+    return ok;
   },
   toggleLeverage() {
     set((s) => ({ useLeverage: !s.useLeverage }));

@@ -45,94 +45,196 @@ export function HandCards() {
     }
   }, [marginCallEvent]);
 
+  const leyline = useGameStore((s) => s.leyline);
+  const maxLeyline = useGameStore((s) => s.maxLeyline);
+  const selectedLeylineCard = useGameStore((s) => s.selectedLeylineCard);
+  const selectLeylineCard = useGameStore((s) => s.selectLeylineCard);
+  const moveToLeyline = useGameStore((s) => s.moveToLeyline);
+  const moveToDantian = useGameStore((s) => s.moveToDantian);
+  const sellLeyline = useGameStore((s) => s.sellLeyline);
+  const qi = useGameStore((s) => s.qi);
+
   useEffect(() => {
-    if (gameState === 'init') setHistoryCard(null);
+    if (gameState === 'init') {
+      setHistoryCard(null);
+    }
   }, [gameState]);
 
-  const hasCards = hand.some((s) => s !== null);
+  const hasDantianCards = hand.some((s) => s !== null);
+  const isLeylineSoftCapped = leyline.filter((s) => s !== null).length >= maxLeyline;
 
   return (
-    <div className="flex flex-col gap-1 px-4 py-1.5 max-md:py-1">
-      <h3 className="text-sm font-bold font-serif text-ink">
-        丹田 {hand.filter((s) => s).length}/{hand.length}
-      </h3>
+    <div className="flex flex-col gap-2 px-4 py-1.5 max-md:py-1">
+      {/* 活跃丹田横带 */}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold font-serif text-ink flex items-center gap-1.5">
+            <span>活跃丹田</span>
+            <span className="text-xs font-mono font-normal text-ink-light">
+              {hand.filter((s) => s).length}/3
+            </span>
+            <span className="text-[10px] text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded font-sans">
+              明牌 · 每轮炼化
+            </span>
+          </h3>
 
-      {!hasCards ? (
-        <div
-          className="relative flex min-h-24 items-center justify-center text-center text-ink-light text-xs border border-dashed border-wood-light rounded-lg"
-        >
-          三丹田空置 · 纳灵公共灵气开始炼化
-          {marginCallEvent?.detail?.marginCallDetails.length ? (
-            <div
-              className="pointer-events-none absolute inset-x-0 top-1/2 grid h-24 -translate-y-1/2 grid-cols-3 gap-1.5"
-              aria-hidden="true"
+          {selectedHandCard >= 0 && hand[selectedHandCard] && (
+            <button
+              onClick={() => moveToLeyline(selectedHandCard)}
+              disabled={gameState !== 'player_action' || isLeylineSoftCapped || qi < 5}
+              className={`text-[11px] px-2 py-0.5 rounded font-bold transition-all shadow-sm ${
+                gameState === 'player_action' && !isLeylineSoftCapped && qi >= 5
+                  ? 'bg-sky-600 text-white hover:bg-sky-700 active:scale-95'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+              title="下沉至潜伏地脉避风（消耗 5 点神识，推进 1 轮周天推演）"
             >
-              {hand.map((_, index) => <span key={index} data-hand-card-slot={index} />)}
-            </div>
-          ) : null}
+              下沉地脉 (-5神识)
+            </button>
+          )}
         </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-1.5">
-          {hand.map((slot: HandSlot | null, i: number) => {
-            // 买入飞行期间目标槽位留空：飞行卡面从公共位飞入，到达后手牌显示——
-            // 同一张牌全程只有一个视觉（2026-08-14 两层叠加反馈修复）。
-            if (flyingSlot === i) return <EmptySlot key={i} slotIndex={i} shattered={false} />;
-            if (!slot) return <EmptySlot key={i} slotIndex={i} shattered={shatteredSlots.has(i)} />;
-            const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
-            // 仅在选中该手牌时显示卖出预览，未选中时不显示
-            const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
-            // 持仓卡面展示当前回合已经生效的收益/耗神；"→下回合倍数"箭头用
-            // 假设不换季的推演口径（getNextLeverageNoSeasonChange）——仅作提醒，
-            // 不泄露换季（信息边界契约第三类口径）。
-            const currentLeverage =
-              slot.useLeverage
-                ? (turnManager ? turnManager.getLeverageMultiplier() : 1)
-                : 1;
-            const settlementLeverage =
-              slot.useLeverage
-                ? (turnManager ? turnManager.getNextLeverageNoSeasonChange() : 1)
-                : 1;
-            const holdEarning = turnManager ? turnManager.previewHoldEarning(score, currentLeverage) : 0;
-            // 浓度溢价：单卡耗神显示含浓度总价（与实际扣费一致）；徽标暗示来源（V7 生效，V6 及以下 premium=0）。
-            const concentration = turnManager ? turnManager.getConcentrationInfo(slot.card) : undefined;
-            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(
-              score,
-              currentLeverage,
-              slot.card.tianGanElement === Element.EARTH,
-              concentration?.count ?? 0,
-              turnManager.getConcentrationPremiumFactor(),
-            ) : 0;
 
+        {!hasDantianCards ? (
+          <div
+            className="relative flex min-h-20 items-center justify-center text-center text-ink-light text-xs border border-dashed border-wood-light rounded-lg"
+          >
+            三丹田空置 · 纳灵公共灵气开始炼化
+            {marginCallEvent?.detail?.marginCallDetails.length ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 top-1/2 grid h-20 -translate-y-1/2 grid-cols-3 gap-1.5"
+                aria-hidden="true"
+              >
+                {hand.map((_, index) => <span key={index} data-hand-card-slot={index} />)}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-1.5">
+            {hand.map((slot: HandSlot | null, i: number) => {
+              if (flyingSlot === i) return <EmptySlot key={i} slotIndex={i} shattered={false} />;
+              if (!slot) return <EmptySlot key={i} slotIndex={i} shattered={shatteredSlots.has(i)} />;
+              const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
+              const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
+              const currentLeverage =
+                slot.useLeverage
+                  ? (turnManager ? turnManager.getLeverageMultiplier() : 1)
+                  : 1;
+              const settlementLeverage =
+                slot.useLeverage
+                  ? (turnManager ? turnManager.getNextLeverageNoSeasonChange() : 1)
+                  : 1;
+              const holdEarning = turnManager ? turnManager.previewHoldEarning(score, currentLeverage) : 0;
+              const concentration = turnManager ? turnManager.getConcentrationInfo(slot.card) : undefined;
+              const holdQiCost = turnManager ? turnManager.previewHoldQiCost(
+                score,
+                currentLeverage,
+                slot.card.tianGanElement === Element.EARTH,
+                concentration?.count ?? 0,
+                turnManager.getConcentrationPremiumFactor(),
+              ) : 0;
+
+              return (
+                <HandCard
+                  key={i}
+                  card={slot.card}
+                  slotIndex={i}
+                  score={score}
+                  buyScore={slot.buyScore}
+                  selected={selectedHandCard === i}
+                  onClick={
+                    gameState === 'player_action'
+                      ? () => {
+                          if (selectedHandCard !== i) selectHandCard(i);
+                        }
+                      : undefined
+                  }
+                  onOpenHistory={() => setHistoryCard(slot.card)}
+                  leverage={currentLeverage}
+                  settlementLeverage={settlementLeverage}
+                  isLeverage={slot.useLeverage}
+                  holdEarnings={slot.holdEarnings}
+                  holdEarning={holdEarning}
+                  holdQiCost={holdQiCost}
+                  concentration={concentration}
+                  sellPreview={sellPreview}
+                  shattered={shatteredSlots.has(i)}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 潜伏地脉横带 */}
+      <div className="flex flex-col gap-1 mt-1 pt-1.5 border-t border-wood-light/40">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold font-serif text-ink flex items-center gap-1.5">
+            <span>潜伏地脉</span>
+            <span className="text-xs font-mono font-normal text-ink-light">
+              {leyline.filter((s) => s).length}/{maxLeyline}
+            </span>
+            <span className="text-[10px] text-sky-800 bg-sky-100/90 px-1.5 py-0.5 rounded font-sans">
+              暗牌 · 0维持费 · 避巡视
+            </span>
+            {isLeylineSoftCapped && (
+              <span className="text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded font-mono font-bold">
+                ⚠️软超限拦截
+              </span>
+            )}
+          </h3>
+
+          {selectedLeylineCard >= 0 && leyline[selectedLeylineCard] && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => moveToDantian(selectedLeylineCard)}
+                disabled={gameState !== 'player_action' || hand.filter(s => s !== null).length >= 3}
+                className={`text-[11px] px-2 py-0.5 rounded font-bold transition-all shadow-sm ${
+                  gameState === 'player_action' && hand.filter(s => s !== null).length < 3
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+                title="升腾入活跃丹田（0 耗神，推进 1 轮周天推演）"
+              >
+                升入丹田 (0神识)
+              </button>
+              <button
+                onClick={() => sellLeyline(selectedLeylineCard)}
+                disabled={gameState !== 'player_action'}
+                className="text-[11px] px-2 py-0.5 rounded font-bold bg-qi-critical text-white hover:bg-red-600 active:scale-95 transition-all shadow-sm"
+                title="在地脉直接释灵变现（按正统波段价差结算）"
+              >
+                释灵变现
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 地脉槽位渲染 */}
+        <div className={`grid gap-1.5 ${maxLeyline >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          {Array.from({ length: Math.max(maxLeyline, leyline.length) }).map((_, i) => {
+            const slot = leyline[i] ?? null;
+            if (!slot) {
+              return <EmptyLeylineSlot key={i} index={i} />;
+            }
             return (
-              <HandCard
+              <LeylineCardView
                 key={i}
-                card={slot.card}
-                slotIndex={i}
-                score={score}
-                buyScore={slot.buyScore}
-                selected={selectedHandCard === i}
-                onClick={
-                  gameState === 'player_action'
-                    ? () => {
-                        if (selectedHandCard !== i) selectHandCard(i);
-                      }
-                    : undefined
-                }
+                slot={slot}
+                index={i}
+                selected={selectedLeylineCard === i}
+                season={season}
+                turnManager={turnManager}
+                onSelect={() => selectLeylineCard(i)}
                 onOpenHistory={() => setHistoryCard(slot.card)}
-                leverage={currentLeverage}
-                settlementLeverage={settlementLeverage}
-                isLeverage={slot.useLeverage}
-                holdEarnings={slot.holdEarnings}
-                holdEarning={holdEarning}
-                holdQiCost={holdQiCost}
-                concentration={concentration}
-                sellPreview={sellPreview}
-                shattered={shatteredSlots.has(i)}
+                onMoveToDantian={() => moveToDantian(i)}
+                onSell={() => sellLeyline(i)}
+                canMoveToDantian={gameState === 'player_action' && hand.filter(s => s !== null).length < 3}
               />
             );
           })}
         </div>
-      )}
+      </div>
+
       {historyCard && turnManager && (
         <PublicCardHistoryModal
           card={historyCard}
@@ -153,7 +255,80 @@ function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shatte
         shattered ? 'mc-shatter-slot' : 'slot-breathe'
       }`}
     >
-      <span className="text-xs text-wood-light">{shattered ? '崩坏' : '空位'}</span>
+      <span className="text-xs text-wood-light">{shattered ? '崩坏' : '丹田空位'}</span>
+    </div>
+  );
+}
+
+function EmptyLeylineSlot({ index }: { index: number }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-sky-800/30 bg-sky-950/5 h-20 text-center"
+    >
+      <span className="text-xs text-sky-800 font-medium">地脉 {index + 1} (空)</span>
+      <span className="text-[9px] text-slate-500">潜伏冷库 · 避风避灾</span>
+    </div>
+  );
+}
+
+function LeylineCardView({
+  slot,
+  index,
+  selected,
+  season,
+  turnManager,
+  onSelect,
+  onOpenHistory,
+  onMoveToDantian,
+  onSell,
+  canMoveToDantian,
+}: {
+  slot: HandSlot;
+  index: number;
+  selected: boolean;
+  season: string;
+  turnManager: any;
+  onSelect: () => void;
+  onOpenHistory: () => void;
+  onMoveToDantian: () => void;
+  onSell: () => void;
+  canMoveToDantian: boolean;
+}) {
+  const curScore = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
+  const buyScore = slot.buyScore;
+  const delta = curScore - buyScore;
+
+  return (
+    <div
+      onClick={onSelect}
+      className={`cursor-pointer rounded-lg border p-2 flex flex-col justify-between transition-all duration-150 ${
+        selected
+          ? 'border-sky-500 bg-sky-950/30 shadow-md ring-2 ring-sky-400'
+          : 'border-slate-300 bg-slate-50 hover:border-slate-400'
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-bold text-slate-900">{slot.card.name}</span>
+          <span className="text-[9px] px-1 py-0.5 rounded bg-slate-200 text-slate-700 font-mono">
+            {slot.card.mainElement}
+          </span>
+        </div>
+        <span className={`text-[10px] font-mono font-bold ${curScore >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+          {curScore >= 0 ? '+' : ''}{curScore}分
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between text-[10px] my-1 text-slate-600">
+        <span>买入: {buyScore}</span>
+        <span className={`font-mono font-bold ${delta >= 0 ? 'text-amber-700' : 'text-rose-700'}`}>
+          Δ{delta >= 0 ? '+' : ''}{delta} (暗存)
+        </span>
+      </div>
+
+      <div className="text-[9px] text-sky-800">
+        暗牌深锁 · 0维持费 · 避巡视
+      </div>
     </div>
   );
 }

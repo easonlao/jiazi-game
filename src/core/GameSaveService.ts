@@ -118,6 +118,10 @@ export interface GameSnapshot {
   totalLeverageBuys: number;
   season: SeasonSnapshot;
   hand: (HandSlotSnapshot | null)[];
+  /** 潜伏地脉卡牌快照（V11 引入，可选兼容旧存档） */
+  leyline?: HandSlotSnapshot[];
+  /** 地脉容量上限（默认 2） */
+  maxLeyline?: number;
   pool: CardPoolSnapshot;
   /** 锁定中的公共牌 ID 列表（锁定机制） */
   lockedCardIds?: number[];

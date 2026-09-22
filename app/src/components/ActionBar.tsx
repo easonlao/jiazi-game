@@ -5,6 +5,11 @@ export function ActionBar() {
   const gameState = useGameStore((s) => s.gameState);
   const selectedPublicCard = useGameStore((s) => s.selectedPublicCard);
   const selectedHandCard = useGameStore((s) => s.selectedHandCard);
+  const selectedLeylineCard = useGameStore((s) => s.selectedLeylineCard);
+  const leyline = useGameStore((s) => s.leyline);
+  const maxLeyline = useGameStore((s) => s.maxLeyline);
+  const buyToLeyline = useGameStore((s) => s.buyToLeyline);
+  const sellLeyline = useGameStore((s) => s.sellLeyline);
   const useLeverage = useGameStore((s) => s.useLeverage);
   const leverageMultiplier = useGameStore((s) => s.leverageMultiplier);
   const currentRound = useGameStore((s) => s.currentRound);
@@ -36,10 +41,20 @@ export function ActionBar() {
   // P2-3：空亡牌是纯事件牌不可买入，选中空亡牌时纳灵按钮不启用
   const isSelectedVoidCard = selectedCard ? isVoidCard(selectedCard) : false;
   const canBuy = !isFinalRound && !isSelectedVoidCard && selectedPublicCard >= 0 && hand.filter((s) => s).length < hand.length;
-  const canSell = selectedHandCard >= 0;
-  const buyCost = canBuy ? previewBuyCost(selectedPublicCard) : 0;
+  const canBuyLeyline = !isFinalRound && !isSelectedVoidCard && selectedPublicCard >= 0 && leyline.filter((s) => s).length < maxLeyline;
+  const canSell = selectedHandCard >= 0 || selectedLeylineCard >= 0;
+  const buyCost = (canBuy || canBuyLeyline) ? previewBuyCost(selectedPublicCard) : 0;
   // P2-3：previewBuyCost 对空亡牌返回 -1 哨兵，buyCost < 0 一律视为不可负担（按钮禁用）
   const affordBuy = buyCost >= 0 && buyCost <= qi;
+  const affordBuyLeyline = buyCost >= 0 && (buyCost + 5) <= qi;
+
+  const handleSell = () => {
+    if (selectedLeylineCard >= 0) {
+      sellLeyline(selectedLeylineCard);
+    } else if (selectedHandCard >= 0) {
+      requestSellPreview();
+    }
+  };
 
   return (
     <div className="z-10 flex flex-col gap-1 px-4 py-1.5 max-md:py-1 bg-[#faf6ee] border-t border-wood-light sticky bottom-0 max-md:z-30">
@@ -51,8 +66,8 @@ export function ActionBar() {
       )}
 
       {/* 按钮行 */}
-      <div className="grid grid-cols-4 gap-2">
-        {/* 纳灵（买入） */}
+      <div className="grid grid-cols-5 gap-2">
+        {/* 纳灵（买入至丹田） */}
         <button
           onClick={requestBuyPreview}
           disabled={!canBuy || !affordBuy}
@@ -63,13 +78,35 @@ export function ActionBar() {
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }
           `}
+          title="纳灵入丹田（明牌炼化）"
         >
           纳灵
         </button>
 
+        {/* 潜脉（买入至地脉） */}
+        <button
+          onClick={() => buyToLeyline(selectedPublicCard, useLeverage)}
+          disabled={!canBuyLeyline || !affordBuyLeyline}
+          className={`
+            py-2 max-md:py-1.5 rounded-lg text-sm font-bold transition-all duration-150
+            ${canBuyLeyline && affordBuyLeyline
+              ? 'bg-sky-600 text-white hover:bg-sky-500 hover:shadow-md hover:-translate-y-0.5 active:scale-95'
+              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }
+          `}
+          title="潜脉纳灵：直接潜入地脉（消耗 基础+5 点封印神识，0维持费且避巡视）"
+        >
+          潜脉
+          {selectedPublicCard >= 0 && affordBuyLeyline && (
+            <span className="block text-[9px] font-normal leading-none opacity-90">
+              {buyCost + 5}神
+            </span>
+          )}
+        </button>
+
         {/* 释灵（卖出） */}
         <button
-          onClick={requestSellPreview}
+          onClick={handleSell}
           disabled={!canSell}
           className={`
             py-2 max-md:py-1.5 rounded-lg text-sm font-bold transition-all duration-150

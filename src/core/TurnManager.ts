@@ -104,7 +104,16 @@ export interface VoidTriggerInfo {
 }
 
 /** 玩家操作类型（settle = 终局出清：系统强制平仓，非玩家主动操作，不计入行为统计） */
-export type ActionType = 'buy' | 'sell' | 'wait' | 'lock' | 'unlock' | 'settle';
+export type ActionType =
+  | 'buy'
+  | 'sell'
+  | 'wait'
+  | 'lock'
+  | 'unlock'
+  | 'settle'
+  | 'move_to_leyline'
+  | 'move_to_dantian'
+  | 'buy_to_leyline';
 
 export interface MarginCallDetail {
   cardName: string;
@@ -205,7 +214,10 @@ export interface RoundLogEntry {
 /** 行动尚未提交时的可序列化描述。 */
 export type SettlementPreviewAction =
   | { type: 'buy'; cardIndex: number; leverage: boolean }
-  | { type: 'sell'; slotIndex: number }
+  | { type: 'buy_to_leyline'; cardIndex: number; leverage: boolean }
+  | { type: 'sell'; slotIndex: number; area?: 'dantian' | 'leyline' }
+  | { type: 'move_to_leyline'; index: number }
+  | { type: 'move_to_dantian'; index: number }
   | { type: 'wait' };
 
 /**
@@ -1502,14 +1514,214 @@ export class TurnManager {
   }
 
   /**
-   * 执行卖出操作
-   * @param slotIndex 手牌插槽索引
+   * 执行直接购买卡牌潜入地脉
+   * @param cardIndex 公共牌索引
+   * @param leverage 是否使用杠杆
    * @returns 操作是否成功
    */
-  executeSell(slotIndex: number): boolean {
+  executeBuyToLeyline(cardIndex: number, leverage: boolean): boolean {
     if (this.state !== 'player_action') return false;
 
-    const slot = this.handManager.getSlot(slotIndex);
+    if (this.currentRound >= TurnManager.TOTAL_ROUNDS) {
+      console.log('[TurnManager] 最后一回合无法纳灵');
+      return false;
+    }
+
+    const card = this.cardPoolManager.getPublicCards()[cardIndex];
+    if (!card) return false;
+
+    if (isVoidCard(card)) {
+      console.log('[TurnManager] 空亡牌不可买入');
+      return false;
+    }
+
+    // 软超限检查：地脉已满时拒绝新牌纳灵
+    if (!this.handManager.canAddToLeyline()) {
+      console.log('[TurnManager] 地脉潜伏槽已满（软超限生效）');
+      return false;
+    }
+
+    // 计算基础买入消耗 + 5 点煞气封印/下沉深锁费用
+    const baseBuyCost = this.qiManager.calculateBuyCost(
+      this.getCardScore(card, this.seasonCycle.getCurrentSeason()),
+      leverage
+    );
+    const leylineSealCost = 5;
+    const totalCost = baseBuyCost + leylineSealCost;
+
+    if (!this.qiManager.canAfford(totalCost)) {
+      console.log('[TurnManager] 神识不足（需含 5 点地脉深锁封印费）');
+      return false;
+    }
+
+    this.qiManager.spend(totalCost);
+    this.totalBuys++;
+    if (leverage) {
+      this.totalLeverageBuys++;
+    }
+
+    const buyScore = this.getCardScore(card, this.seasonCycle.getCurrentSeason());
+    const lockedQi = baseBuyCost - this.qiManager.getBuyEntryFee();
+    const initialLeverage = leverage
+      ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
+      : 1;
+
+    const slotIndex = this.handManager.buyToLeyline(
+      card,
+      buyScore,
+      leverage,
+      initialLeverage,
+      this.currentRound,
+      lockedQi
+    );
+
+    if (slotIndex === -1) {
+      this.qiManager.recover(totalCost);
+      return false;
+    }
+
+    this.lockManager.onCardBought(card.id);
+
+    this.lastActionCard = {
+      card,
+      buyScore,
+      currentScore: buyScore,
+      sellScore: 0,
+      buyCost: totalCost,
+      qiReturn: 0,
+    };
+
+    const publicCards = this.cardPoolManager.getPublicCards();
+    const unlockedToReturn: JiaziCard[] = [];
+    for (let i = 0; i < publicCards.length; i++) {
+      const c = publicCards[i];
+      if (i === cardIndex) { publicCards[i] = undefined!; continue; }
+      if (this.lockManager.isCardLocked(c.id)) continue;
+      publicCards[i] = undefined!;
+      unlockedToReturn.push(c);
+    }
+    if (unlockedToReturn.length > 0) this.cardPoolManager.returnCards(unlockedToReturn);
+
+    this.lastActionRound = this.currentRound;
+    this.lastAction = 'buy_to_leyline' as any;
+    this.recordDecision('buy');
+    this.advanceTurn();
+    return true;
+  }
+
+  /**
+   * 丹田下沉地脉：消耗 5 点神识，计为 1 轮主操作（推进 1 轮周天推演）
+   * @param dantianIndex 丹田插槽索引 (0-2)
+   * @returns 操作是否成功
+   */
+  executeMoveToLeyline(dantianIndex: number): boolean {
+    if (this.state !== 'player_action') return false;
+
+    const slot = this.handManager.getSlot(dantianIndex);
+    if (!slot) {
+      console.log('[TurnManager] 丹田槽位无卡牌');
+      return false;
+    }
+
+    // 软超限检查：地脉已满时拒绝下沉迁入
+    if (!this.handManager.canAddToLeyline()) {
+      console.log('[TurnManager] 地脉潜伏槽已满（软超限生效）');
+      return false;
+    }
+
+    const moveCost = 5;
+    if (!this.qiManager.canAfford(moveCost)) {
+      console.log('[TurnManager] 神识不足，封印气机下沉地脉需消耗 5 点神识');
+      return false;
+    }
+
+    this.qiManager.spend(moveCost);
+    const moved = this.handManager.moveToLeyline(dantianIndex);
+    if (!moved) {
+      this.qiManager.recover(moveCost);
+      return false;
+    }
+
+    // 记录行动卡牌信息
+    const currentScore = this.getCardScore(slot.card, this.seasonCycle.getCurrentSeason());
+    this.lastActionCard = {
+      card: slot.card,
+      buyScore: slot.buyScore,
+      currentScore,
+      sellScore: 0,
+      buyCost: moveCost,
+      qiReturn: 0,
+    };
+
+    this.lastActionRound = this.currentRound;
+    this.lastAction = 'move_to_leyline';
+    this.recordDecision('move_to_leyline' as any);
+
+    // 主操作推进 1 轮：未锁定的公共牌回堆
+    const publicCards = this.cardPoolManager.getPublicCards();
+    const { unlocked } = this.lockManager.partitionLocked(publicCards);
+    this.cardPoolManager.returnCards(unlocked);
+    this.advanceTurn();
+    return true;
+  }
+
+  /**
+   * 地脉升入丹田：消耗 0 点神识，计为 1 轮主操作（推进 1 轮周天推演）
+   * @param leylineIndex 地脉插槽索引
+   * @returns 操作是否成功
+   */
+  executeMoveToDantian(leylineIndex: number): boolean {
+    if (this.state !== 'player_action') return false;
+
+    const slot = this.handManager.getLeylineSlot(leylineIndex);
+    if (!slot) {
+      console.log('[TurnManager] 地脉槽位无卡牌');
+      return false;
+    }
+
+    if (!this.handManager.canBuy()) {
+      console.log('[TurnManager] 活跃丹田 3 槽已满，无法升入丹田');
+      return false;
+    }
+
+    const moved = this.handManager.moveToDantian(leylineIndex);
+    if (!moved) return false;
+
+    // 记录行动卡牌信息
+    const currentScore = this.getCardScore(slot.card, this.seasonCycle.getCurrentSeason());
+    this.lastActionCard = {
+      card: slot.card,
+      buyScore: slot.buyScore,
+      currentScore,
+      sellScore: 0,
+      buyCost: 0,
+      qiReturn: 0,
+    };
+
+    this.lastActionRound = this.currentRound;
+    this.lastAction = 'move_to_dantian';
+    this.recordDecision('move_to_dantian' as any);
+
+    // 主操作推进 1 轮：未锁定的公共牌回堆
+    const publicCards = this.cardPoolManager.getPublicCards();
+    const { unlocked } = this.lockManager.partitionLocked(publicCards);
+    this.cardPoolManager.returnCards(unlocked);
+    this.advanceTurn();
+    return true;
+  }
+
+  /**
+   * 执行卖出操作（支持活跃丹田与潜伏地脉卡牌，正统 Delta Trading 结算）
+   * @param slotIndex 手牌插槽索引
+   * @param area 区域：'dantian'（默认）或 'leyline'
+   * @returns 操作是否成功
+   */
+  executeSell(slotIndex: number, area: 'dantian' | 'leyline' = 'dantian'): boolean {
+    if (this.state !== 'player_action') return false;
+
+    const slot = area === 'leyline'
+      ? this.handManager.getLeylineSlot(slotIndex)
+      : this.handManager.getSlot(slotIndex);
     if (!slot) return false;
 
     const currentScore = this.getCardScore(slot.card, this.seasonCycle.getCurrentSeason());
@@ -1524,7 +1736,10 @@ export class TurnManager {
     );
 
     // 移除卡牌以释放对应的锁定气额，并将卡牌回洗入牌池
-    const soldSlot = this.handManager.sell(slotIndex);
+    const soldSlot = area === 'leyline'
+      ? this.handManager.sellLeyline(slotIndex)
+      : this.handManager.sell(slotIndex);
+
     if (soldSlot) {
       this.cardPoolManager.returnCards([soldSlot.card]);
     }
@@ -1563,6 +1778,36 @@ export class TurnManager {
     this.cardPoolManager.returnCards(unlocked);
     this.advanceTurn();
     return true;
+  }
+
+  /** 执行地脉卡牌释灵变现 */
+  executeSellLeyline(index: number): boolean {
+    return this.executeSell(index, 'leyline');
+  }
+
+  /** 别名：卖出卡牌 */
+  sellCard(slotIndex: number, area: 'dantian' | 'leyline' = 'dantian'): boolean {
+    return this.executeSell(slotIndex, area);
+  }
+
+  /** 别名：地脉释灵变现 */
+  sellLeyline(index: number): boolean {
+    return this.executeSell(index, 'leyline');
+  }
+
+  /** 别名：丹田下沉地脉 */
+  moveToLeyline(index: number): boolean {
+    return this.executeMoveToLeyline(index);
+  }
+
+  /** 别名：地脉升入丹田 */
+  moveToDantian(index: number): boolean {
+    return this.executeMoveToDantian(index);
+  }
+
+  /** 别名：直接购买入地脉 */
+  buyToLeyline(cardIndex: number, leverage: boolean = false): boolean {
+    return this.executeBuyToLeyline(cardIndex, leverage);
   }
 
   /**
@@ -1811,6 +2056,16 @@ export class TurnManager {
         lockedQi: slot.lockedQi,
         holdEarnings: slot.holdEarnings
       } : null),
+      leyline: this.handManager.getLeylineCards().map(slot => ({
+        cardId: slot.card.id,
+        buyScore: slot.buyScore,
+        useLeverage: slot.useLeverage,
+        leverage: slot.leverage,
+        buyRound: slot.buyRound,
+        lockedQi: slot.lockedQi,
+        holdEarnings: slot.holdEarnings
+      })),
+      maxLeyline: this.handManager.getMaxLeyline(),
       pool: {
         deckIds: this.cardPoolManager.getDeck().map(c => c.id),
         publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
@@ -2038,6 +2293,24 @@ export class TurnManager {
       return slot;
     });
     this.handManager.loadHand(restoredHand);
+
+    if (data.maxLeyline) {
+      this.handManager.setMaxLeyline(data.maxLeyline);
+    }
+    if (data.leyline && Array.isArray(data.leyline)) {
+      const restoredLeyline = data.leyline.map((slotData: any) => {
+        const card = this.cardDataBank.getCard(slotData.cardId);
+        if (!card) throw new Error(`找不到 ID 为 ${slotData.cardId} 的卡牌`);
+        const lockedQi = slotData.lockedQi !== undefined
+          ? slotData.lockedQi
+          : this.qiManager.calculateBuyCost(slotData.buyScore, slotData.useLeverage ?? false) - this.qiManager.getBuyEntryFee();
+        const useLeverage = slotData.useLeverage !== undefined ? slotData.useLeverage : slotData.leverage > 1;
+        const slot = new HandSlot(card, slotData.buyScore, useLeverage, slotData.leverage, slotData.buyRound, lockedQi);
+        slot.holdEarnings = slotData.holdEarnings ?? 0;
+        return slot;
+      });
+      this.handManager.loadLeyline(restoredLeyline);
+    }
 
     // 5. 还原神识值（基于最新手牌计算的 totalLockedQi）
     this.qiManager.setQi(data.qi, this.getTotalLockedQi());
@@ -2434,9 +2707,64 @@ export class TurnManager {
     return this.scoreManager.getScore();
   }
 
-  /** 获取手牌 */
+  /** 获取手牌（丹田明牌槽位） */
   getHand(): (HandSlot | null)[] {
     return this.handManager.getHand();
+  }
+
+  /** 获取丹田槽位 */
+  getDantian(): (HandSlot | null)[] {
+    return this.handManager.getDantian();
+  }
+
+  /** 获取丹田卡牌列表 */
+  getDantianCards(): HandSlot[] {
+    return this.handManager.getDantianCards();
+  }
+
+  /** 获取地脉槽位数组（含 null 占位供 UI 渲染） */
+  getLeyline(): (HandSlot | null)[] {
+    return this.handManager.getLeyline();
+  }
+
+  /** 获取地脉卡牌列表 */
+  getLeylineCards(): HandSlot[] {
+    return this.handManager.getLeylineCards();
+  }
+
+  /** 获取地脉当前持牌数量 */
+  getLeylineSize(): number {
+    return this.handManager.getLeylineSize();
+  }
+
+  /** 获取地脉容量上限（默认 2） */
+  getMaxLeyline(): number {
+    return this.handManager.getMaxLeyline();
+  }
+
+  /** 设置地脉容量上限 */
+  setMaxLeyline(max: number): void {
+    this.handManager.setMaxLeyline(max);
+  }
+
+  /** 是否可直接购买入地脉（软超限拦截） */
+  canBuyToLeyline(): boolean {
+    return this.handManager.canAddToLeyline() && this.currentRound < TurnManager.TOTAL_ROUNDS;
+  }
+
+  /** 是否可下沉地脉（5点神识 + 软超限拦截） */
+  canMoveToLeyline(): boolean {
+    return this.handManager.canAddToLeyline() && this.qiManager.canAfford(5);
+  }
+
+  /** 是否可升腾至活跃丹田（丹田未满） */
+  canMoveToDantian(): boolean {
+    return this.handManager.canBuy();
+  }
+
+  /** 是否处于地脉软超限状态 */
+  isLeylineSoftCapped(): boolean {
+    return this.handManager.isLeylineSoftCapped();
   }
 
   /** 获取公共牌 */
@@ -2677,8 +3005,43 @@ export class TurnManager {
         this.currentRound,
         buyCost - this.qiManager.getBuyEntryFee(),
       ));
+    } else if (action.type === 'buy_to_leyline') {
+      if (this.currentRound >= TurnManager.TOTAL_ROUNDS || !this.handManager.canAddToLeyline()) return null;
+      const card = this.cardPoolManager.getPublicCards()[action.cardIndex];
+      if (!card || isVoidCard(card)) return null;
+      const buyScore = this.getCardScore(card, currentSeason);
+      const baseBuyCost = this.qiManager.calculateBuyCost(buyScore, action.leverage);
+      const totalCost = baseBuyCost + 5;
+      if (!this.qiManager.canAfford(totalCost)) return null;
+
+      actionCardName = card.name;
+      actionUsesLeverage = action.leverage;
+      actionQiChange = -totalCost;
+    } else if (action.type === 'move_to_leyline') {
+      const slot = this.handManager.getSlot(action.index);
+      if (!slot || !this.handManager.canAddToLeyline()) return null;
+      if (!this.qiManager.canAfford(5)) return null;
+
+      actionCardName = slot.card.name;
+      actionUsesLeverage = slot.useLeverage;
+      actionQiChange = -5;
+      const virtualIndex = virtualHand.indexOf(slot);
+      if (virtualIndex >= 0) {
+        virtualHand.splice(virtualIndex, 1);
+      }
+    } else if (action.type === 'move_to_dantian') {
+      const slot = this.handManager.getLeylineSlot(action.index);
+      if (!slot || !this.handManager.canBuy()) return null;
+
+      actionCardName = slot.card.name;
+      actionUsesLeverage = slot.useLeverage;
+      actionQiChange = 0;
+      virtualHand.push(slot);
     } else if (action.type === 'sell') {
-      const slot = this.handManager.getSlot(action.slotIndex);
+      const isLeyline = action.area === 'leyline';
+      const slot = isLeyline
+        ? this.handManager.getLeylineSlot(action.slotIndex)
+        : this.handManager.getSlot(action.slotIndex);
       if (!slot) return null;
 
       actionCardName = slot.card.name;
@@ -2699,9 +3062,12 @@ export class TurnManager {
         lockedQiReturn,
         qiChange: actionQiChange,
       };
-      const virtualIndex = virtualHand.indexOf(slot);
-      if (virtualIndex < 0) return null;
-      virtualHand.splice(virtualIndex, 1);
+      if (!isLeyline) {
+        const virtualIndex = virtualHand.indexOf(slot);
+        if (virtualIndex >= 0) {
+          virtualHand.splice(virtualIndex, 1);
+        }
+      }
     }
 
     const qiAfterAction = currentQi + actionQiChange;
@@ -2839,6 +3205,9 @@ export class TurnManager {
       if (slot) {
         total += slot.lockedQi;
       }
+    });
+    this.handManager.getLeylineCards().forEach(slot => {
+      total += slot.lockedQi;
     });
     return total;
   }
