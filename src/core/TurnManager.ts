@@ -20,6 +20,14 @@ import {
   type TriadCandidate,
   type TriadClaimResult,
 } from './TriadManager.ts';
+import {
+  SectManager,
+  type SectInfo,
+  type PendingBuyback,
+  type PatrolAdvanceResult,
+  type AcceptDemandResult,
+  type DeclineDemandResult,
+} from './SectManager.ts';
 import { type BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
 import {
   getBalanceProfileById,
@@ -343,6 +351,8 @@ export class TurnManager {
   private readonly volatilityRandom: RandomSource;
   /** V6 地支波动独立随机源（同 volatilityRandom 模式）：不消耗主随机流。 */
   private readonly branchRollRandom: RandomSource;
+  /** V11 宗门巡查独立随机源：不消耗主随机流。 */
+  private readonly sectRandom: RandomSource;
   private readonly scoreVolatilityConfig: ScoreVolatilityConfig;
   private scoreVolatilityState: ScoreVolatilitySnapshot | null;
   /** V6 地支波动状态（仅 rulesVersion=6 创建；V5 及以下恒 null，不消耗随机数）。 */
@@ -376,6 +386,7 @@ export class TurnManager {
   private handManager: HandManager;
   private cardPoolManager: CardPoolManager;
   private triadManager: TriadManager;
+  private sectManager: SectManager;
 
   // 游戏状态
   private currentRound: number;
@@ -444,6 +455,10 @@ export class TurnManager {
   private onLockAutoUnlocked?: (cardIds: number[]) => void;
   /** V5 空亡触发回调：每张空亡牌掷 K 后调用一次（供 UI Toast / 批 2 动画） */
   private onVoidTrigger?: (info: VoidTriggerInfo) => void;
+  /** V11 宗门搜查待处置回调（供 UI 弹出强征/严惩弹窗） */
+  private onSectBuyback?: (pending: PendingBuyback) => void;
+  /** V11 地脉避灾成功回调（供 UI 弹出避祸 Toast） */
+  private onLeylineEvaded?: (sect: SectInfo) => void;
 
   // 存档服务（序列化与 LocalStorage 边界）
   private readonly saveService: GameSaveService;
@@ -461,6 +476,11 @@ export class TurnManager {
        * 仅 rulesVersion=6 读取；V5 及以下不创建不消耗（路径逐字节不变）。
        */
       branchRollRandom?: RandomSource;
+      /**
+       * V11 宗门巡查独立随机源（避免消耗主随机源，防既有测试随机流错位）。
+       * 缺省时默认使用独立的 MathRandomSource。
+       */
+      sectRandom?: RandomSource;
        /** 新局规则语义；未指定且启用波动时保持现有 v2。 */
       rulesVersion?: SupportedRulesVersion;
       /** 交易规则的计分参数；v1/v2 使用旧默认值。 */
@@ -495,6 +515,7 @@ export class TurnManager {
     this.random = randomSource;
     this.volatilityRandom = options?.volatilityRandom ?? randomSource;
     this.branchRollRandom = options?.branchRollRandom ?? randomSource;
+    this.sectRandom = options?.sectRandom ?? new MathRandomSource();
     this.scoreVolatilityConfig = {
       ...DEFAULT_SCORE_VOLATILITY_CONFIG,
       ...options?.volatility,
@@ -560,6 +581,8 @@ export class TurnManager {
     this.handManager = new HandManager();
     this.cardPoolManager = new CardPoolManager(randomSource);
     this.triadManager = new TriadManager();
+    this.sectManager = new SectManager();
+    this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
 
     this.currentRound = 1;
     this.state = 'init';
@@ -1051,7 +1074,23 @@ export class TurnManager {
     this.roundLog.push(this.buildRoundLogEntry());
     this.capturePublicCardHistorySnapshot();
 
-    // 4. 等待玩家操作
+    // 4. 五大古宗巡视判定 (V11)
+    const patrolResult = this.sectManager.advancePatrols(
+      this.seasonCycle.getCurrentSeason(),
+      this.handManager.getHand(),
+      this.handManager.getLeylineCards(),
+      (card, season) => this.getCardScore(card, season),
+    );
+
+    if (patrolResult.triggeredSect) {
+      if (patrolResult.pendingBuyback) {
+        this.onSectBuyback?.(patrolResult.pendingBuyback);
+      } else if (patrolResult.leylineEvaded) {
+        this.onLeylineEvaded?.(patrolResult.triggeredSect);
+      }
+    }
+
+    // 5. 等待玩家操作
     this.state = 'player_action';
     this.onStateChange?.('player_action');
     this.onTurnStart?.(this.currentRound);
@@ -1929,6 +1968,7 @@ export class TurnManager {
         // V6 换季重掷：与 refreshScoreVolatility 同点（V5 及以下恒空转，不消耗随机数）。
         this.refreshBranchRoll();
       }
+      this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
       console.log(`[TurnManager] 季节切换: ${this.seasonCycle.getCurrentSeason()}`);
     } else if (this.scoreVolatilityState) {
       if (this.isTrendWindowRulesVersion()) {
@@ -2084,6 +2124,7 @@ export class TurnManager {
       triadCounts: this.triadManager.getTriadCounts(),
       grandCycles: this.triadManager.getGrandCycles(),
       totalTriadEarnings: this.scoreManager.getTotalTriadEarnings(),
+      sectState: this.sectManager.exportSnapshot(),
       pool: {
         deckIds: this.cardPoolManager.getDeck().map(c => c.id),
         publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
@@ -2346,6 +2387,14 @@ export class TurnManager {
       this.triadManager.reset();
     }
 
+    // 4.5 还原宗门巡视与处置状态 (V11)
+    if (data.sectState) {
+      this.sectManager.importSnapshot(data.sectState, (id) => this.cardDataBank.getCard(id));
+    } else {
+      this.sectManager.reset();
+      this.sectManager.scheduleSeasonSects(this.seasonCycle.getCurrentSeason(), this.sectRandom);
+    }
+
     // 5. 还原神识值（基于最新手牌计算的 totalLockedQi）
     this.qiManager.setQi(data.qi, this.getTotalLockedQi());
 
@@ -2470,7 +2519,8 @@ export class TurnManager {
     const main = isStatefulRandomSource(this.random) ? this.random.exportState() : undefined;
     const volatility = isStatefulRandomSource(this.volatilityRandom) ? this.volatilityRandom.exportState() : undefined;
     const branchRoll = isStatefulRandomSource(this.branchRollRandom) ? this.branchRollRandom.exportState() : undefined;
-    return main || volatility || branchRoll ? { main, volatility, branchRoll } : null;
+    const sect = isStatefulRandomSource(this.sectRandom) ? this.sectRandom.exportState() : undefined;
+    return main || volatility || branchRoll || sect ? { main, volatility, branchRoll, sect } : null;
   }
 
   private importRandomState(state: GameSnapshot['randomState']): void {
@@ -2479,6 +2529,7 @@ export class TurnManager {
       [this.random, state.main],
       [this.volatilityRandom, state.volatility],
       [this.branchRollRandom, state.branchRoll],
+      [this.sectRandom, state.sect],
     ];
     for (const [source, snapshot] of entries) {
       if (snapshot && isStatefulRandomSource(source) && !source.importState(snapshot)) {
@@ -2679,6 +2730,16 @@ export class TurnManager {
   /** 设置 V5 空亡触发回调：每张空亡牌掷 K 后调用一次（供 UI Toast / 批 2 动画） */
   setOnVoidTrigger(callback: (info: VoidTriggerInfo) => void): void {
     this.onVoidTrigger = callback;
+  }
+
+  /** 设置 V11 宗门搜查待处置回调（供 UI 弹出强征/严惩弹窗） */
+  setOnSectBuyback(callback: (pending: PendingBuyback) => void): void {
+    this.onSectBuyback = callback;
+  }
+
+  /** 设置 V11 地脉避灾成功回调（供 UI 弹出避祸 Toast） */
+  setOnLeylineEvaded(callback: (sect: SectInfo) => void): void {
+    this.onLeylineEvaded = callback;
   }
 
   /** 按 ID 获取卡牌（供 UI 解析自动解锁牌的名称等） */
@@ -2931,6 +2992,100 @@ export class TurnManager {
       ...result,
       dissolvedCards,
     };
+  }
+
+  // =========================================================================
+  // 五大古宗巡视与处置系统 (V11)
+  // =========================================================================
+
+  /** 获取宗门管理器 */
+  getSectManager(): SectManager {
+    return this.sectManager;
+  }
+
+  /** 获取各宗门当前巡视倒计时 */
+  getSectCountdowns(): Record<string, number> {
+    return this.sectManager.getCountdowns();
+  }
+
+  /** 获取各宗门怒意值 */
+  getSectAnger(): Record<string, number> {
+    return this.sectManager.getAnger();
+  }
+
+  /** 获取当前待决断事件 */
+  getPendingBuyback(): PendingBuyback | null {
+    return this.sectManager.getPendingBuyback();
+  }
+
+  /**
+   * 遵从宗门令谕 (Accept Demand)
+   * 盈利牌 0.6x 折价强平强征并获 +5 神识；亏损牌没收、扣除账面差价并扣除 10 点神识惩诫。
+   * 卡牌从丹田移除并回洗天地牌池。
+   */
+  acceptSectDemand(): AcceptDemandResult | null {
+    const pending = this.sectManager.getPendingBuyback();
+    if (!pending) return null;
+
+    const result = this.sectManager.resolveAcceptDemand();
+    if (!result) return null;
+
+    // 1. 丹田卡牌移除并回归天地牌池
+    const removedSlot = this.handManager.sell(pending.dantianIndex);
+    if (removedSlot) {
+      this.cardPoolManager.returnCards([removedSlot.card]);
+    }
+
+    // 2. 修为结算
+    if (result.offerPrice > 0) {
+      this.scoreManager.addSellEarnings(result.offerPrice);
+    } else if (result.offerPrice < 0) {
+      // 亏损扣除修为（不计入正常卖出收益统计）
+      this.scoreManager.applyMarginCallPenalty(Math.abs(result.offerPrice));
+    }
+
+    // 3. 神识变动
+    if (result.qiChange > 0) {
+      this.qiManager.recover(result.qiChange);
+    } else if (result.qiChange < 0) {
+      const penaltyQi = Math.abs(result.qiChange);
+      if (this.qiManager.getQi() >= penaltyQi) {
+        this.qiManager.spend(penaltyQi);
+      } else {
+        // 神识不足，赤字反噬扣除修为
+        const deficit = penaltyQi - this.qiManager.getQi();
+        this.qiManager.setQi(0);
+        const scoreBacklash = deficit * 15;
+        this.scoreManager.applyMarginCallPenalty(scoreBacklash);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 誓死抗命 (Decline Demand)
+   * 扣除 20 点神识（不足转为赤字反噬扣除修为）；保留卡牌在丹田。
+   */
+  declineSectDemand(): DeclineDemandResult | null {
+    const pending = this.sectManager.getPendingBuyback();
+    if (!pending) return null;
+
+    const currentQi = this.qiManager.getQi();
+    const result = this.sectManager.resolveDeclineDemand(currentQi);
+    if (!result) return null;
+
+    // 扣除神识
+    if (result.qiCost > 0) {
+      this.qiManager.spend(result.qiCost);
+    }
+    // 若神识枯竭遭受反噬
+    if (result.qiDeficit > 0 && result.scoreBacklash > 0) {
+      this.qiManager.setQi(0);
+      this.scoreManager.applyMarginCallPenalty(result.scoreBacklash);
+    }
+
+    return result;
   }
 
   /** 获取公共牌 */

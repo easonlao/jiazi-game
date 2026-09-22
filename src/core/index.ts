@@ -56,6 +56,15 @@ export { HandManager } from './HandManager';
 export { CardPoolManager } from './CardPoolManager';
 export { TriadManager, TRIADS } from './TriadManager';
 export type { TriadDefinition, TriadCandidate, TriadClaimResult } from './TriadManager';
+export { SectManager, ALL_SECTS, SEASON_ACTIVE_SECTS } from './SectManager';
+export type {
+  SectInfo,
+  PendingBuyback,
+  PatrolAdvanceResult,
+  AcceptDemandResult,
+  DeclineDemandResult,
+  SectStateSnapshot,
+} from './SectManager';
 export { LeverageCalculator } from './LeverageCalculator';
 export { CardDataBank } from './CardDataBank';
 

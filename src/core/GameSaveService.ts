@@ -16,6 +16,7 @@ import type { ScoreVolatilitySnapshot } from './ScoreVolatility.ts';
 import type { ScoreRules } from './ScoreManager.ts';
 import type { BranchRollState } from './BranchRoll.ts';
 import type { BalanceConfig } from './BalanceConfig.ts';
+import type { SectStateSnapshot } from './SectManager.ts';
 
 /** 读档失败分类原因：GameSaveService.load 最近一次失败的原因（成功或尚未 load 时为 null）。 */
 export type GameSaveLoadError =
@@ -130,6 +131,8 @@ export interface GameSnapshot {
   triadCounts?: Record<string, number>;
   /** 四象大圆满重数 (V11) */
   grandCycles?: number;
+  /** 五大古宗巡视与执法状态快照 (V11) */
+  sectState?: SectStateSnapshot;
   pool: CardPoolSnapshot;
   /** 锁定中的公共牌 ID 列表（锁定机制） */
   lockedCardIds?: number[];
@@ -167,6 +170,7 @@ export interface GameSnapshot {
     main?: { algorithm: 'mulberry32'; state: number };
     volatility?: { algorithm: 'mulberry32'; state: number };
     branchRoll?: { algorithm: 'mulberry32'; state: number };
+    sect?: { algorithm: 'mulberry32'; state: number };
   };
   /** 本地试玩/降级局标记：若为 true 则该存档属于本地试玩，读档时不恢复账号修行账本。 */
   isLocalOnly?: boolean;

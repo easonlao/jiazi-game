@@ -28,6 +28,10 @@ import {
   getDefaultBalanceProfileForRules,
   type TriadCandidate,
   type TriadClaimResult,
+  ALL_SECTS,
+  SEASON_ACTIVE_SECTS,
+  type SectInfo,
+  type PendingBuyback,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -247,6 +251,10 @@ interface GameStore {
   grandCycles: number;
   availableTriads: TriadCandidate[];
   lastTriadClaim: (TriadClaimResult & { dissolvedCards: JiaziCard[] }) | null;
+  /** V11 五大古宗巡视倒计时 */
+  sectCountdowns: Record<string, number>;
+  /** V11 当前待决断宗门强征/严惩事件 */
+  pendingBuyback: PendingBuyback | null;
   publicCards: JiaziCard[];
   leverageMultiplier: number;
   /** 以下数值来自核心 BalanceConfig，前端渲染一律读取，禁止硬编码 */
@@ -419,6 +427,8 @@ interface GameStore {
   sellLeyline: (index: number) => boolean;
   claimTriad: (element?: string) => boolean;
   clearLastTriadClaim: () => void;
+  acceptSectDemand: () => void;
+  declineSectDemand: () => void;
   toggleLeverage: () => void;
   executeBuy: () => boolean;
   executeSell: () => boolean;
@@ -768,6 +778,14 @@ export function bindTurnManagerCallbacks(tm: TurnManager, set: StoreSetter, get:
       voidSwallowing: false,
     }));
   });
+  // V11 宗门搜查与强征处置
+  tm.setOnSectBuyback((pending) => {
+    set({ pendingBuyback: pending });
+  });
+  // V11 地脉避灾成功提示
+  tm.setOnLeylineEvaded((sect) => {
+    get().showToast(`👁️‍🗨️【避祸成功】：${sect.name}神念扫过丹田无功而返！你深藏在【潜伏地脉】的【${sect.elemName}】牌未被发现！`);
+  });
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -790,6 +808,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   grandCycles: 0,
   availableTriads: [],
   lastTriadClaim: null,
+  sectCountdowns: {},
+  pendingBuyback: null,
   publicCards: [],
   leverageMultiplier: 1,
   maxQi: 80,
@@ -894,6 +914,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       triadCounts: { ...tm.getTriadCounts() },
       grandCycles: tm.getGrandCycles(),
       availableTriads: [...tm.checkTriads()],
+      sectCountdowns: { ...tm.getSectCountdowns() },
+      pendingBuyback: tm.getPendingBuyback(),
       publicCards: [...tm.getPublicCards()],
       leverageMultiplier: tm.getLeverageMultiplier(),
       maxQi: tm.getMaxQi(),
@@ -1951,6 +1973,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   clearLastTriadClaim() {
     set({ lastTriadClaim: null });
+  },
+  acceptSectDemand() {
+    const tm = get().turnManager;
+    if (!tm) return;
+    const result = tm.acceptSectDemand();
+    if (result) {
+      if (result.isNegativeYield) {
+        get().showToast(`💥 强制割肉平仓：【${result.card.name}】被【${result.sect.name}】强行没收，按律扣除 ${Math.abs(result.offerPrice)} 修为并折损 10 点神识！`);
+      } else {
+        get().showToast(`🤝 屈从强征：将【${result.card.name}】奉予【${result.sect.name}】，获得打发修为 +${result.offerPrice}，赐回神 +${result.qiChange}！`);
+      }
+      get()._sync();
+    }
+  },
+  declineSectDemand() {
+    const tm = get().turnManager;
+    if (!tm) return;
+    const result = tm.declineSectDemand();
+    if (result) {
+      let backlashMsg = '';
+      if (result.qiDeficit > 0 && result.scoreBacklash > 0) {
+        backlashMsg = `💥 神识枯竭无法抵御天威！心魔反噬，折损 -${result.scoreBacklash} 累计修为！`;
+      } else {
+        backlashMsg = `⚡ 宗门大能盛怒挥袖，神念震荡丹田！消耗 20 点神识勉力化解！`;
+      }
+      get().showToast(`🔥【誓死抗命】：断然拒绝交割！${backlashMsg}`);
+      get()._sync();
+    }
   },
   toggleLeverage() {
     set((s) => ({ useLeverage: !s.useLeverage }));

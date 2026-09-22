@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore, seasonDisplay } from '../store';
-import { BRANCH_ROLL_DI_ZHI } from '@core/index';
+import { BRANCH_ROLL_DI_ZHI, ALL_SECTS, SEASON_ACTIVE_SECTS } from '@core/index';
 
 const roundAnimStyle = {
   animation: 'roundPop 0.4s ease-out',
@@ -28,6 +28,8 @@ export function TopPanel() {
   const scoreDelta = useGameStore((s) => s.scoreDelta);
   // V6 地支偏移条（票 03）：12 地支效果值；非 V6 为 null → 整条不渲染（V5 零回归）
   const branchRollDeltas = useGameStore((s) => s.branchRollDeltas);
+  const sectCountdowns = useGameStore((s) => s.sectCountdowns);
+  const activeSectIds = (SEASON_ACTIVE_SECTS as Record<string, readonly string[]>)[season] ?? [];
   const seasonTheme = SEASON_THEME[season] ?? SEASON_THEME.spring;
   const openDashboard = useGameStore((s) => s.openDashboard);
   const openCultivationProfile = useGameStore((s) => s.openCultivationProfile);
@@ -137,6 +139,37 @@ export function TopPanel() {
               </div>
             );
           })}
+        </div>
+      )}
+      {/* V11 古宗巡视倒计时警示栏 */}
+      {activeSectIds.length > 0 && (
+        <div
+          className="flex items-center justify-between px-3 py-1 bg-stone-900/5 text-[11px] border-t border-wood-light/40"
+          data-testid="sect-patrol-bar"
+        >
+          <div className="flex items-center gap-1.5 font-serif text-wood-dark">
+            <span className="font-bold">古宗巡视:</span>
+            {activeSectIds.map((sid: string) => {
+              const sect = ALL_SECTS[sid];
+              if (!sect) return null;
+              const cd = sectCountdowns?.[sid] ?? '-';
+              const isUrgent = typeof cd === 'number' && cd <= 1;
+              return (
+                <span
+                  key={sid}
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-sans ${
+                    isUrgent
+                      ? 'bg-rose-50 border-rose-300 text-rose-700 font-bold animate-pulse'
+                      : 'bg-white/80 border-wood-light text-ink'
+                  }`}
+                >
+                  <span className="font-serif">{sect.name}</span>
+                  <span className="font-mono">{cd}轮</span>
+                </span>
+              );
+            })}
+          </div>
+          <span className="text-[10px] text-amber-700/80">⚠️ 仅查丹田明牌 · 免查地脉暗牌</span>
         </div>
       )}
     </div>
