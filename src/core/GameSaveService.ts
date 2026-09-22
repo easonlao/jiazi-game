@@ -112,6 +112,8 @@ export interface GameSnapshot {
   totalMarginCallPenalty?: number;
   /** 终局出清收益累计。可选：老存档无此字段，读档时按 0 处理。 */
   totalSettleEarnings?: number;
+  /** 三合成局大阵修为收益累计。可选：老存档无此字段，读档时按 0 处理。 (V11) */
+  totalTriadEarnings?: number;
   totalBuys: number;
   totalSells: number;
   totalWaits: number;
@@ -122,6 +124,12 @@ export interface GameSnapshot {
   leyline?: HandSlotSnapshot[];
   /** 地脉容量上限（默认 2） */
   maxLeyline?: number;
+  /** 五行专精倍率快照 (V11) */
+  elemMultipliers?: Record<string, number>;
+  /** 三合成局次数快照 (V11) */
+  triadCounts?: Record<string, number>;
+  /** 四象大圆满重数 (V11) */
+  grandCycles?: number;
   pool: CardPoolSnapshot;
   /** 锁定中的公共牌 ID 列表（锁定机制） */
   lockedCardIds?: number[];

@@ -26,6 +26,8 @@ interface PublicCardProps {
   volatilityDelta?: number;
   /** 趋势窗口方向（rising/falling/steady）。 */
   volatilityTrend?: VolatilityTrend;
+  /** 是否能与当前手牌/地脉凑成三合（绝杀成局） */
+  isWinningPiece?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export function PublicCard({
   holdEarning, holdQiCost, locked, onToggleLock,
   onOpenHistory,
   volatilityDelta, volatilityTrend,
+  isWinningPiece,
 }: PublicCardProps) {
   return (
     <CardVisual
@@ -48,40 +51,51 @@ export function PublicCard({
       selected={selected}
       onClick={onClick}
       badges={
-        onToggleLock ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleLock();
-            }}
-            title={locked ? '点击解锁（灵气回灵流，停止耗神）' : '点击锁定（留住灵气，每回合 -5 神识）'}
-            aria-label={locked ? '解锁此卡牌' : '锁定此卡牌'}
-            className={`
-              lock-btn relative flex h-6 w-6 items-center justify-center rounded-full
-              border transition-all duration-200 active:scale-90
-              ${locked
-                ? 'border-amber-500 bg-amber-100 text-amber-700 shadow-sm'
-                : 'border-wood-light/40 bg-white/70 text-ink-light hover:border-amber-400 hover:text-amber-600'
-              }
-            `}
-          >
-            {/* 锁图标：锁定=实心锁，未锁定=开锁（简单 SVG） */}
-            <svg
-              viewBox="0 0 20 20"
-              className={`lock-svg h-3.5 w-3.5 ${locked ? 'lock-svg-active' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        <div className="flex items-center gap-1">
+          {isWinningPiece && (
+            <span
+              title="🌟 绝杀成局：买入即可凑成地支三合大阵！"
+              className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 shadow-xs ring-1 ring-amber-300 animate-pulse flex items-center gap-0.5 leading-none"
             >
-              <rect x="4.5" y="8.5" width="11" height="7" rx="1.5" />
-              <path d={locked ? 'M7 8.5V6a3 3 0 0 1 6 0v2.5' : 'M7 8.5V6a3 3 0 0 1 5.5-1.8'} />
-              {locked && <circle cx="10" cy="12" r="1" fill="currentColor" stroke="none" />}
-            </svg>
-          </button>
-        ) : undefined
+              <span>🌟</span>
+              <span>成局</span>
+            </span>
+          )}
+          {onToggleLock ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleLock();
+              }}
+              title={locked ? '点击解锁（灵气回灵流，停止耗神）' : '点击锁定（留住灵气，每回合 -5 神识）'}
+              aria-label={locked ? '解锁此卡牌' : '锁定此卡牌'}
+              className={`
+                lock-btn relative flex h-6 w-6 items-center justify-center rounded-full
+                border transition-all duration-200 active:scale-90
+                ${locked
+                  ? 'border-amber-500 bg-amber-100 text-amber-700 shadow-sm'
+                  : 'border-wood-light/40 bg-white/70 text-ink-light hover:border-amber-400 hover:text-amber-600'
+                }
+              `}
+            >
+              {/* 锁图标：锁定=实心锁，未锁定=开锁（简单 SVG） */}
+              <svg
+                viewBox="0 0 20 20"
+                className={`lock-svg h-3.5 w-3.5 ${locked ? 'lock-svg-active' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="4.5" y="8.5" width="11" height="7" rx="1.5" />
+                <path d={locked ? 'M7 8.5V6a3 3 0 0 1 6 0v2.5' : 'M7 8.5V6a3 3 0 0 1 5.5-1.8'} />
+                {locked && <circle cx="10" cy="12" r="1" fill="currentColor" stroke="none" />}
+              </svg>
+            </button>
+          ) : undefined}
+        </div>
       }
     >
       {/* 窄卡（grid-cols-3，~128px）适配：三行信息（耗神/炼化/炼耗），字号压缩。 */}

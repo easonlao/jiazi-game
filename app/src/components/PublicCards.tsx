@@ -203,6 +203,7 @@ function PublicCardItem({
   const holdQiCost = previewHoldQiCost(index);
   const volatilityDelta = turnManager?.getCardVolatilityDelta(card) ?? undefined;
   const volatilityTrend = turnManager?.getCardVolatilityTrend(card) ?? undefined;
+  const isWinningPiece = Boolean(turnManager?.canCompleteTriad(card));
 
   return (
     <PublicCard
@@ -220,6 +221,7 @@ function PublicCardItem({
       volatilityTrend={volatilityTrend}
       locked={locked}
       onToggleLock={onToggleLock}
+      isWinningPiece={isWinningPiece}
     />
   );
 }

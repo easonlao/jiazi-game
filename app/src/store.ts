@@ -26,6 +26,8 @@ import {
   DEFAULT_BALANCE_CONFIG,
   EA_DEFAULT_BALANCE_PROFILE,
   getDefaultBalanceProfileForRules,
+  type TriadCandidate,
+  type TriadClaimResult,
 } from '@core/index';
 import {
   diffFxEvents,
@@ -240,6 +242,11 @@ interface GameStore {
   hand: (import('@core/HandSlot').HandSlot | null)[];
   leyline: (import('@core/HandSlot').HandSlot | null)[];
   maxLeyline: number;
+  elemMultipliers: Record<string, number>;
+  triadCounts: Record<string, number>;
+  grandCycles: number;
+  availableTriads: TriadCandidate[];
+  lastTriadClaim: (TriadClaimResult & { dissolvedCards: JiaziCard[] }) | null;
   publicCards: JiaziCard[];
   leverageMultiplier: number;
   /** 以下数值来自核心 BalanceConfig，前端渲染一律读取，禁止硬编码 */
@@ -410,6 +417,8 @@ interface GameStore {
   moveToDantian: (leylineIndex: number) => boolean;
   buyToLeyline: (cardIndex: number, leverage?: boolean) => boolean;
   sellLeyline: (index: number) => boolean;
+  claimTriad: (element?: string) => boolean;
+  clearLastTriadClaim: () => void;
   toggleLeverage: () => void;
   executeBuy: () => boolean;
   executeSell: () => boolean;
@@ -776,6 +785,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hand: [],
   leyline: [],
   maxLeyline: 2,
+  elemMultipliers: { wood: 1.0, fire: 1.0, earth: 1.0, metal: 1.0, water: 1.0 },
+  triadCounts: { wood: 0, fire: 0, metal: 0, water: 0 },
+  grandCycles: 0,
+  availableTriads: [],
+  lastTriadClaim: null,
   publicCards: [],
   leverageMultiplier: 1,
   maxQi: 80,
@@ -876,6 +890,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hand: [...tm.getHand()],
       leyline: [...tm.getLeyline()],
       maxLeyline: tm.getMaxLeyline(),
+      elemMultipliers: { ...tm.getElemMultipliers() },
+      triadCounts: { ...tm.getTriadCounts() },
+      grandCycles: tm.getGrandCycles(),
+      availableTriads: [...tm.checkTriads()],
       publicCards: [...tm.getPublicCards()],
       leverageMultiplier: tm.getLeverageMultiplier(),
       maxQi: tm.getMaxQi(),
@@ -1915,6 +1933,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().showToast('地脉释灵失败');
     }
     return ok;
+  },
+  claimTriad(element?: string) {
+    const tm = get().turnManager;
+    if (!tm) return false;
+    const result = tm.claimTriad(element);
+    if (result) {
+      set({ lastTriadClaim: result, selectedHandCard: -1, selectedLeylineCard: -1 });
+      get()._sync();
+      const grandMsg = result.isGrandCycle ? '【四象融汇 · 混元大圆满达成！】' : '';
+      get().showToast(`⚡ 三合【${result.triad.name}】引动圆满！+${result.bonus}修为，神识补满，${result.element}行专精提升至 ${(result.newMultiplier * 100).toFixed(0)}%！${grandMsg}`);
+      return true;
+    } else {
+      get().showToast('引动三合失败（条件不足）');
+      return false;
+    }
+  },
+  clearLastTriadClaim() {
+    set({ lastTriadClaim: null });
   },
   toggleLeverage() {
     set((s) => ({ useLeverage: !s.useLeverage }));

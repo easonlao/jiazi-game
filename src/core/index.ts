@@ -54,6 +54,8 @@ export { DEFAULT_SCORE_RULES, TRADE_SCORE_RULES, BALANCED_TRADE_SCORE_RULES } fr
 export type { ScoreRules } from './ScoreManager';
 export { HandManager } from './HandManager';
 export { CardPoolManager } from './CardPoolManager';
+export { TriadManager, TRIADS } from './TriadManager';
+export type { TriadDefinition, TriadCandidate, TriadClaimResult } from './TriadManager';
 export { LeverageCalculator } from './LeverageCalculator';
 export { CardDataBank } from './CardDataBank';
 

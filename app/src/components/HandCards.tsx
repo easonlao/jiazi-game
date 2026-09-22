@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store';
 import { HandCard } from './HandCard';
 import { PublicCardHistoryModal } from './PublicCardHistoryModal';
+import { SpecializationCompass } from './SpecializationCompass';
+import { TriadCelebrationModal } from './TriadCelebrationModal';
 import type { HandSlot } from '@core/HandSlot';
 import { Element, type JiaziCard } from '@core/JiaziCard';
 
@@ -53,6 +55,8 @@ export function HandCards() {
   const moveToDantian = useGameStore((s) => s.moveToDantian);
   const sellLeyline = useGameStore((s) => s.sellLeyline);
   const qi = useGameStore((s) => s.qi);
+  const availableTriads = useGameStore((s) => s.availableTriads);
+  const claimTriad = useGameStore((s) => s.claimTriad);
 
   useEffect(() => {
     if (gameState === 'init') {
@@ -65,6 +69,50 @@ export function HandCards() {
 
   return (
     <div className="flex flex-col gap-2 px-4 py-1.5 max-md:py-1">
+      {/* 三合大成仪式弹窗 */}
+      <TriadCelebrationModal />
+
+      {/* 五行道基专精罗盘 */}
+      <SpecializationCompass />
+
+      {/* 天象契合 · 引动三合横幅 */}
+      {availableTriads.length > 0 && (
+        <div className="flex flex-col gap-1.5 rounded-lg border border-amber-400/70 bg-gradient-to-r from-amber-500/15 via-purple-500/15 to-indigo-500/15 p-2 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+              <span>⚡</span>
+              <span>天象契合 · 可引动三合大阵</span>
+            </span>
+            <span className="text-[10px] text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded font-mono">
+              神韵消解 · 槽位立刻腾空
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            {availableTriads.map((triad) => (
+              <button
+                key={triad.element}
+                onClick={() => claimTriad(triad.element)}
+                disabled={gameState !== 'player_action'}
+                className={`w-full py-1.5 px-3 rounded shadow-xs flex items-center justify-between transition-all ${
+                  gameState === 'player_action'
+                    ? 'bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-bold text-xs active:scale-[0.99] cursor-pointer ring-1 ring-amber-400/40'
+                    : 'bg-stone-300 text-stone-500 cursor-not-allowed text-xs'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="text-sm">🌟</span>
+                  <span>引动【{triad.name}】({triad.triad.branches.join('·')})</span>
+                </span>
+                <span className="text-[10px] font-mono bg-black/20 px-2 py-0.5 rounded">
+                  +{triad.bonus}修为 · 回满神识 · {triad.element}专精+25%
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 活跃丹田横带 */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between">

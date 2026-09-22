@@ -13,6 +13,13 @@ import { LeverageCalculator } from './LeverageCalculator.ts';
 import { HandManager } from './HandManager.ts';
 import { HandSlot } from './HandSlot.ts';
 import { CardPoolManager } from './CardPoolManager.ts';
+import {
+  TriadManager,
+  TRIADS,
+  type TriadDefinition,
+  type TriadCandidate,
+  type TriadClaimResult,
+} from './TriadManager.ts';
 import { type BalanceConfig, DEFAULT_BALANCE_CONFIG } from './BalanceConfig.ts';
 import {
   getBalanceProfileById,
@@ -368,6 +375,7 @@ export class TurnManager {
   private leverageCalculator: LeverageCalculator;
   private handManager: HandManager;
   private cardPoolManager: CardPoolManager;
+  private triadManager: TriadManager;
 
   // 游戏状态
   private currentRound: number;
@@ -551,6 +559,7 @@ export class TurnManager {
     this.leverageCalculator = new LeverageCalculator(balanceConfig);
     this.handManager = new HandManager();
     this.cardPoolManager = new CardPoolManager(randomSource);
+    this.triadManager = new TriadManager();
 
     this.currentRound = 1;
     this.state = 'init';
@@ -1346,10 +1355,12 @@ export class TurnManager {
         isEarth: slot.card.tianGanElement === Element.EARTH,
         concentrationCount: this.getElementConcentration(slot.card),
         concentrationPremiumFactor,
+        elementMultiplier: this.getElementMultiplier(slot.card.mainElement),
       })),
       currentLeverage,
       {
-        calculateHoldEarnings: (cardScore, leverage) => this.scoreManager.calculateHoldEarnings(cardScore, leverage),
+        calculateHoldEarnings: (cardScore, leverage, elementMultiplier) =>
+          this.scoreManager.calculateHoldEarnings(cardScore, leverage, elementMultiplier),
         calculateHoldQiCost: (cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor) =>
           this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor),
       },
@@ -1729,10 +1740,12 @@ export class TurnManager {
       slot.useLeverage
         ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
         : 1;
+    const elemMult = this.getElementMultiplier(slot.card.mainElement);
     const sellScore = this.scoreManager.calculateSellScore(
       currentScore,
       slot.buyScore,
-      effectiveLeverage
+      effectiveLeverage,
+      elemMult
     );
 
     // 移除卡牌以释放对应的锁定气额，并将卡牌回洗入牌池
@@ -1955,7 +1968,8 @@ export class TurnManager {
 
       const currentScore = this.getCardScore(slot.card, currentSeason);
       const effectiveLeverage = slot.useLeverage ? currentLeverage : 1;
-      const settleScore = this.scoreManager.calculateSellScore(currentScore, slot.buyScore, effectiveLeverage);
+      const elemMult = this.getElementMultiplier(slot.card.mainElement);
+      const settleScore = this.scoreManager.calculateSellScore(currentScore, slot.buyScore, effectiveLeverage, elemMult);
 
       // 收益计入修为（独立口径，不入 totalSellEarnings / totalSells）
       this.scoreManager.addSettleEarnings(settleScore);
@@ -2066,6 +2080,10 @@ export class TurnManager {
         holdEarnings: slot.holdEarnings
       })),
       maxLeyline: this.handManager.getMaxLeyline(),
+      elemMultipliers: this.triadManager.getMultipliers(),
+      triadCounts: this.triadManager.getTriadCounts(),
+      grandCycles: this.triadManager.getGrandCycles(),
+      totalTriadEarnings: this.scoreManager.getTotalTriadEarnings(),
       pool: {
         deckIds: this.cardPoolManager.getDeck().map(c => c.id),
         publicIds: this.cardPoolManager.getPublicCards().map(c => c.id)
@@ -2089,6 +2107,11 @@ export class TurnManager {
       randomState: this.exportRandomState() ?? undefined,
       isLocalOnly: this.isLocalOnly ? true : undefined,
     };
+  }
+
+  /** 快照导出别名 */
+  createSnapshot(): GameSnapshot {
+    return this.exportSnapshot();
   }
 
   /**
@@ -2192,6 +2215,7 @@ export class TurnManager {
       data.totalSellEarnings,
       data.totalMarginCallPenalty ?? 0,
       data.totalSettleEarnings ?? 0,
+      data.totalTriadEarnings ?? 0,
     );
 
     // 还原统计数据
@@ -2310,6 +2334,16 @@ export class TurnManager {
         return slot;
       });
       this.handManager.loadLeyline(restoredLeyline);
+    }
+
+    if (data.elemMultipliers || data.triadCounts || data.grandCycles !== undefined) {
+      this.triadManager.loadState({
+        elemMultipliers: data.elemMultipliers,
+        triadCounts: data.triadCounts,
+        grandCycles: data.grandCycles,
+      });
+    } else {
+      this.triadManager.reset();
     }
 
     // 5. 还原神识值（基于最新手牌计算的 totalLockedQi）
@@ -2707,6 +2741,31 @@ export class TurnManager {
     return this.scoreManager.getScore();
   }
 
+  /** 获取手牌管理器 */
+  getHandManager(): HandManager {
+    return this.handManager;
+  }
+
+  /** 获取神识管理器 */
+  getQiManager(): QiManager {
+    return this.qiManager;
+  }
+
+  /** 获取计分管理器 */
+  getScoreManager(): ScoreManager {
+    return this.scoreManager;
+  }
+
+  /** 获取牌池管理器 */
+  getCardPoolManager(): CardPoolManager {
+    return this.cardPoolManager;
+  }
+
+  /** 获取卡牌资料库 */
+  getCardDataBank(): CardDataBank {
+    return this.cardDataBank;
+  }
+
   /** 获取手牌（丹田明牌槽位） */
   getHand(): (HandSlot | null)[] {
     return this.handManager.getHand();
@@ -2765,6 +2824,113 @@ export class TurnManager {
   /** 是否处于地脉软超限状态 */
   isLeylineSoftCapped(): boolean {
     return this.handManager.isLeylineSoftCapped();
+  }
+
+  // =========================================================================
+  // 地支三合局与五行自由专精系统 (V11)
+  // =========================================================================
+
+  /** 获取全部手牌插槽列表（包含 3 活跃丹田 + 潜伏地脉） */
+  getAllCards(): HandSlot[] {
+    return this.handManager.getAllCards();
+  }
+
+  /** 获取五行专精管理器 */
+  getTriadManager(): TriadManager {
+    return this.triadManager;
+  }
+
+  /** 获取指定五行专精倍率 */
+  getElementMultiplier(element: Element): number {
+    return this.triadManager.getMultiplier(element);
+  }
+
+  /** 获取全部五行专精倍率字典 */
+  getElemMultipliers(): Record<Element, number> {
+    return this.triadManager.getMultipliers();
+  }
+
+  /** 获取各五行成局次数 */
+  getTriadCounts(): Record<Element, number> {
+    return this.triadManager.getTriadCounts();
+  }
+
+  /** 获取四象混元大圆满重数 */
+  getGrandCycles(): number {
+    return this.triadManager.getGrandCycles();
+  }
+
+  /**
+   * 跨丹田与地脉检测当前是否有满足引动条件的地支三合局
+   */
+  checkTriads(): TriadCandidate[] {
+    return this.triadManager.checkTriads(this.getAllCards());
+  }
+
+  /**
+   * 判断卡牌是否为“绝杀成局”牌（玩家持有另外两支）
+   */
+  canCompleteTriad(card: JiaziCard): TriadDefinition | null {
+    return this.triadManager.canCompleteTriad(card, this.getAllCards());
+  }
+
+  /**
+   * 是否可以引动三合大阵
+   */
+  canClaimTriad(element?: Element | string): boolean {
+    const available = this.checkTriads();
+    if (available.length === 0) return false;
+    if (!element) return true;
+    return available.some((a) => a.element === element);
+  }
+
+  /**
+   * 引动地支三合大阵：
+   * 1. 消解对应 3 张神符（优先丹田，其次地脉，腾空卡槽）；
+   * 2. 成局三神符功德圆满回归天地牌池；
+   * 3. 神识立即补满上限 (qi = maxQi)；
+   * 4. 派发大阵修为与五行专精永久叠加（+25%）；
+   * 5. 若达成四象大圆满，额外派发 1.5x 混元巨赏并永久激活土行真元 (+25%)。
+   *
+   * @param element 可选指定成局的五行属性；若不填且仅有一组可成局，默认引动该组。
+   * @returns 成局结果；若条件不满足返回 null
+   */
+  claimTriad(element?: Element | string): (TriadClaimResult & { dissolvedCards: JiaziCard[] }) | null {
+    const available = this.checkTriads();
+    if (available.length === 0) return null;
+
+    let target = available[0];
+    if (element) {
+      const found = available.find((a) => a.element === element);
+      if (!found) return null;
+      target = found;
+    }
+
+    // 1. 从丹田与地脉中消解 3 张神符
+    const dissolvedSlots = this.handManager.dissolveTriadCards(target.triad.branches);
+    if (!dissolvedSlots || dissolvedSlots.length !== 3) {
+      return null;
+    }
+
+    const dissolvedCards = dissolvedSlots.map((s) => s.card);
+
+    // 2. 成局三神符功德圆满回归牌池
+    this.cardPoolManager.returnCards(dissolvedCards);
+
+    // 3. 神识立即补满上限 (qi = maxQi)
+    this.qiManager.setQi(this.qiManager.getMaxQi());
+
+    // 4. 结算大阵修为与五行专精永久叠加 (含四象大圆满检测)
+    const result = this.triadManager.claimTriad(target.element);
+
+    // 5. 增加总修为
+    const totalGain = result.bonus + (result.isGrandCycle ? result.grandBonus : 0);
+    this.scoreManager.addTriadEarnings(totalGain);
+
+    return {
+      ...result,
+      dissolvedCards,
+    };
   }
 
   /** 获取公共牌 */
@@ -2932,8 +3098,9 @@ export class TurnManager {
   }
 
   /** 预览持仓卡牌每回合的分收益 */
-  previewHoldEarning(cardScore: number, leverage: number): number {
-    return this.scoreManager.calculateHoldEarnings(cardScore, leverage);
+  previewHoldEarning(cardScore: number, leverage: number, element?: Element): number {
+    const elemMult = element ? this.getElementMultiplier(element) : 1.0;
+    return this.scoreManager.calculateHoldEarnings(cardScore, leverage, elemMult);
   }
 
   /** 预览持仓卡牌每回合的神识消耗 */
@@ -2954,7 +3121,8 @@ export class TurnManager {
       slot.useLeverage
         ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
         : 1;
-    return this.scoreManager.calculateSellScore(currentScore, slot.buyScore, effectiveLeverage);
+    const elemMult = this.getElementMultiplier(slot.card.mainElement);
+    return this.scoreManager.calculateSellScore(currentScore, slot.buyScore, effectiveLeverage, elemMult);
   }
 
   /** 预览卖出实际神识变化：释放锁定气先封顶，即为净到账。 */
@@ -3124,10 +3292,12 @@ export class TurnManager {
         isEarth: slot.card.tianGanElement === Element.EARTH,
         concentrationCount: virtualConcentration(slot.card),
         concentrationPremiumFactor,
+        elementMultiplier: this.getElementMultiplier(slot.card.mainElement),
       })),
       settlementLeverage,
       {
-        calculateHoldEarnings: (cardScore, leverage) => this.scoreManager.calculateHoldEarnings(cardScore, leverage),
+        calculateHoldEarnings: (cardScore, leverage, elementMultiplier) =>
+          this.scoreManager.calculateHoldEarnings(cardScore, leverage, elementMultiplier),
         calculateHoldQiCost: (cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor) =>
           this.leverageCalculator.calculateHoldQiCost(cardScore, leverage, isEarth, concentrationCount, concentrationPremiumFactor),
       },
@@ -3379,10 +3549,10 @@ export class TurnManager {
    * @returns 校验是否完全守恒
    */
   validateCardPoolIntegrity(): boolean {
-    const expectedTotal = 60 + this.getVoidCardCount();
+    const expectedTotal = this.cardDataBank.getAllCards().length;
     const publicCards = this.cardPoolManager.getPublicCards().filter((c): c is JiaziCard => Boolean(c));
     const deckCards = this.cardPoolManager.getDeck();
-    const handCards = this.handManager.getHand().filter((s): s is HandSlot => Boolean(s)).map((s) => s.card);
+    const handCards = this.handManager.getAllCards().map((s) => s.card);
 
     const seenIds = new Set<number>();
 

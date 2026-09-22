@@ -44,6 +44,8 @@ export class ScoreManager {
   private totalSettleEarnings: number;
   /** 反噬罚分累计（局终展示"反噬扣分"用；独立于买卖收益口径） */
   private totalMarginCallPenalty: number;
+  /** 三合成局大阵修为收益累计 (V11) */
+  private totalTriadEarnings: number;
 
   constructor(rules: Partial<ScoreRules> = {}) {
     this.holdBonus = rules.holdBonus ?? DEFAULT_SCORE_RULES.holdBonus;
@@ -53,6 +55,7 @@ export class ScoreManager {
     this.totalSellEarnings = 0;
     this.totalSettleEarnings = 0;
     this.totalMarginCallPenalty = 0;
+    this.totalTriadEarnings = 0;
   }
 
   getRules(): ScoreRules {
@@ -82,13 +85,15 @@ export class ScoreManager {
    * @param sell 总卖出收益
    * @param marginCallPenalty 反噬罚分累计（老存档无此字段时默认 0）
    * @param settle 终局出清收益累计（老存档无此字段时默认 0）
+   * @param triad 三合成局大阵修为累计（老存档无此字段时默认 0）
    */
-  setScore(score: number, hold: number, sell: number, marginCallPenalty: number = 0, settle: number = 0): void {
+  setScore(score: number, hold: number, sell: number, marginCallPenalty: number = 0, settle: number = 0, triad: number = 0): void {
     this.score = score;
     this.totalHoldEarnings = hold;
     this.totalSellEarnings = sell;
     this.totalMarginCallPenalty = marginCallPenalty;
     this.totalSettleEarnings = settle;
+    this.totalTriadEarnings = triad;
   }
 
   /**
@@ -110,33 +115,43 @@ export class ScoreManager {
   /**
    * 计算卡牌的持仓收益值
    * 
-   * 计算公式: holdBonus * 当季评分 * 杠杆倍数
+   * 计算公式: holdBonus * 当季评分 * 杠杆倍数 * (五行专精倍率，仅对正收益生效)
    * 
    * @param cardScore 该卡牌在当前季节的评分
    * @param leverage 卡牌购买时记录的杠杆倍数
+   * @param elementMultiplier 五行专精倍率（默认为 1.0）
    * @returns 单回合产生的持仓收益
    */
-  calculateHoldEarnings(cardScore: number, leverage: number): number {
-    return this.holdBonus * cardScore * leverage;
+  calculateHoldEarnings(cardScore: number, leverage: number, elementMultiplier: number = 1.0): number {
+    let earning = this.holdBonus * cardScore * leverage;
+    if (earning > 0 && elementMultiplier > 1.0) {
+      earning *= elementMultiplier;
+    }
+    return earning;
   }
 
   /** 计算卡牌持仓收益（别名） */
-  calculateHoldEarning(cardScore: number, leverage: number): number {
-    return this.calculateHoldEarnings(cardScore, leverage);
+  calculateHoldEarning(cardScore: number, leverage: number, elementMultiplier: number = 1.0): number {
+    return this.calculateHoldEarnings(cardScore, leverage, elementMultiplier);
   }
 
   /**
    * 计算卡牌卖出时的得分收益
    * 
-   * 计算公式: (卖出时评分 - 买入时评分) * sellMultiplier * 杠杆倍数
+   * 计算公式: (卖出时评分 - 买入时评分) * sellMultiplier * 杠杆倍数 * (五行专精倍率，仅对正收益生效)
    * 
    * @param currentScore 卖出当季卡牌的评分
    * @param buyScore 购买时记录的卡牌评分
    * @param leverage 卡牌持有的杠杆倍数
+   * @param elementMultiplier 五行专精倍率（默认为 1.0）
    * @returns 卖出时获得的得分
    */
-  calculateSellScore(currentScore: number, buyScore: number, leverage: number): number {
-    return (ScoreManager.SELL_BASE + (currentScore - buyScore) * this.sellMultiplier) * leverage;
+  calculateSellScore(currentScore: number, buyScore: number, leverage: number, elementMultiplier: number = 1.0): number {
+    let score = (ScoreManager.SELL_BASE + (currentScore - buyScore) * this.sellMultiplier) * leverage;
+    if (score > 0 && elementMultiplier > 1.0) {
+      score *= elementMultiplier;
+    }
+    return score;
   }
 
   /**
@@ -155,6 +170,20 @@ export class ScoreManager {
   addSellEarnings(amount: number): void {
     this.score += amount;
     this.totalSellEarnings += amount;
+  }
+
+  /**
+   * 添加三合成局大阵修为至总分，并累计至大阵修为统计 (V11)
+   * @param amount 大阵修为数额
+   */
+  addTriadEarnings(amount: number): void {
+    this.score += amount;
+    this.totalTriadEarnings += amount;
+  }
+
+  /** 获取大阵修为收益累计 (V11) */
+  getTotalTriadEarnings(): number {
+    return this.totalTriadEarnings;
   }
 
   /**

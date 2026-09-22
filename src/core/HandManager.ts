@@ -276,6 +276,58 @@ export class HandManager {
   }
 
   /**
+   * 三合大阵引动：按指定 3 个地支寻找并消解卡牌
+   * 优先从活跃丹田移除以腾出宝贵前台位，其次从潜伏地脉移除。
+   * @param branches 三合局 3 个地支
+   * @returns 成功消解的 3 个手牌插槽数据；若未凑齐返回 null 且不修改手牌
+   */
+  dissolveTriadCards(branches: readonly [string, string, string]): HandSlot[] | null {
+    const dantianIndices: number[] = [];
+    const leylineIndices: number[] = [];
+
+    const availableDantian: { s: HandSlot | null; idx: number }[] = this.hand.map((s, idx) => ({ s, idx }));
+    const availableLeyline: { s: HandSlot | null; idx: number }[] = this.leyline.map((s, idx) => ({ s, idx }));
+
+    for (const b of branches) {
+      // 1. 优先丹田
+      const dIdx = availableDantian.findIndex(item => item.s !== null && item.s.card.diZhi === b);
+      if (dIdx !== -1) {
+        dantianIndices.push(availableDantian[dIdx].idx);
+        availableDantian[dIdx].s = null;
+        continue;
+      }
+      // 2. 地脉
+      const lIdx = availableLeyline.findIndex(item => item.s !== null && item.s.card.diZhi === b);
+      if (lIdx !== -1) {
+        leylineIndices.push(availableLeyline[lIdx].idx);
+        availableLeyline[lIdx].s = null;
+        continue;
+      }
+      return null;
+    }
+
+    const dissolved: HandSlot[] = [];
+    // 执行丹田清除
+    for (const idx of dantianIndices) {
+      const slot = this.hand[idx];
+      if (slot) {
+        dissolved.push(slot);
+        this.hand[idx] = null;
+      }
+    }
+    // 执行地脉清除（从大到小删除索引避免漂移）
+    leylineIndices.sort((a, b) => b - a);
+    for (const idx of leylineIndices) {
+      const [slot] = this.leyline.splice(idx, 1);
+      if (slot) {
+        dissolved.push(slot);
+      }
+    }
+
+    return dissolved.length === 3 ? dissolved : null;
+  }
+
+  /**
    * 重置手牌管理器，清空所有丹田与地脉槽位
    */
   reset(): void {

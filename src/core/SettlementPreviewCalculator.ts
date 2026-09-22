@@ -14,6 +14,8 @@ export interface HoldingCalculationInput {
   concentrationCount?: number;
   /** 同元素集中度溢价系数 */
   concentrationPremiumFactor?: number;
+  /** 五行专精倍率 (V11) */
+  elementMultiplier?: number;
 }
 
 export interface HoldingCalculationItem {
@@ -30,7 +32,7 @@ export interface HoldingCalculationResult {
 }
 
 export interface HoldingCalculationFunctions {
-  calculateHoldEarnings: (cardScore: number, leverage: number) => number;
+  calculateHoldEarnings: (cardScore: number, leverage: number, elementMultiplier?: number) => number;
   calculateHoldQiCost: (cardScore: number, leverage: number, isEarth?: boolean, concentrationCount?: number, concentrationPremiumFactor?: number) => number;
 }
 
@@ -47,7 +49,7 @@ export function calculateHoldingSettlement(
     const leverage = holding.useLeverage ? settlementLeverage : 1;
     return {
       cardName: holding.cardName,
-      earning: calculators.calculateHoldEarnings(holding.cardScore, leverage),
+      earning: calculators.calculateHoldEarnings(holding.cardScore, leverage, holding.elementMultiplier),
       qiCost: calculators.calculateHoldQiCost(holding.cardScore, leverage, holding.isEarth, holding.concentrationCount, holding.concentrationPremiumFactor),
       leverage,
     };
