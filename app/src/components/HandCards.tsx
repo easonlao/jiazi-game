@@ -116,10 +116,10 @@ export function HandCards() {
 
       {/* 活跃丹田横带 */}
       <div className="flex flex-col gap-0.5">
-        <h3 className="flex items-center justify-between text-xs font-bold font-serif text-ink">
-          <span className="flex items-center gap-1">
+        <h3 className="flex items-center justify-between text-sm font-bold font-serif text-ink">
+          <span className="flex items-center gap-1.5">
             <span>丹田 {hand.filter((s) => s).length}/3</span>
-            <span className="text-[9px] text-wood-dark bg-gold/15 border border-gold/30 px-1.5 py-0.2 rounded font-serif font-normal">
+            <span className="text-[10px] text-wood-dark bg-gold/15 border border-gold/30 px-1.5 py-0.2 rounded font-serif font-normal">
               明牌 · 每轮炼化
             </span>
           </span>
@@ -128,7 +128,7 @@ export function HandCards() {
             <button
               onClick={() => moveToLeyline(selectedHandCard)}
               disabled={gameState !== 'player_action' || isLeylineSoftCapped || qi < 5}
-              className={`text-[10px] px-2 py-0.5 rounded font-serif font-bold transition-all shadow-2xs font-normal ${
+              className={`text-[11px] px-2 py-0.5 rounded font-serif font-bold transition-all shadow-2xs font-normal ${
                 gameState === 'player_action' && !isLeylineSoftCapped && qi >= 5
                   ? 'bg-wood-dark text-parchment hover:bg-wood-mid active:scale-95 cursor-pointer'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -140,98 +140,82 @@ export function HandCards() {
           )}
         </h3>
 
-        {!hasDantianCards ? (
-          <div
-            className="relative flex h-14 items-center justify-center text-center text-ink-light text-xs border border-dashed border-wood-light rounded-lg"
-          >
-            三丹田空置 · 纳灵公共灵气开始炼化
-            {marginCallEvent?.detail?.marginCallDetails.length ? (
-              <div
-                className="pointer-events-none absolute inset-x-0 top-1/2 grid h-20 -translate-y-1/2 grid-cols-3 gap-1.5"
-                aria-hidden="true"
-              >
-                {hand.map((_, index) => <span key={index} data-hand-card-slot={index} />)}
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-1.5">
-            {hand.map((slot: HandSlot | null, i: number) => {
-              if (flyingSlot === i) return <EmptySlot key={i} slotIndex={i} shattered={false} />;
-              if (!slot) return <EmptySlot key={i} slotIndex={i} shattered={shatteredSlots.has(i)} />;
-              const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
-              const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
-              const currentLeverage =
-                slot.useLeverage
-                  ? (turnManager ? turnManager.getLeverageMultiplier() : 1)
-                  : 1;
-              const settlementLeverage =
-                slot.useLeverage
-                  ? (turnManager ? turnManager.getNextLeverageNoSeasonChange() : 1)
-                  : 1;
-              const holdEarning = turnManager ? turnManager.previewHoldEarning(score, currentLeverage) : 0;
-              const concentration = turnManager ? turnManager.getConcentrationInfo(slot.card) : undefined;
-              const holdQiCost = turnManager ? turnManager.previewHoldQiCost(
-                score,
-                currentLeverage,
-                slot.card.tianGanElement === Element.EARTH,
-                concentration?.count ?? 0,
-                turnManager.getConcentrationPremiumFactor(),
-              ) : 0;
+        <div className="grid grid-cols-3 gap-1.5">
+          {hand.map((slot: HandSlot | null, i: number) => {
+            if (flyingSlot === i) return <EmptySlot key={i} slotIndex={i} shattered={false} />;
+            if (!slot) return <EmptySlot key={i} slotIndex={i} shattered={shatteredSlots.has(i)} />;
+            const score = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
+            const sellPreview = selectedHandCard === i ? previewSellInfo(i) : null;
+            const currentLeverage =
+              slot.useLeverage
+                ? (turnManager ? turnManager.getLeverageMultiplier() : 1)
+                : 1;
+            const settlementLeverage =
+              slot.useLeverage
+                ? (turnManager ? turnManager.getNextLeverageNoSeasonChange() : 1)
+                : 1;
+            const holdEarning = turnManager ? turnManager.previewHoldEarning(score, currentLeverage) : 0;
+            const concentration = turnManager ? turnManager.getConcentrationInfo(slot.card) : undefined;
+            const holdQiCost = turnManager ? turnManager.previewHoldQiCost(
+              score,
+              currentLeverage,
+              slot.card.tianGanElement === Element.EARTH,
+              concentration?.count ?? 0,
+              turnManager.getConcentrationPremiumFactor(),
+            ) : 0;
 
-              return (
-                <HandCard
-                  key={i}
-                  card={slot.card}
-                  slotIndex={i}
-                  score={score}
-                  buyScore={slot.buyScore}
-                  selected={selectedHandCard === i}
-                  onClick={
-                    gameState === 'player_action'
-                      ? () => {
-                          if (selectedHandCard !== i) selectHandCard(i);
-                        }
-                      : undefined
-                  }
-                  onOpenHistory={() => setHistoryCard(slot.card)}
-                  leverage={currentLeverage}
-                  settlementLeverage={settlementLeverage}
-                  isLeverage={slot.useLeverage}
-                  holdEarnings={slot.holdEarnings}
-                  holdEarning={holdEarning}
-                  holdQiCost={holdQiCost}
-                  concentration={concentration}
-                  sellPreview={sellPreview}
-                  shattered={shatteredSlots.has(i)}
-                />
-              );
-            })}
-          </div>
-        )}
+            return (
+              <HandCard
+                key={i}
+                card={slot.card}
+                slotIndex={i}
+                score={score}
+                buyScore={slot.buyScore}
+                selected={selectedHandCard === i}
+                onClick={
+                  gameState === 'player_action'
+                    ? () => {
+                        if (selectedHandCard !== i) selectHandCard(i);
+                      }
+                    : undefined
+                }
+                onOpenHistory={() => setHistoryCard(slot.card)}
+                leverage={currentLeverage}
+                settlementLeverage={settlementLeverage}
+                isLeverage={slot.useLeverage}
+                holdEarnings={slot.holdEarnings}
+                holdEarning={holdEarning}
+                holdQiCost={holdQiCost}
+                concentration={concentration}
+                sellPreview={sellPreview}
+                shattered={shatteredSlots.has(i)}
+              />
+            );
+          })}
+        </div>
       </div>
 
       {/* 潜伏地脉横带 */}
       <div className="flex flex-col gap-0.5 mt-0.5 pt-1 border-t border-wood-light/40">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold font-serif text-ink flex items-center gap-1">
+          <h3 className="text-sm font-bold font-serif text-ink flex items-center gap-1.5">
             <span>潜伏地脉</span>
-            <span className="text-[11px] font-mono font-normal text-ink-light">
+            <span className="text-xs font-mono font-normal text-ink-light">
               {leyline.filter((s) => s).length}/{maxLeyline}
             </span>
-            <span className="text-[9px] text-wood-dark bg-wood-light/25 border border-wood-light/60 px-1.5 py-0.2 rounded font-serif">
+            <span className="text-[10px] text-wood-dark bg-wood-light/25 border border-wood-light/60 px-1.5 py-0.2 rounded font-serif">
               潜伏暗牌 · 辟巡视
             </span>
             {leyline.filter((s) => s).length > maxLeyline ? (
               <span
-                className="text-[9px] text-rose-800 bg-rose-100/90 border border-rose-300 px-1 py-0.2 rounded font-mono font-bold animate-pulse"
+                className="text-[10px] text-rose-800 bg-rose-100/90 border border-rose-300 px-1 py-0.2 rounded font-mono font-bold animate-pulse"
                 data-testid="leyline-overflow-badge"
               >
                 ⚠️超限 ({leyline.filter((s) => s).length}/{maxLeyline})
               </span>
             ) : isLeylineSoftCapped ? (
               <span
-                className="text-[9px] text-amber-800 bg-amber-100/90 border border-amber-300 px-1 py-0.2 rounded font-mono font-bold"
+                className="text-[10px] text-amber-800 bg-amber-100/90 border border-amber-300 px-1 py-0.2 rounded font-mono font-bold"
                 data-testid="leyline-full-badge"
               >
                 ⚠️满仓 ({maxLeyline}/{maxLeyline})
@@ -244,7 +228,7 @@ export function HandCards() {
               <button
                 onClick={() => moveToDantian(selectedLeylineCard)}
                 disabled={gameState !== 'player_action' || hand.filter(s => s !== null).length >= 3}
-                className={`text-[10px] px-2 py-0.5 rounded font-serif font-bold transition-all shadow-2xs ${
+                className={`text-[11px] px-2 py-0.5 rounded font-serif font-bold transition-all shadow-2xs ${
                   gameState === 'player_action' && hand.filter(s => s !== null).length < 3
                     ? 'bg-[#2d5a3f] text-parchment hover:bg-[#386d4d] active:scale-95 cursor-pointer'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -256,7 +240,7 @@ export function HandCards() {
               <button
                 onClick={() => sellLeyline(selectedLeylineCard)}
                 disabled={gameState !== 'player_action'}
-                className="text-[10px] px-2 py-0.5 rounded font-serif font-bold bg-[#8b261e] text-parchment hover:bg-[#a12e25] active:scale-95 transition-all shadow-2xs cursor-pointer"
+                className="text-[11px] px-2 py-0.5 rounded font-serif font-bold bg-[#8b261e] text-parchment hover:bg-[#a12e25] active:scale-95 transition-all shadow-2xs cursor-pointer"
                 title="在地脉直接释灵变现（按正统波段价差结算）"
               >
                 释灵变现
@@ -304,14 +288,23 @@ export function HandCards() {
 }
 
 function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shattered?: boolean }) {
+  const slotNum = slotIndex === 0 ? '壹' : slotIndex === 1 ? '贰' : '叁';
   return (
     <div
       data-hand-card-slot={slotIndex}
-      className={`flex items-center justify-center rounded-lg border-2 border-dashed border-wood-light bg-white/50 h-16 ${
+      className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-wood-light/60 bg-white/35 h-full min-h-[195px] max-md:min-h-[188px] p-2 text-center select-none transition-all ${
         shattered ? 'mc-shatter-slot' : 'slot-breathe'
       }`}
     >
-      <span className="text-xs text-wood-light font-serif">{shattered ? '崩坏' : '空位'}</span>
+      <div className="w-7 h-7 rounded-full border border-wood-light/50 bg-wood-light/15 flex items-center justify-center text-wood-dark/70 font-serif text-xs mb-1.5 shadow-2xs">
+        {slotNum}
+      </div>
+      <span className="text-xs font-serif font-bold text-wood-dark/80">
+        {shattered ? '丹田崩坏' : '空位'}
+      </span>
+      <span className="text-[10px] text-wood-light font-serif mt-1">
+        {shattered ? '神识受创' : '纳灵温养'}
+      </span>
     </div>
   );
 }
@@ -321,8 +314,8 @@ function EmptyLeylineSlot({ index }: { index: number }) {
     <div
       className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-wood-light/70 bg-white/40 h-14 text-center select-none"
     >
-      <span className="text-xs text-wood-mid font-serif">地脉空位</span>
-      <span className="text-[9px] text-wood-light font-serif">潜脉暗存 · 避灾</span>
+      <span className="text-xs text-wood-dark font-serif font-bold">地脉空位</span>
+      <span className="text-[10px] text-wood-light font-serif mt-0.5">潜脉暗存 · 避灾</span>
     </div>
   );
 }

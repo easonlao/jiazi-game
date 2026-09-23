@@ -49,9 +49,9 @@ export function PublicCards({ onHelp }: { onHelp: () => void }) {
   return (
     <div className="flex flex-col gap-1 px-3 py-1">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-bold font-serif text-ink">周遭灵气</h3>
+        <h3 className="text-sm font-bold font-serif text-ink">周遭灵气</h3>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-ink-light">
+          <span className="text-xs font-serif text-ink-light">
             {gameState === 'player_action' ? '选灵气后操作' : gameState === 'void_round' ? '空亡吞噬中...' : '天时流转中...'}
           </span>
           <HelpButton onClick={onHelp} />
@@ -237,7 +237,7 @@ function SeasonHint({ season, volatilityActive }: { season: string; volatilityAc
   const info = map[season];
   if (!info) return null;
   return (
-    <div className="flex items-center justify-between text-[10px] px-2 py-0.5 rounded bg-white/60 border border-wood-light/50 text-ink-light leading-none">
+    <div className="flex items-center justify-between text-[11px] px-2 py-0.5 rounded bg-white/60 border border-wood-light/50 text-ink-light leading-none">
       <span className={`font-medium ${info.cls}`}>{info.text} · 土牌四季平稳</span>
       {volatilityActive && (
         <span data-volatility-experiment className="text-wood-mid">

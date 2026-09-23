@@ -145,7 +145,7 @@ export function ActionBar() {
         >
           {isFinalRound ? '结束游戏' : '调息'}
           {!isFinalRound && (
-            <span className="block text-[10px] max-md:text-[9px] font-normal leading-tight whitespace-nowrap">
+            <span className="block text-[10px] font-normal leading-tight whitespace-nowrap">
               <span className="text-qi-full">+{baseRecovery}</span>自然+<span className="text-sky-600">{waitBonus}</span>奖励
             </span>
           )}

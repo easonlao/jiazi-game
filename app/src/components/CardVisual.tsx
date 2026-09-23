@@ -133,12 +133,12 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
     >
       {/* 牌名本身编码干支五行：天干、地支各自按所属元素着色 */}
       <div className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-0.5">
-        <span className="text-base max-md:text-[15px] leading-none font-bold truncate min-w-0">
+        <span className="text-[17px] max-md:text-[16px] leading-none font-bold truncate min-w-0">
           <span className={elementScoreColor[card.tianGanElement]}>{card.tianGan}</span>
           <span className={elementScoreColor[card.diZhiElement]}>{card.diZhi}</span>
         </span>
         <div className="flex gap-1 shrink-0">
-          <span className={`text-[10px] max-md:text-[9px] px-1.5 py-0.5 rounded font-bold ${
+          <span className={`text-[11px] max-md:text-[10px] px-1.5 py-0.5 rounded font-bold ${
             card.yinYang === YinYang.YANG
               ? 'bg-orange-500 text-white'
               : 'bg-violet-500 text-white'
@@ -154,7 +154,7 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
       <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5 max-md:py-1">
         <div className="min-w-0 flex-1">
           <span
-            className="card-score-label block text-[10px] max-md:text-[9px] leading-tight text-ink-light"
+            className="card-score-label block text-[11px] max-md:text-[10px] leading-tight text-ink-light"
             data-volatility-score={volatilityActive ? 'current' : undefined}
             title={positionView ? '手牌对应显示纳灵时评分与当前评分' : volatilityActive ? '当前评分已包含短期波动；换季后会重新计算' : undefined}
           >
@@ -167,17 +167,17 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
               aria-label={`纳灵评分 ${buyScore! >= 0 ? '+' : ''}${buyScore!.toFixed(1)}，当前评分 ${score >= 0 ? '+' : ''}${score.toFixed(1)}`}
               title={`纳灵评分 ${buyScore! >= 0 ? '+' : ''}${buyScore!.toFixed(1)} → 当前评分 ${score >= 0 ? '+' : ''}${score.toFixed(1)}；释灵收益请查看结算预览`}
             >
-              <span className="card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap text-ink">
+              <span className="card-score-value text-[15px] max-md:text-[14px] leading-tight font-bold tabular-nums whitespace-nowrap text-ink">
                 {buyScore! >= 0 ? '+' : ''}{buyScore!.toFixed(1)}
               </span>
               <span className="mx-0.5 text-ink-light/50">→</span>
-              <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
+              <span className={`card-score-value text-[15px] max-md:text-[14px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
                 {score >= 0 ? '+' : ''}{score.toFixed(1)}
               </span>
             </div>
           ) : (
             <div className="flex items-baseline gap-1">
-              <span className={`card-score-value text-[14px] max-md:text-[13px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
+              <span className={`card-score-value text-[15px] max-md:text-[14px] leading-tight font-bold tabular-nums whitespace-nowrap ${elementScoreColor[card.mainElement]}`}>
                 {score >= 0 ? '+' : ''}{score.toFixed(1)}
                 {!volatilityActive && nextScore !== undefined && <><span className="mx-0.5 text-ink-light/50">→</span>{nextScore >= 0 ? '+' : ''}{nextScore.toFixed(1)}</>}
               </span>
@@ -186,7 +186,7 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
                   data-volatility-delta
                   aria-label={`相对基础评分 ${volatilityDeltaMeta.text}`}
                   title="相对基础评分的实际变化"
-                  className={`text-[10px] max-md:text-[9px] font-bold leading-none whitespace-nowrap ${volatilityDeltaMeta.className}`}
+                  className={`text-[11px] max-md:text-[10px] font-bold leading-none whitespace-nowrap ${volatilityDeltaMeta.className}`}
                 >
                   ({volatilityDeltaMeta.text})
                 </span>

@@ -84,10 +84,10 @@ export function HandCard({
           </span>
         ) : null}
       >
-      {/* 窄卡（grid-cols-3，~128px）适配：三行信息（炼化/炼耗/累计），字号压缩。 */}
-      <div className="divide-y divide-wood-light/35 text-[11px] max-md:text-[10px]">
+      {/* 窄卡（grid-cols-3，~128px）适配：三行信息（炼化/炼耗/累计），字号微调放大。 */}
+      <div className="divide-y divide-wood-light/35 text-xs max-md:text-[11px]">
         <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
-          <span className="text-[9px] text-ink-light shrink-0">炼化</span>
+          <span className="text-[10px] text-ink-light shrink-0">炼化</span>
           <span className="font-bold tabular-nums whitespace-nowrap">
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}修为
@@ -95,14 +95,14 @@ export function HandCard({
           </span>
         </div>
         <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
-          <span className="text-[9px] text-ink-light shrink-0">炼耗</span>
+          <span className="text-[10px] text-ink-light shrink-0">炼耗</span>
           <span className="flex items-center gap-1 min-w-0">
             <span className={`font-bold tabular-nums whitespace-nowrap ${QI_COST_COLOR}`}>
               -{holdQiCost.toFixed(1)}神识
             </span>
             {concentration && concentration.premium > 0 && (
               <span
-                className="shrink-0 text-[9px] px-1 py-0.5 rounded font-bold bg-amber-100 text-amber-800"
+                className="shrink-0 text-[10px] px-1 py-0.5 rounded font-bold bg-amber-100 text-amber-800"
                 title={`元素浓度 ${ELEMENT_CN[card.mainElement]}×${concentration.count}：每张 +${concentration.premium} 神识`}
                 data-testid="hand-card-concentration"
               >
@@ -112,7 +112,7 @@ export function HandCard({
           </span>
         </div>
         <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
-          <span className="text-[9px] text-ink-light shrink-0">累计炼化</span>
+          <span className="text-[10px] text-ink-light shrink-0">累计炼化</span>
           <span className={`font-bold tabular-nums whitespace-nowrap ${holdEarnings >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
             {holdEarnings >= 0 ? '+' : ''}{holdEarnings.toFixed(1)}修为
           </span>

@@ -148,7 +148,7 @@ export function QiBar() {
       {/* 当前神识值与飘字 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 relative min-w-0">
-          <span className="font-bold font-serif text-ink text-xs sm:text-sm whitespace-nowrap">神识</span>
+          <span className="font-bold font-serif text-ink text-sm sm:text-base whitespace-nowrap">神识</span>
           <span
             className={`px-2.5 py-0.5 rounded-lg text-lg sm:text-xl font-bold font-serif tabular-nums leading-none ${
               isBroke ? 'bg-qi-critical text-white animate-pulse' : 'bg-ink text-parchment'
@@ -156,10 +156,10 @@ export function QiBar() {
           >
             {qi.toFixed(0)}
           </span>
-          <span className="text-xs text-ink-light whitespace-nowrap">/ {maxQi}</span>
+          <span className="text-sm font-serif font-bold text-ink-light whitespace-nowrap">/ {maxQi}</span>
 
           {isBroke && (
-            <span className="text-[10px] font-bold text-qi-critical bg-qi-critical/10 px-1.5 py-0.5 rounded animate-pulse whitespace-nowrap">
+            <span className="text-[11px] font-bold text-qi-critical bg-qi-critical/10 px-1.5 py-0.5 rounded animate-pulse whitespace-nowrap">
               💥 神识耗尽
             </span>
           )}

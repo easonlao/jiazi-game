@@ -100,18 +100,18 @@ export function TopPanel() {
       <div className="flex items-center justify-between gap-1.5 px-3 pt-1.5 pb-1 max-md:py-1">
         {/* 左侧：天时 + 年岁轮次 + 机缘 */}
         <div className="flex items-center gap-1.5 min-w-0">
-          <h1 className={`text-base sm:text-lg font-bold font-serif ${seasonTheme.text} leading-none whitespace-nowrap`}>
+          <h1 className={`text-lg sm:text-xl font-bold font-serif ${seasonTheme.text} leading-none whitespace-nowrap`}>
             {/* key 变化触发切换动画，提示回合推进 */}
             <span key={currentRound} className="inline-block" style={roundAnimStyle}>
               {seasonDisplay(season)} · 天时
             </span>
           </h1>
-          <span className="text-[11px] font-bold text-amber-900 bg-amber-100/90 px-1.5 py-0.5 rounded-full border border-amber-300 shadow-2xs tabular-nums whitespace-nowrap">
+          <span className="text-xs font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300 shadow-2xs tabular-nums whitespace-nowrap">
             第 {year} 年 · {turn}/20 轮
           </span>
           {activeBoon && activeBoon !== 'none' && SINGLE_YEAR_BOONS[activeBoon as keyof typeof SINGLE_YEAR_BOONS] && (
             <span
-              className="text-[10px] font-bold text-teal-800 bg-teal-100/90 px-1.5 py-0.5 rounded-full border border-teal-300/80 shadow-xs whitespace-nowrap"
+              className="text-[11px] font-bold text-teal-800 bg-teal-100/90 px-2 py-0.5 rounded-full border border-teal-300/80 shadow-xs whitespace-nowrap"
               title={SINGLE_YEAR_BOONS[activeBoon as keyof typeof SINGLE_YEAR_BOONS]?.description}
               data-testid="active-boon-badge"
             >
@@ -126,33 +126,34 @@ export function TopPanel() {
             <div className="flex items-center gap-1">
               <button
                 onClick={openDashboard}
-                className="px-1.5 py-0.5 rounded bg-white/90 border border-wood-mid text-wood-dark text-[10px] sm:text-[11px] font-serif hover:bg-wood-light/20 transition-all cursor-pointer shadow-2xs"
+                className="px-2 py-0.5 rounded bg-white/90 border border-wood-mid text-wood-dark text-[11px] sm:text-xs font-serif hover:bg-wood-light/20 transition-all cursor-pointer shadow-2xs"
                 aria-label="打开交易看板"
               >
                 行迹
               </button>
               <button
                 onClick={openCultivationProfile}
-                className="px-1.5 py-0.5 rounded bg-white/90 border border-wood-mid text-wood-dark text-[10px] sm:text-[11px] font-serif hover:bg-wood-light/20 transition-all cursor-pointer shadow-2xs"
+                className="px-2 py-0.5 rounded bg-white/90 border border-wood-mid text-wood-dark text-[11px] sm:text-xs font-serif hover:bg-wood-light/20 transition-all cursor-pointer shadow-2xs"
                 aria-label="打开修行档案"
               >
                 档案
               </button>
               <button
                 onClick={openPauseModal}
-                className="px-1.5 py-0.5 rounded bg-white/90 border border-wood-mid text-wood-dark text-[10px] sm:text-[11px] font-serif hover:bg-wood-light/20 transition-all cursor-pointer shadow-2xs"
+                className="px-2 py-0.5 rounded bg-white/90 border border-wood-mid text-wood-dark text-[11px] sm:text-xs font-serif hover:bg-wood-light/20 transition-all cursor-pointer shadow-2xs"
                 aria-label="暂停修行"
               >
                 暂停
               </button>
             </div>
           )}
-          <div data-score-panel className="score-panel relative shrink-0 rounded-lg border border-gold/40 bg-gold/10 px-2 py-0.5 text-right">
-            <div className="text-base sm:text-lg font-black leading-tight text-gold tabular-nums font-mono">
-              {score.toFixed(1)} <span className="text-[10px] font-serif font-bold text-wood-dark">修为</span>
+          <div data-score-panel className="score-panel relative shrink-0 rounded-lg border border-gold/40 bg-gold/10 px-2 py-0.5 text-right flex flex-col justify-center">
+            <div className="text-base sm:text-lg font-black leading-tight text-gold tabular-nums font-mono flex items-baseline justify-end gap-1">
+              <span>{score.toFixed(1)}</span>
+              <span className="text-xs font-serif font-bold text-wood-dark">修为</span>
             </div>
             {scoreDelta && (
-              <div className={`mt-0.5 whitespace-nowrap text-[9px] font-bold leading-none tabular-nums absolute right-1 top-full ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
+              <div className={`mt-0.5 whitespace-nowrap text-[10px] font-bold leading-none tabular-nums ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
                 本回合 {scoreDelta.delta >= 0 ? '+' : ''}{scoreDelta.delta.toFixed(1)} 修为
               </div>
             )}
@@ -160,7 +161,7 @@ export function TopPanel() {
             {floaters.map((f, idx) => (
               <span
                 key={f.id}
-                className={`float-up absolute right-0 top-full mt-0.5 text-xs font-bold pointer-events-none whitespace-nowrap ${
+                className={`float-up absolute right-0 bottom-full mb-0.5 text-xs font-bold pointer-events-none whitespace-nowrap ${
                   f.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'
                 }`}
                 style={{ right: `${idx * 20}px` }}
@@ -173,21 +174,21 @@ export function TopPanel() {
       </div>
 
       {/* 行 2：季内回合与天劫道基大考进度条（独占一行，绝不重叠折行） */}
-      <div className="flex items-center justify-between gap-2 px-3 py-0.5 border-t border-wood-light/30 text-[11px]">
+      <div className="flex items-center justify-between gap-2 px-3 py-0.5 border-t border-wood-light/30 text-xs">
         <div className="flex items-center gap-1.5 font-serif text-ink whitespace-nowrap">
           <span>第 {currentRound} 回合 / {totalRounds}</span>
           <span className="text-wood-mid">·</span>
           <span>季内第 {roundInSeason} 回合</span>
         </div>
         <div className="flex items-center gap-1.5 flex-1 max-w-[200px] justify-end" title={`天劫门槛目标: ${score.toFixed(0)} / ${quota}`}>
-          <span className="text-[10px] text-wood-dark font-serif font-medium whitespace-nowrap">天劫道基:</span>
+          <span className="text-[11px] text-wood-dark font-serif font-medium whitespace-nowrap">天劫道基:</span>
           <div className="h-1.5 flex-1 rounded-full bg-wood-light/60 overflow-hidden min-w-[50px]">
             <div
               className={`h-full rounded-full transition-all duration-300 ${score >= quota ? 'bg-emerald-500' : 'bg-gold'}`}
               style={{ width: `${Math.min(100, Math.max(0, (score / quota) * 100))}%` }}
             />
           </div>
-          <span className={`text-[10px] font-mono font-bold whitespace-nowrap ${score >= quota ? 'text-emerald-700' : 'text-amber-800'}`}>
+          <span className={`text-[11px] font-mono font-bold whitespace-nowrap ${score >= quota ? 'text-emerald-700' : 'text-amber-800'}`}>
             {score.toFixed(0)}/{quota}
           </span>
         </div>
@@ -197,7 +198,7 @@ export function TopPanel() {
       {branchRollDeltas && (
         <div className="flex flex-col border-t border-wood-light/40 bg-[#f9f5ec]">
           {/* 四大三合局分组抬头：申子辰水、亥卯未木、寅午戌火、巳酉丑金 */}
-          <div className="grid grid-cols-4 px-3 pt-0.5 text-[9px] font-serif text-center leading-none">
+          <div className="grid grid-cols-4 px-3 pt-0.5 text-[10px] font-serif text-center leading-none">
             <span className="text-sky-800 font-bold">申子辰 · 水局</span>
             <span className="text-emerald-800 font-bold">亥卯未 · 木局</span>
             <span className="text-red-800 font-bold">寅午戌 · 火局</span>
@@ -233,7 +234,7 @@ export function TopPanel() {
                   }
                 >
                   <div className="flex items-center gap-0.5 leading-none">
-                    <span className={`text-[10px] font-serif ${isDantian ? 'font-black text-amber-950' : isLeyline ? 'font-bold text-wood-dark' : 'text-ink-light/80'}`}>
+                    <span className={`text-[11px] font-serif ${isDantian ? 'font-black text-amber-950' : isLeyline ? 'font-bold text-wood-dark' : 'text-ink-light/80'}`}>
                       {item.dz}
                     </span>
                     {isDantian && (
@@ -241,7 +242,7 @@ export function TopPanel() {
                     )}
                   </div>
                   <div
-                    className={`text-[9px] leading-tight tabular-nums font-mono ${
+                    className={`text-[10px] leading-tight tabular-nums font-mono ${
                       isDantian
                         ? 'font-black text-amber-950'
                         : isLeyline
@@ -269,7 +270,7 @@ export function TopPanel() {
           data-testid="sect-patrol-bar"
         >
           <div className="flex items-center gap-1.5 font-serif text-wood-dark">
-            <span className="font-bold text-[10px]">古宗巡视:</span>
+            <span className="font-bold text-[11px]">古宗巡视:</span>
             {activeSectIds.map((sid: string) => {
               const sect = ALL_SECTS[sid];
               if (!sect) return null;
@@ -278,19 +279,20 @@ export function TopPanel() {
               return (
                 <span
                   key={sid}
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded border text-[9px] font-serif ${
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded border text-[10px] font-serif ${
                     isUrgent
                       ? 'bg-rose-50 border-rose-400 text-rose-800 font-bold animate-pulse'
                       : 'bg-white/80 border-wood-light text-ink'
                   }`}
+                  title={`${sect.name} · ${sect.description}`}
                 >
                   <span>{sect.name}</span>
-                  <span className="font-mono">{cd}轮</span>
+                  <span className="font-mono font-bold">{cd}轮</span>
                 </span>
               );
             })}
           </div>
-          <span className="text-[9px] text-wood-mid/80 font-serif whitespace-nowrap">地脉暗牌避灾</span>
+          <span className="text-[10px] text-wood-dark/80 font-serif whitespace-nowrap">地脉暗牌避灾</span>
         </div>
       )}
     </div>
