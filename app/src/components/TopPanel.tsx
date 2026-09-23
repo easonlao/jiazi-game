@@ -18,6 +18,36 @@ const SEASON_THEME: Record<string, { text: string; bar: string }> = {
   winter: { text: 'text-sky-700', bar: 'bg-sky-500/80' },
 };
 
+interface TriadBranchItem {
+  dz: string;
+  triadName: string;
+  triadElem: string;
+  isGroupEnd: boolean;
+}
+
+/**
+ * 四大正统地支三合局顺序与组合：
+ * 申子辰水局、亥卯未木局、寅午戌火局、巳酉丑金局
+ */
+const TRIAD_BRANCH_ITEMS: readonly TriadBranchItem[] = [
+  // 水局：申子辰
+  { dz: '申', triadName: '水局', triadElem: '水', isGroupEnd: false },
+  { dz: '子', triadName: '水局', triadElem: '水', isGroupEnd: false },
+  { dz: '辰', triadName: '水局', triadElem: '水', isGroupEnd: true },
+  // 木局：亥卯未
+  { dz: '亥', triadName: '木局', triadElem: '木', isGroupEnd: false },
+  { dz: '卯', triadName: '木局', triadElem: '木', isGroupEnd: false },
+  { dz: '未', triadName: '木局', triadElem: '木', isGroupEnd: true },
+  // 火局：寅午戌
+  { dz: '寅', triadName: '火局', triadElem: '火', isGroupEnd: false },
+  { dz: '午', triadName: '火局', triadElem: '火', isGroupEnd: false },
+  { dz: '戌', triadName: '火局', triadElem: '火', isGroupEnd: true },
+  // 金局：巳酉丑
+  { dz: '巳', triadName: '金局', triadElem: '金', isGroupEnd: false },
+  { dz: '酉', triadName: '金局', triadElem: '金', isGroupEnd: false },
+  { dz: '丑', triadName: '金局', triadElem: '金', isGroupEnd: false },
+] as const;
+
 /** 分数变化飘字：金色 +X.X / 红色 -X.X */
 export function TopPanel() {
   const season = useGameStore((s) => s.season);
@@ -39,6 +69,16 @@ export function TopPanel() {
   const openCultivationProfile = useGameStore((s) => s.openCultivationProfile);
   const openPauseModal = useGameStore((s) => s.openPauseModal);
   const gameState = useGameStore((s) => s.gameState);
+  const hand = useGameStore((s) => s.hand);
+  const leyline = useGameStore((s) => s.leyline);
+
+  // 丹田与地脉持有的地支集合（用于触发点亮）
+  const dantianBranches = new Set(
+    hand.filter((s): s is NonNullable<typeof s> => Boolean(s?.card)).map((s) => s.card.diZhi),
+  );
+  const leylineBranches = new Set(
+    leyline.filter((s): s is NonNullable<typeof s> => Boolean(s?.card)).map((s) => s.card.diZhi),
+  );
 
   const [floaters, setFloaters] = useState<Floater[]>([]);
   const lastEventId = useRef(0);
@@ -113,7 +153,7 @@ export function TopPanel() {
             </div>
             {scoreDelta && (
               <div className={`mt-0.5 whitespace-nowrap text-[9px] font-bold leading-none tabular-nums absolute right-1 top-full ${scoreDelta.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
-                {scoreDelta.delta >= 0 ? '+' : ''}{scoreDelta.delta.toFixed(1)}
+                本回合 {scoreDelta.delta >= 0 ? '+' : ''}{scoreDelta.delta.toFixed(1)} 修为
               </div>
             )}
             {/* 分数飘字 */}
@@ -134,9 +174,11 @@ export function TopPanel() {
 
       {/* 行 2：季内回合与天劫道基大考进度条（独占一行，绝不重叠折行） */}
       <div className="flex items-center justify-between gap-2 px-3 py-0.5 border-t border-wood-light/30 text-[11px]">
-        <span className="font-serif text-ink whitespace-nowrap">
-          季内第 <strong className="font-mono font-bold text-ink">{roundInSeason}</strong> 回合
-        </span>
+        <div className="flex items-center gap-1.5 font-serif text-ink whitespace-nowrap">
+          <span>第 {currentRound} 回合 / {totalRounds}</span>
+          <span className="text-wood-mid">·</span>
+          <span>季内第 {roundInSeason} 回合</span>
+        </div>
         <div className="flex items-center gap-1.5 flex-1 max-w-[200px] justify-end" title={`天劫门槛目标: ${score.toFixed(0)} / ${quota}`}>
           <span className="text-[10px] text-wood-dark font-serif font-medium whitespace-nowrap">天劫道基:</span>
           <div className="h-1.5 flex-1 rounded-full bg-wood-light/60 overflow-hidden min-w-[50px]">
@@ -151,28 +193,72 @@ export function TopPanel() {
         </div>
       </div>
 
-      {/* V6 地支偏移条 */}
+      {/* V6/V11 地支三合局偏移罗盘 */}
       {branchRollDeltas && (
-        <div
-          className="grid grid-cols-12 gap-0.5 px-3 pb-0.5 pt-0.5 text-center border-t border-wood-light/40"
-          aria-label="本季地支偏移"
-          data-testid="branch-roll-bar"
-        >
-          {BRANCH_ROLL_DI_ZHI.map((dz) => {
-            const v = branchRollDeltas[dz] ?? 0;
-            return (
-              <div key={dz}>
-                <div className="text-[9px] leading-none text-ink-light/80 font-serif">{dz}</div>
+        <div className="flex flex-col border-t border-wood-light/40 bg-[#f9f5ec]">
+          {/* 四大三合局分组抬头：申子辰水、亥卯未木、寅午戌火、巳酉丑金 */}
+          <div className="grid grid-cols-4 px-3 pt-0.5 text-[9px] font-serif text-center leading-none">
+            <span className="text-sky-800 font-bold">申子辰 · 水局</span>
+            <span className="text-emerald-800 font-bold">亥卯未 · 木局</span>
+            <span className="text-red-800 font-bold">寅午戌 · 火局</span>
+            <span className="text-amber-800 font-bold">巳酉丑 · 金局</span>
+          </div>
+
+          <div
+            className="grid grid-cols-12 gap-0.5 px-3 pb-0.5 pt-0.5 text-center"
+            aria-label="本季地支偏移与三合命盘"
+            data-testid="branch-roll-bar"
+          >
+            {TRIAD_BRANCH_ITEMS.map((item) => {
+              const v = branchRollDeltas[item.dz] ?? 0;
+              const isDantian = dantianBranches.has(item.dz);
+              const isLeyline = !isDantian && leylineBranches.has(item.dz);
+
+              return (
                 <div
-                  className={`text-[9px] font-bold leading-tight tabular-nums ${
-                    v > 0 ? 'text-red-600' : v < 0 ? 'text-sky-600' : 'text-gray-400'
-                  }`}
+                  key={item.dz}
+                  className={`relative flex flex-col items-center justify-center py-0.5 rounded transition-all duration-150 ${
+                    isDantian
+                      ? 'bg-amber-200/95 border border-amber-500 text-amber-950 font-bold shadow-2xs scale-[1.04] z-1'
+                      : isLeyline
+                      ? 'bg-wood-light/25 border border-wood-mid/50 text-wood-dark shadow-2xs'
+                      : 'bg-white/40 border border-transparent'
+                  } ${item.isGroupEnd ? 'border-r-wood-light/60 mr-0.5 pr-0.5' : ''}`}
+                  title={
+                    isDantian
+                      ? `【${item.dz}】活跃丹田已温养 · 属${item.triadName}`
+                      : isLeyline
+                      ? `【${item.dz}】潜伏地脉暗存 · 属${item.triadName}`
+                      : `【${item.dz}】属${item.triadName} · 季内偏移 ${v > 0 ? `+${v}` : v}`
+                  }
                 >
-                  {v > 0 ? `+${v}` : v}
+                  <div className="flex items-center gap-0.5 leading-none">
+                    <span className={`text-[10px] font-serif ${isDantian ? 'font-black text-amber-950' : isLeyline ? 'font-bold text-wood-dark' : 'text-ink-light/80'}`}>
+                      {item.dz}
+                    </span>
+                    {isDantian && (
+                      <span className="text-[7px] text-amber-600 leading-none">✦</span>
+                    )}
+                  </div>
+                  <div
+                    className={`text-[9px] leading-tight tabular-nums font-mono ${
+                      isDantian
+                        ? 'font-black text-amber-950'
+                        : isLeyline
+                        ? 'font-bold text-wood-dark'
+                        : v > 0
+                        ? 'font-bold text-red-600'
+                        : v < 0
+                        ? 'font-bold text-sky-600'
+                        : 'text-gray-400'
+                    }`}
+                  >
+                    {v > 0 ? `+${v}` : v}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 

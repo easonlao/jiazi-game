@@ -14,7 +14,7 @@ test.describe('V11 Macro Roguelike E2E & Mobile 390px Viewport', () => {
     await startBtn.click();
 
     // 验证丹田明牌区域与地脉暗牌区域均存在
-    await expect(page.getByText('活跃丹田', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /丹田/ })).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('潜伏地脉', { exact: true })).toBeVisible({ timeout: 10000 });
 
     // 验证视口无横向滚动条溢出（scrollWidth <= clientWidth）

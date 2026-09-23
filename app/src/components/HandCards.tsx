@@ -116,22 +116,19 @@ export function HandCards() {
 
       {/* 活跃丹田横带 */}
       <div className="flex flex-col gap-0.5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold font-serif text-ink flex items-center gap-1">
-            <span>活跃丹田</span>
-            <span className="text-[11px] font-mono font-normal text-ink-light">
-              {hand.filter((s) => s).length}/3
-            </span>
-            <span className="text-[9px] text-wood-dark bg-gold/15 border border-gold/30 px-1.5 py-0.2 rounded font-serif">
+        <h3 className="flex items-center justify-between text-xs font-bold font-serif text-ink">
+          <span className="flex items-center gap-1">
+            <span>丹田 {hand.filter((s) => s).length}/3</span>
+            <span className="text-[9px] text-wood-dark bg-gold/15 border border-gold/30 px-1.5 py-0.2 rounded font-serif font-normal">
               明牌 · 每轮炼化
             </span>
-          </h3>
+          </span>
 
           {selectedHandCard >= 0 && hand[selectedHandCard] && (
             <button
               onClick={() => moveToLeyline(selectedHandCard)}
               disabled={gameState !== 'player_action' || isLeylineSoftCapped || qi < 5}
-              className={`text-[10px] px-2 py-0.5 rounded font-serif font-bold transition-all shadow-2xs ${
+              className={`text-[10px] px-2 py-0.5 rounded font-serif font-bold transition-all shadow-2xs font-normal ${
                 gameState === 'player_action' && !isLeylineSoftCapped && qi >= 5
                   ? 'bg-wood-dark text-parchment hover:bg-wood-mid active:scale-95 cursor-pointer'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -141,7 +138,7 @@ export function HandCards() {
               下沉地脉 (-5神识)
             </button>
           )}
-        </div>
+        </h3>
 
         {!hasDantianCards ? (
           <div
@@ -314,7 +311,7 @@ function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shatte
         shattered ? 'mc-shatter-slot' : 'slot-breathe'
       }`}
     >
-      <span className="text-xs text-wood-light font-serif">{shattered ? '崩坏' : '丹田空位'}</span>
+      <span className="text-xs text-wood-light font-serif">{shattered ? '崩坏' : '空位'}</span>
     </div>
   );
 }
@@ -322,7 +319,7 @@ function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shatte
 function EmptyLeylineSlot({ index }: { index: number }) {
   return (
     <div
-      className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-wood-light/70 bg-white/40 h-16 text-center select-none"
+      className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-wood-light/70 bg-white/40 h-14 text-center select-none"
     >
       <span className="text-xs text-wood-mid font-serif">地脉空位</span>
       <span className="text-[9px] text-wood-light font-serif">潜脉暗存 · 避灾</span>
@@ -337,10 +334,6 @@ function LeylineCardView({
   season,
   turnManager,
   onSelect,
-  onOpenHistory,
-  onMoveToDantian,
-  onSell,
-  canMoveToDantian,
 }: {
   slot: HandSlot;
   index: number;
@@ -348,14 +341,13 @@ function LeylineCardView({
   season: string;
   turnManager: any;
   onSelect: () => void;
-  onOpenHistory: () => void;
-  onMoveToDantian: () => void;
-  onSell: () => void;
-  canMoveToDantian: boolean;
+  onOpenHistory?: () => void;
+  onMoveToDantian?: () => void;
+  onSell?: () => void;
+  canMoveToDantian?: boolean;
 }) {
   const curScore = turnManager ? turnManager.getCardScore(slot.card, season) : slot.card.getSeasonScore(season);
   const buyScore = slot.buyScore;
-  const delta = curScore - buyScore;
 
   return (
     <div data-leyline-card-slot={index} className="rounded-lg">
@@ -369,20 +361,12 @@ function LeylineCardView({
         badges={
           <span
             className="text-[9px] px-1 py-0.2 rounded font-serif bg-wood-mid/20 text-wood-dark border border-wood-mid/40"
-            title="潜伏地脉暗牌：不消耗神识维持费，避除古宗巡检"
+            title="潜伏地脉暗牌：不参与运转炼化，避除古宗巡检"
           >
             地脉
           </span>
         }
-      >
-        {/* 底部单行：仅展示释灵浮动真元与修为，无无谓的运转耗费显示 */}
-        <div className="flex items-center justify-between gap-1 px-2 py-0.5 text-[11px] max-md:text-[10px]">
-          <span className="text-[9px] text-ink-light font-serif shrink-0">浮动真元</span>
-          <span className={`font-bold font-mono tabular-nums whitespace-nowrap ${delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
-            {delta >= 0 ? '+' : ''}{delta.toFixed(1)} <span className="font-serif font-normal text-[9px] text-wood-dark">({delta >= 0 ? '+' : ''}{Math.round(delta * 6)}修为)</span>
-          </span>
-        </div>
-      </CardVisual>
+      />
     </div>
   );
 }
