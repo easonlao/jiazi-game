@@ -223,7 +223,7 @@ export function HandCards() {
               {leyline.filter((s) => s).length}/{maxLeyline}
             </span>
             <span className="text-[9px] text-wood-dark bg-wood-light/25 border border-wood-light/60 px-1.5 py-0.2 rounded font-serif">
-              暗牌 · 0维持费 · 辟巡视
+              潜伏暗牌 · 辟巡视
             </span>
             {leyline.filter((s) => s).length > maxLeyline ? (
               <span
@@ -252,9 +252,9 @@ export function HandCards() {
                     ? 'bg-[#2d5a3f] text-parchment hover:bg-[#386d4d] active:scale-95 cursor-pointer'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
-                title="升腾入活跃丹田（0 耗神，推进 1 轮周天推演）"
+                title="升腾入活跃丹田（推进 1 轮周天推演）"
               >
-                升入丹田 (0神识)
+                升入丹田
               </button>
               <button
                 onClick={() => sellLeyline(selectedLeylineCard)}
@@ -375,18 +375,12 @@ function LeylineCardView({
           </span>
         }
       >
-        {/* 底部两行：浮动真元与暗藏提示 */}
-        <div className="divide-y divide-wood-light/35 text-[11px] max-md:text-[10px]">
-          <div className="flex items-center justify-between gap-1 px-2 py-0.5 max-md:py-0">
-            <span className="text-[9px] text-ink-light shrink-0">浮动真元</span>
-            <span className={`font-bold font-mono tabular-nums whitespace-nowrap ${delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
-              {delta >= 0 ? '+' : ''}{delta.toFixed(1)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-1 px-2 py-0.5 max-md:py-0">
-            <span className="text-[9px] text-wood-mid font-serif">潜脉暗藏</span>
-            <span className="text-[9px] text-wood-light font-serif">避灾·0维持</span>
-          </div>
+        {/* 底部单行：仅展示释灵浮动真元与修为，无无谓的运转耗费显示 */}
+        <div className="flex items-center justify-between gap-1 px-2 py-0.5 text-[11px] max-md:text-[10px]">
+          <span className="text-[9px] text-ink-light font-serif shrink-0">浮动真元</span>
+          <span className={`font-bold font-mono tabular-nums whitespace-nowrap ${delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
+            {delta >= 0 ? '+' : ''}{delta.toFixed(1)} <span className="font-serif font-normal text-[9px] text-wood-dark">({delta >= 0 ? '+' : ''}{Math.round(delta * 6)}修为)</span>
+          </span>
         </div>
       </CardVisual>
     </div>

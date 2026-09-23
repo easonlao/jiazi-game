@@ -94,7 +94,7 @@ export function ActionBar() {
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }
           `}
-          title="潜脉纳灵：直接潜入地脉（消耗 基础+5 点封印神识，0维持费且避巡视）"
+          title="潜脉纳灵：直接潜入地脉（消耗 基础+5 点封印神识，暗牌潜伏避巡视）"
         >
           潜脉
           {selectedPublicCard >= 0 && affordBuyLeyline && (
