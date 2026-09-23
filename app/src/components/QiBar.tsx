@@ -144,74 +144,81 @@ export function QiBar() {
     'bg-qi-full';
 
   return (
-    <div className="px-3 py-1 bg-[#faf6ee] border-b border-wood-light flex items-center justify-between gap-2">
+    <div className="px-3 py-1 bg-[#faf6ee] border-b border-wood-light flex flex-col gap-1">
       {/* 当前神识值与飘字 */}
-      <div className="flex items-center gap-1.5 relative min-w-0">
-        <span className="font-bold font-serif text-ink text-xs whitespace-nowrap">神识</span>
-        <span
-          className={`px-1.5 py-0.5 rounded text-sm font-bold font-mono tabular-nums leading-none ${
-            isBroke ? 'bg-qi-critical text-white animate-pulse' : 'bg-ink text-parchment'
-          }`}
-        >
-          {qi.toFixed(0)}
-        </span>
-        <span className="text-[11px] text-ink-light whitespace-nowrap">/ {maxQi}</span>
-
-        {isBroke && (
-          <span className="text-[10px] font-bold text-qi-critical bg-qi-critical/10 px-1 py-0.5 rounded animate-pulse whitespace-nowrap">
-            💥 神识耗尽
-          </span>
-        )}
-
-        {/* 神识飘字 */}
-        {floaters.map((f, idx) => (
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 relative min-w-0">
+          <span className="font-bold font-serif text-ink text-xs sm:text-sm whitespace-nowrap">神识</span>
           <span
-            key={f.id}
-            className={`float-up absolute left-0 top-full mt-0.5 text-xs font-bold pointer-events-none whitespace-nowrap ${
-              f.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'
+            className={`px-2.5 py-0.5 rounded-lg text-lg sm:text-xl font-bold font-serif tabular-nums leading-none ${
+              isBroke ? 'bg-qi-critical text-white animate-pulse' : 'bg-ink text-parchment'
             }`}
-            style={{ left: `${idx * 24}px` }}
           >
-            {f.delta >= 0 ? '+' : ''}{f.delta.toFixed(0)}神识
+            {qi.toFixed(0)}
           </span>
-        ))}
-        {settlementAnimation && (
-          <span
-            key={`${settlementAnimation.id}-${settlementAnimation.phase}`}
-            className={`qi-settlement-fx qi-settlement-${settlementAnimation.phase} text-[10px]`}
-            data-testid="settlement-qi-animation"
-            aria-label={
-              settlementAnimation.phase === 'buy-cost'
-                ? `纳灵耗神 ${buyEvent?.buyCost?.toFixed(0) ?? '0'}`
-                : settlementAnimation.phase === 'cost'
-                ? `炼化耗神 ${settlementAnimation.holdQiCost.toFixed(0)}`
-                : settlementAnimation.phase === 'backlash'
-                  ? '反噬'
-                  : `回神 ${settlementAnimation.recoveryQi.toFixed(0)}`
-            }
-          >
-            {settlementAnimation.phase === 'buy-cost' && buyEvent && buyEvent.round === currentRound && (
-              <>纳灵 −{buyEvent.buyCost.toFixed(0)} 神识</>
-            )}
-            {settlementAnimation.phase === 'cost' && settlementAnimation.holdQiCost > 0 && (
-              <>−{settlementAnimation.holdQiCost.toFixed(0)}</>
-            )}
-            {settlementAnimation.phase === 'backlash' && <>⚠ 反噬</>}
-            {settlementAnimation.phase === 'recovery' && (
-              <>+{settlementAnimation.recoveryQi.toFixed(0)}</>
-            )}
+          <span className="text-xs text-ink-light whitespace-nowrap">/ {maxQi}</span>
+
+          {isBroke && (
+            <span className="text-[10px] font-bold text-qi-critical bg-qi-critical/10 px-1.5 py-0.5 rounded animate-pulse whitespace-nowrap">
+              💥 神识耗尽
+            </span>
+          )}
+
+          {/* 神识飘字 */}
+          {floaters.map((f, idx) => (
+            <span
+              key={f.id}
+              className={`float-up absolute left-0 top-full mt-0.5 text-xs font-bold pointer-events-none whitespace-nowrap ${
+                f.delta >= 0 ? 'text-qi-full' : 'text-qi-critical'
+              }`}
+              style={{ left: `${idx * 24}px` }}
+            >
+              {f.delta >= 0 ? '+' : ''}{f.delta.toFixed(0)}神识
+            </span>
+          ))}
+          {settlementAnimation && (
+            <span
+              key={`${settlementAnimation.id}-${settlementAnimation.phase}`}
+              className={`qi-settlement-fx qi-settlement-${settlementAnimation.phase} text-[10px]`}
+              data-testid="settlement-qi-animation"
+              aria-label={
+                settlementAnimation.phase === 'buy-cost'
+                  ? `纳灵耗神 ${buyEvent?.buyCost?.toFixed(0) ?? '0'}`
+                  : settlementAnimation.phase === 'cost'
+                  ? `炼化耗神 ${settlementAnimation.holdQiCost.toFixed(0)}`
+                  : settlementAnimation.phase === 'backlash'
+                    ? '反噬'
+                    : `回神 ${settlementAnimation.recoveryQi.toFixed(0)}`
+              }
+            >
+              {settlementAnimation.phase === 'buy-cost' && buyEvent && buyEvent.round === currentRound && (
+                <>纳灵 −{buyEvent.buyCost.toFixed(0)} 神识</>
+              )}
+              {settlementAnimation.phase === 'cost' && settlementAnimation.holdQiCost > 0 && (
+                <>−{settlementAnimation.holdQiCost.toFixed(0)}</>
+              )}
+              {settlementAnimation.phase === 'backlash' && <>⚠ 反噬</>}
+              {settlementAnimation.phase === 'recovery' && (
+                <>+{settlementAnimation.recoveryQi.toFixed(0)}</>
+              )}
+            </span>
+          )}
+        </div>
+
+        {/* 最后一回合提示或极简状态 */}
+        {isFinalRound && (
+          <span className="text-[10px] text-ink-light font-serif">
+            终轮结算
           </span>
         )}
       </div>
 
-      {/* 右侧：神识进度条 */}
-      <div className="flex items-center gap-1.5 flex-1 max-w-[150px] justify-end">
-        <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-            style={{ width: `${Math.max(ratio * 100, ratio > 0 ? 3 : 0)}%` }}
-          />
-        </div>
+      {/* 神识全宽进度条 */}
+      <div className="w-full h-1.5 sm:h-2 bg-wood-light/40 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+          style={{ width: `${Math.max(ratio * 100, ratio > 0 ? 3 : 0)}%` }}
+        />
       </div>
     </div>
   );

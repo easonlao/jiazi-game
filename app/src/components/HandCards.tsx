@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store';
 import { HandCard } from './HandCard';
+import { CardVisual } from './CardVisual';
 import { PublicCardHistoryModal } from './PublicCardHistoryModal';
 import { SpecializationCompass } from './SpecializationCompass';
 import { TriadCelebrationModal } from './TriadCelebrationModal';
@@ -77,14 +78,14 @@ export function HandCards() {
 
       {/* 天象契合 · 引动三合横幅 */}
       {availableTriads.length > 0 && (
-        <div className="flex flex-col gap-1 rounded-lg border border-amber-400/70 bg-gradient-to-r from-amber-500/15 via-purple-500/15 to-indigo-500/15 p-1.5 shadow-xs">
+        <div className="flex flex-col gap-1 rounded-lg border border-gold/60 bg-gold/10 p-1.5 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+            <span className="text-xs font-bold font-serif text-amber-900 flex items-center gap-1">
               <span>⚡</span>
               <span>天象契合 · 可引动三合大阵</span>
             </span>
-            <span className="text-[10px] text-amber-800 bg-amber-100/90 px-1 py-0.5 rounded font-mono">
-              神韵消解 · 槽位立刻腾空
+            <span className="text-[10px] text-wood-dark font-serif">
+              神韵圆融 · 槽位立刻腾空
             </span>
           </div>
 
@@ -94,9 +95,9 @@ export function HandCards() {
                 key={triad.element}
                 onClick={() => claimTriad(triad.element)}
                 disabled={gameState !== 'player_action'}
-                className={`w-full py-1 px-2.5 rounded shadow-xs flex items-center justify-between transition-all ${
+                className={`w-full py-1 px-2.5 rounded shadow-2xs flex items-center justify-between transition-all ${
                   gameState === 'player_action'
-                    ? 'bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 hover:from-amber-500 hover:to-amber-700 text-white font-bold text-xs active:scale-[0.99] cursor-pointer ring-1 ring-amber-400/40'
+                    ? 'bg-[#8b261e] hover:bg-[#a12e25] text-parchment font-serif font-bold text-xs active:scale-[0.99] cursor-pointer border border-gold/40'
                     : 'bg-stone-300 text-stone-500 cursor-not-allowed text-xs'
                 }`}
               >
@@ -104,7 +105,7 @@ export function HandCards() {
                   <span className="text-xs">🌟</span>
                   <span>引动【{triad.name}】({triad.triad.branches.join('·')})</span>
                 </span>
-                <span className="text-[9px] font-mono bg-black/20 px-1.5 py-0.5 rounded">
+                <span className="text-[9px] font-mono font-bold bg-black/25 px-1.5 py-0.5 rounded">
                   +{triad.bonus}修为 · 回满神识 · {triad.element}+25%
                 </span>
               </button>
@@ -121,7 +122,7 @@ export function HandCards() {
             <span className="text-[11px] font-mono font-normal text-ink-light">
               {hand.filter((s) => s).length}/3
             </span>
-            <span className="text-[9px] text-amber-800 bg-amber-100/90 px-1 py-0.2 rounded font-sans">
+            <span className="text-[9px] text-wood-dark bg-gold/15 border border-gold/30 px-1.5 py-0.2 rounded font-serif">
               明牌 · 每轮炼化
             </span>
           </h3>
@@ -130,12 +131,12 @@ export function HandCards() {
             <button
               onClick={() => moveToLeyline(selectedHandCard)}
               disabled={gameState !== 'player_action' || isLeylineSoftCapped || qi < 5}
-              className={`text-[10px] px-1.5 py-0.5 rounded font-bold transition-all shadow-sm ${
+              className={`text-[10px] px-2 py-0.5 rounded font-serif font-bold transition-all shadow-2xs ${
                 gameState === 'player_action' && !isLeylineSoftCapped && qi >= 5
-                  ? 'bg-sky-600 text-white hover:bg-sky-700 active:scale-95'
+                  ? 'bg-wood-dark text-parchment hover:bg-wood-mid active:scale-95 cursor-pointer'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
-              title="下沉至潜伏地脉避风（消耗 5 点神识，推进 1 轮周天推演）"
+              title="下沉至潜伏地脉避灾（消耗 5 点神识，推进 1 轮周天推演）"
             >
               下沉地脉 (-5神识)
             </button>
@@ -221,19 +222,19 @@ export function HandCards() {
             <span className="text-[11px] font-mono font-normal text-ink-light">
               {leyline.filter((s) => s).length}/{maxLeyline}
             </span>
-            <span className="text-[9px] text-sky-800 bg-sky-100/90 px-1 py-0.2 rounded font-sans">
-              暗牌 · 0维持费 · 避巡视
+            <span className="text-[9px] text-wood-dark bg-wood-light/25 border border-wood-light/60 px-1.5 py-0.2 rounded font-serif">
+              暗牌 · 0维持费 · 辟巡视
             </span>
             {leyline.filter((s) => s).length > maxLeyline ? (
               <span
-                className="text-[9px] text-rose-700 bg-rose-100 px-1 py-0.2 rounded font-mono font-bold animate-pulse"
+                className="text-[9px] text-rose-800 bg-rose-100/90 border border-rose-300 px-1 py-0.2 rounded font-mono font-bold animate-pulse"
                 data-testid="leyline-overflow-badge"
               >
                 ⚠️超限 ({leyline.filter((s) => s).length}/{maxLeyline})
               </span>
             ) : isLeylineSoftCapped ? (
               <span
-                className="text-[9px] text-amber-700 bg-amber-100 px-1 py-0.2 rounded font-mono font-bold"
+                className="text-[9px] text-amber-800 bg-amber-100/90 border border-amber-300 px-1 py-0.2 rounded font-mono font-bold"
                 data-testid="leyline-full-badge"
               >
                 ⚠️满仓 ({maxLeyline}/{maxLeyline})
@@ -246,9 +247,9 @@ export function HandCards() {
               <button
                 onClick={() => moveToDantian(selectedLeylineCard)}
                 disabled={gameState !== 'player_action' || hand.filter(s => s !== null).length >= 3}
-                className={`text-[11px] px-2 py-0.5 rounded font-bold transition-all shadow-sm ${
+                className={`text-[10px] px-2 py-0.5 rounded font-serif font-bold transition-all shadow-2xs ${
                   gameState === 'player_action' && hand.filter(s => s !== null).length < 3
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
+                    ? 'bg-[#2d5a3f] text-parchment hover:bg-[#386d4d] active:scale-95 cursor-pointer'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
                 title="升腾入活跃丹田（0 耗神，推进 1 轮周天推演）"
@@ -258,7 +259,7 @@ export function HandCards() {
               <button
                 onClick={() => sellLeyline(selectedLeylineCard)}
                 disabled={gameState !== 'player_action'}
-                className="text-[11px] px-2 py-0.5 rounded font-bold bg-qi-critical text-white hover:bg-red-600 active:scale-95 transition-all shadow-sm"
+                className="text-[10px] px-2 py-0.5 rounded font-serif font-bold bg-[#8b261e] text-parchment hover:bg-[#a12e25] active:scale-95 transition-all shadow-2xs cursor-pointer"
                 title="在地脉直接释灵变现（按正统波段价差结算）"
               >
                 释灵变现
@@ -313,7 +314,7 @@ function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shatte
         shattered ? 'mc-shatter-slot' : 'slot-breathe'
       }`}
     >
-      <span className="text-xs text-wood-light">{shattered ? '崩坏' : '丹田空位'}</span>
+      <span className="text-xs text-wood-light font-serif">{shattered ? '崩坏' : '丹田空位'}</span>
     </div>
   );
 }
@@ -321,10 +322,10 @@ function EmptySlot({ slotIndex, shattered = false }: { slotIndex: number; shatte
 function EmptyLeylineSlot({ index }: { index: number }) {
   return (
     <div
-      className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-sky-800/30 bg-sky-950/5 h-14 text-center"
+      className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-wood-light/70 bg-white/40 h-16 text-center select-none"
     >
-      <span className="text-xs text-sky-800 font-medium">地脉 {index + 1} (空)</span>
-      <span className="text-[9px] text-slate-500">潜伏冷库 · 避风避灾</span>
+      <span className="text-xs text-wood-mid font-serif">地脉空位</span>
+      <span className="text-[9px] text-wood-light font-serif">潜脉暗存 · 避灾</span>
     </div>
   );
 }
@@ -357,36 +358,37 @@ function LeylineCardView({
   const delta = curScore - buyScore;
 
   return (
-    <div
-      onClick={onSelect}
-      className={`cursor-pointer rounded-lg border p-1.5 flex flex-col justify-between transition-all duration-150 ${
-        selected
-          ? 'border-sky-500 bg-sky-950/30 shadow-md ring-2 ring-sky-400'
-          : 'border-slate-300 bg-slate-50 hover:border-slate-400'
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <span className="text-xs font-bold text-slate-900">{slot.card.name}</span>
-          <span className="text-[9px] px-1 py-0.2 rounded bg-slate-200 text-slate-700 font-mono">
-            {slot.card.mainElement}
+    <div data-leyline-card-slot={index} className="rounded-lg">
+      <CardVisual
+        card={slot.card}
+        score={curScore}
+        scoreMode="position"
+        buyScore={buyScore}
+        selected={selected}
+        onClick={onSelect}
+        badges={
+          <span
+            className="text-[9px] px-1 py-0.2 rounded font-serif bg-wood-mid/20 text-wood-dark border border-wood-mid/40"
+            title="潜伏地脉暗牌：不消耗神识维持费，避除古宗巡检"
+          >
+            地脉
           </span>
+        }
+      >
+        {/* 底部两行：浮动真元与暗藏提示 */}
+        <div className="divide-y divide-wood-light/35 text-[11px] max-md:text-[10px]">
+          <div className="flex items-center justify-between gap-1 px-2 py-0.5 max-md:py-0">
+            <span className="text-[9px] text-ink-light shrink-0">浮动真元</span>
+            <span className={`font-bold font-mono tabular-nums whitespace-nowrap ${delta >= 0 ? 'text-qi-full' : 'text-qi-critical'}`}>
+              {delta >= 0 ? '+' : ''}{delta.toFixed(1)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-1 px-2 py-0.5 max-md:py-0">
+            <span className="text-[9px] text-wood-mid font-serif">潜脉暗藏</span>
+            <span className="text-[9px] text-wood-light font-serif">避灾·0维持</span>
+          </div>
         </div>
-        <span className={`text-[10px] font-mono font-bold ${curScore >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-          {curScore >= 0 ? '+' : ''}{curScore}分
-        </span>
-      </div>
-
-      <div className="flex items-center justify-between text-[10px] my-0.5 text-slate-600">
-        <span>买入: {buyScore}</span>
-        <span className={`font-mono font-bold ${delta >= 0 ? 'text-amber-700' : 'text-rose-700'}`}>
-          Δ{delta >= 0 ? '+' : ''}{delta} (暗存)
-        </span>
-      </div>
-
-      <div className="text-[9px] text-sky-800 leading-none">
-        暗牌 · 0维持费 · 避巡视
-      </div>
+      </CardVisual>
     </div>
   );
 }

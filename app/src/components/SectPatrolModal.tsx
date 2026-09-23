@@ -43,34 +43,34 @@ export function SectPatrolModal() {
         {/* 顶部标题栏 */}
         <div className="text-center">
           <div
-            className={`mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border text-2xl shadow-inner ${
+            className={`mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border text-xl font-serif font-black shadow-inner select-none ${
               isNegativeYield
                 ? 'border-rose-400/50 bg-rose-500/20 text-rose-300'
                 : 'border-amber-400/50 bg-amber-500/20 text-amber-300'
             }`}
           >
-            {isNegativeYield ? '⚖️' : '⚔️'}
+            {isNegativeYield ? '敕' : '令'}
           </div>
           <h3
             className={`font-serif text-lg font-bold ${
               isNegativeYield ? 'text-rose-300' : 'text-amber-300'
             }`}
           >
-            【{sect.name}】大能降临 · {isNegativeYield ? '严惩劣气平仓' : '强权低价征辟'}
+            【{sect.name}】宗门巡检 · {isNegativeYield ? '清浊斥退劣气' : '法旨征辟灵宝'}
           </h3>
-          <p className="mt-1 text-xs text-stone-300/85 leading-relaxed px-2">
+          <p className="mt-1 text-xs text-stone-300/85 leading-relaxed px-2 font-serif">
             {isNegativeYield ? (
               <>
-                {sect.name}执法长老神念扫过丹田，怒斥你温养的【{card.name}】({sect.elemName})浊气过甚、反噬五行！法旨喝道：
+                {sect.name}执法长老神念扫过活跃丹田，见你温养的【{card.name}】({sect.elemName})浊气过甚，法旨宣道：
                 <span className="text-rose-400 font-bold block mt-0.5">
-                  “浊杂之气辱没道统，本座替你强行平仓抹除！扣你账面亏损与神念罚诫！”
+                  “浊杂劣气扰乱灵机，本座替你当场革除！扣除浮动亏损并罚诫神识！”
                 </span>
               </>
             ) : (
               <>
-                {sect.name}护法长老神念悍然贯穿你的【活跃丹田】！窥见你正温养天地灵珍【{card.name}】({sect.elemName})，降下天威法旨：
+                {sect.name}护法长老神念贯穿【活跃丹田】，窥见你正温养天地灵珍【{card.name}】({sect.elemName})，降下法旨：
                 <span className="text-amber-300 font-bold block mt-0.5">
-                  “区区散修，奉交此物，赐你微末仙缘！若敢藏私，必教你道心震荡、神念成灰！”
+                  “区区散修，奉交此宝，赐你微末仙缘！若敢抗命，必教你神念震荡、道行受挫！”
                 </span>
               </>
             )}

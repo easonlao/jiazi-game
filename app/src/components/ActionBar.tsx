@@ -88,9 +88,9 @@ export function ActionBar() {
           onClick={() => buyToLeyline(selectedPublicCard, useLeverage)}
           disabled={!canBuyLeyline || !affordBuyLeyline}
           className={`
-            py-2 max-md:py-1.5 rounded-lg text-sm font-bold transition-all duration-150
+            py-2 max-md:py-1.5 rounded-lg text-sm font-bold font-serif transition-all duration-150
             ${canBuyLeyline && affordBuyLeyline
-              ? 'bg-sky-600 text-white hover:bg-sky-500 hover:shadow-md hover:-translate-y-0.5 active:scale-95'
+              ? 'bg-[#2b4b5e] text-white hover:bg-[#385e75] hover:shadow-md hover:-translate-y-0.5 active:scale-95 cursor-pointer'
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }
           `}
@@ -98,7 +98,7 @@ export function ActionBar() {
         >
           潜脉
           {selectedPublicCard >= 0 && affordBuyLeyline && (
-            <span className="block text-[9px] font-normal leading-none opacity-90">
+            <span className="block text-[9px] font-mono font-normal leading-none opacity-90">
               {buyCost + 5}神
             </span>
           )}
