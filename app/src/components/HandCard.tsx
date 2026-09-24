@@ -34,6 +34,8 @@ interface HandCardProps {
   /** 当前回合每回合持有收益/耗神 */
   holdEarning: number;
   holdQiCost: number;
+  /** 五行专精倍率 (V11) */
+  elemMultiplier?: number;
   /** 浓度信息（V7 生效，count ≥2 时显示元素徽标；V6 及以下恒 0） */
   concentration?: { count: number; premium: number };
   /** 卖出预览（仅选中时传入，未选中传 null） */
@@ -61,6 +63,7 @@ export function HandCard({
   holdEarnings,
   holdEarning,
   holdQiCost,
+  elemMultiplier,
   concentration,
   sellPreview,
   shattered,
@@ -88,10 +91,15 @@ export function HandCard({
       <div className="divide-y divide-wood-light/35 text-xs max-md:text-[11px]">
         <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">
           <span className="text-[10px] text-ink-light shrink-0">炼化</span>
-          <span className="font-bold tabular-nums whitespace-nowrap">
+          <span className="font-bold tabular-nums whitespace-nowrap flex items-center gap-0.5">
             <span className={holdEarning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
               {holdEarning >= 0 ? '+' : ''}{holdEarning.toFixed(1)}修为
             </span>
+            {elemMultiplier && elemMultiplier > 1 && (
+              <span className="text-[9px] text-amber-800 font-serif font-bold bg-amber-100/80 px-1 py-0.2 rounded" title={`道基专精加成 +${Math.round((elemMultiplier - 1) * 100)}%`}>
+                +{Math.round((elemMultiplier - 1) * 100)}%
+              </span>
+            )}
           </span>
         </div>
         <div className="flex items-center justify-between gap-1 px-2 py-1 max-md:py-0.5">

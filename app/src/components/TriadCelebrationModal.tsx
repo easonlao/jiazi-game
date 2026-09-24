@@ -1,4 +1,13 @@
 import { useGameStore } from '../store';
+import { Element } from '@core/index';
+
+const ELEMENT_CN: Record<Element, string> = {
+  [Element.WOOD]: '木',
+  [Element.FIRE]: '火',
+  [Element.EARTH]: '土',
+  [Element.METAL]: '金',
+  [Element.WATER]: '水',
+};
 
 export function TriadCelebrationModal() {
   const lastTriadClaim = useGameStore((s) => s.lastTriadClaim);
@@ -11,8 +20,8 @@ export function TriadCelebrationModal() {
       <div className="relative w-full max-w-sm rounded-xl border-2 border-amber-400 bg-gradient-to-b from-stone-900 via-stone-900 to-amber-950 p-5 text-parchment shadow-2xl">
         {/* 顶部天象光环 */}
         <div className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border border-amber-400/50 bg-amber-500/20 text-2xl shadow-inner">
-            ⚡
+          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full border border-amber-400/50 bg-amber-500/20 shadow-inner">
+            <span className="font-serif font-black text-amber-300 text-xl">阵</span>
           </div>
           <h3 className="font-serif text-lg font-bold text-amber-300">
             天象共鸣 · 三合大成
@@ -62,7 +71,7 @@ export function TriadCelebrationModal() {
           <div className="flex items-center justify-between">
             <span className="text-stone-400">道基专精</span>
             <span className="font-bold text-amber-300">
-              【{lastTriadClaim.element}行】增益至 {(lastTriadClaim.newMultiplier * 100).toFixed(0)}%
+              【{ELEMENT_CN[lastTriadClaim.element] ?? lastTriadClaim.element}行】增益至 {(lastTriadClaim.newMultiplier * 100).toFixed(0)}%
             </span>
           </div>
         </div>
@@ -71,8 +80,8 @@ export function TriadCelebrationModal() {
         {lastTriadClaim.isGrandCycle && (
           <div className="mt-3 rounded-lg border border-amber-400 bg-gradient-to-r from-amber-600/30 to-purple-600/30 p-2.5 text-xs shadow-md animate-pulse">
             <div className="font-bold text-amber-200 flex items-center gap-1">
-              <span>🎆</span>
-              <span>四象融汇 · 混元大圆满！</span>
+              <span className="text-amber-300 font-serif font-black">【大圆满】</span>
+              <span>四象融汇 · 混元大成！</span>
             </div>
             <p className="mt-1 text-[11px] text-amber-100/90 leading-relaxed">
               水火金木四象悉数成局，天降混元祥瑞！狂揽额外 +{lastTriadClaim.grandBonus.toLocaleString()} 修为，【土行真元】承托万物永久激活 (+{Math.round((lastTriadClaim.earthMultiplier - 1.0) * 100)}%)！

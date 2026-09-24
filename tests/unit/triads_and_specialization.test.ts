@@ -344,4 +344,46 @@ describe('TriadManager & Elemental Specialization', () => {
       expect(freshTm.getScoreManager().getTotalTriadEarnings()).toBe(450);
     });
   });
+
+  describe('6. 结算预览与持仓推演中的五行专精透传与显示验证', () => {
+    it('金属性专精 +50% 时，previewHoldEarning 与 previewSettlement 透传乘数并正确计算加成', async () => {
+      const tm = new TurnManager();
+      await tm.initialize();
+      tm.startGame();
+
+      // 引动两次金局提升至 1.50
+      const cSi = tm.getCardById(6)!;
+      const cYou = tm.getCardById(10)!;
+      const cChou = tm.getCardById(2)!;
+
+      tm.getHandManager().buy(cSi, 10, false, 1.0, 1, 5);
+      tm.getHandManager().buy(cYou, 10, false, 1.0, 1, 5);
+      tm.getHandManager().buy(cChou, 10, false, 1.0, 1, 5);
+      tm.claimTriad(Element.METAL);
+
+      tm.getHandManager().buy(cSi, 10, false, 1.0, 1, 5);
+      tm.getHandManager().buy(cYou, 10, false, 1.0, 1, 5);
+      tm.getHandManager().buy(cChou, 10, false, 1.0, 1, 5);
+      tm.claimTriad(Element.METAL);
+
+      expect(tm.getElementMultiplier(Element.METAL)).toBe(1.50);
+
+      // 验证 previewHoldEarning 正确应用金属性 1.50 专精倍率
+      // score=9.0, leverage=2.5: 基础=9.0 * 1.2 * 2.5 = 27.0; 专精=27.0 * 1.5 = 40.5
+      const holdEarningWithElem = tm.previewHoldEarning(9.0, 2.5, Element.METAL);
+      expect(holdEarningWithElem).toBeCloseTo(40.5);
+
+      // 验证释灵预览 (previewSettlement)
+      // 放入金属性牌 (ID 7 庚午, mainElement: metal)
+      const cMetal = tm.getCardById(7)!;
+      expect(cMetal.mainElement).toBe(Element.METAL);
+      tm.getHandManager().buy(cMetal, -20.0, true, 2.5, 1, 5);
+
+      const preview = tm.previewSettlement({ type: 'sell', slotIndex: 0 });
+      expect(preview).not.toBeNull();
+      expect(preview?.saleBreakdown?.element).toBe(Element.METAL);
+      expect(preview?.saleBreakdown?.elementMultiplier).toBe(1.50);
+      expect(preview?.saleBreakdown?.scoreChange).toBeGreaterThan(0);
+    });
+  });
 });

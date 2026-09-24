@@ -56,8 +56,6 @@ export function HandCards() {
   const moveToDantian = useGameStore((s) => s.moveToDantian);
   const sellLeyline = useGameStore((s) => s.sellLeyline);
   const qi = useGameStore((s) => s.qi);
-  const availableTriads = useGameStore((s) => s.availableTriads);
-  const claimTriad = useGameStore((s) => s.claimTriad);
 
   useEffect(() => {
     if (gameState === 'init') {
@@ -76,43 +74,7 @@ export function HandCards() {
       {/* 五行道基专精罗盘 */}
       <SpecializationCompass />
 
-      {/* 天象契合 · 引动三合横幅 */}
-      {availableTriads.length > 0 && (
-        <div className="flex flex-col gap-1 rounded-lg border border-gold/60 bg-gold/10 p-1.5 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold font-serif text-amber-900 flex items-center gap-1">
-              <span>⚡</span>
-              <span>天象契合 · 可引动三合大阵</span>
-            </span>
-            <span className="text-[10px] text-wood-dark font-serif">
-              神韵圆融 · 槽位立刻腾空
-            </span>
-          </div>
 
-          <div className="flex flex-col gap-1">
-            {availableTriads.map((triad) => (
-              <button
-                key={triad.element}
-                onClick={() => claimTriad(triad.element)}
-                disabled={gameState !== 'player_action'}
-                className={`w-full py-1 px-2.5 rounded shadow-2xs flex items-center justify-between transition-all ${
-                  gameState === 'player_action'
-                    ? 'bg-[#8b261e] hover:bg-[#a12e25] text-parchment font-serif font-bold text-xs active:scale-[0.99] cursor-pointer border border-gold/40'
-                    : 'bg-stone-300 text-stone-500 cursor-not-allowed text-xs'
-                }`}
-              >
-                <span className="flex items-center gap-1">
-                  <span className="text-xs">🌟</span>
-                  <span>引动【{triad.name}】({triad.triad.branches.join('·')})</span>
-                </span>
-                <span className="text-[9px] font-mono font-bold bg-black/25 px-1.5 py-0.5 rounded">
-                  +{triad.bonus}修为 · 回满神识 · {triad.element}+25%
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* 活跃丹田横带 */}
       <div className="flex flex-col gap-0.5">
@@ -154,7 +116,8 @@ export function HandCards() {
               slot.useLeverage
                 ? (turnManager ? turnManager.getNextLeverageNoSeasonChange() : 1)
                 : 1;
-            const holdEarning = turnManager ? turnManager.previewHoldEarning(score, currentLeverage) : 0;
+            const elemMultiplier = turnManager ? turnManager.getElementMultiplier(slot.card.mainElement) : 1;
+            const holdEarning = turnManager ? turnManager.previewHoldEarning(score, currentLeverage, slot.card.mainElement) : 0;
             const concentration = turnManager ? turnManager.getConcentrationInfo(slot.card) : undefined;
             const holdQiCost = turnManager ? turnManager.previewHoldQiCost(
               score,
@@ -186,6 +149,7 @@ export function HandCards() {
                 holdEarnings={slot.holdEarnings}
                 holdEarning={holdEarning}
                 holdQiCost={holdQiCost}
+                elemMultiplier={elemMultiplier}
                 concentration={concentration}
                 sellPreview={sellPreview}
                 shattered={shatteredSlots.has(i)}

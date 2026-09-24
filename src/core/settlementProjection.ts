@@ -11,6 +11,8 @@ export interface ProjectedHolding {
   isNewBuy: boolean;
   /** 该牌在投影手牌中的浓度信息（仅 V7 生效且同元素 ≥2 张时存在），UI 展示浓度来源用。 */
   concentration?: { count: number; premium: number };
+  element?: Element;
+  elementMultiplier?: number;
 }
 
 /**
@@ -58,7 +60,8 @@ export function buildProjectedHoldings(
   return slots.map((slot) => {
     const score = tm.getCardScore(slot.card, tm.getCurrentSeason());
     const lev = slot.useLeverage ? nextLev : 1;
-    const earning = tm.previewHoldEarning(score, lev);
+    const elemMult = tm.getElementMultiplier(slot.card.mainElement);
+    const earning = tm.previewHoldEarning(score, lev, slot.card.mainElement);
     const count = countOf(slot.card);
     const premium = factor * Math.max(0, count - 1);
     const qiCost = tm.previewHoldQiCost(score, lev, slot.card.tianGanElement === Element.EARTH, count, factor);
@@ -69,6 +72,8 @@ export function buildProjectedHoldings(
       isLeverage: slot.useLeverage,
       isNewBuy: slot.isNewBuy,
       concentration: factor > 0 && count >= 2 ? { count, premium } : undefined,
+      element: slot.card.mainElement,
+      elementMultiplier: elemMult,
     };
   });
 }

@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore, seasonDisplay } from '../store';
-import { BRANCH_ROLL_DI_ZHI, ALL_SECTS, SEASON_ACTIVE_SECTS, SINGLE_YEAR_BOONS } from '@core/index';
+import { BRANCH_ROLL_DI_ZHI, ALL_SECTS, SEASON_ACTIVE_SECTS, SINGLE_YEAR_BOONS, Element } from '@core/index';
+
+const TRIAD_COLUMNS = [
+  { element: Element.WATER, label: '申子辰 · 水局', color: 'text-sky-800', activeBg: 'bg-sky-100 border-sky-500 text-sky-900' },
+  { element: Element.WOOD, label: '亥卯未 · 木局', color: 'text-emerald-800', activeBg: 'bg-emerald-100 border-emerald-500 text-emerald-900' },
+  { element: Element.FIRE, label: '寅午戌 · 火局', color: 'text-red-800', activeBg: 'bg-red-100 border-red-500 text-red-900' },
+  { element: Element.METAL, label: '巳酉丑 · 金局', color: 'text-amber-800', activeBg: 'bg-amber-100 border-amber-500 text-amber-900' },
+] as const;
 
 const roundAnimStyle = {
   animation: 'roundPop 0.4s ease-out',
@@ -71,6 +78,8 @@ export function TopPanel() {
   const gameState = useGameStore((s) => s.gameState);
   const hand = useGameStore((s) => s.hand);
   const leyline = useGameStore((s) => s.leyline);
+  const availableTriads = useGameStore((s) => s.availableTriads);
+  const claimTriad = useGameStore((s) => s.claimTriad);
 
   const turnManager = useGameStore((s) => s.turnManager);
   const isV11 = (turnManager?.getRulesVersion() ?? 11) >= 11;
@@ -210,11 +219,33 @@ export function TopPanel() {
       {branchRollDeltas && (
         <div className="flex flex-col border-t border-wood-light/40 bg-[#f9f5ec]">
           {/* 四大三合局分组抬头：申子辰水、亥卯未木、寅午戌火、巳酉丑金 */}
-          <div className="grid grid-cols-4 px-3 pt-0.5 text-[10px] font-serif text-center leading-none">
-            <span className="text-sky-800 font-bold">申子辰 · 水局</span>
-            <span className="text-emerald-800 font-bold">亥卯未 · 木局</span>
-            <span className="text-red-800 font-bold">寅午戌 · 火局</span>
-            <span className="text-amber-800 font-bold">巳酉丑 · 金局</span>
+          <div className="grid grid-cols-4 gap-1 px-3 pt-0.5 text-[10px] font-serif text-center leading-tight">
+            {TRIAD_COLUMNS.map((col) => {
+              const readyTriad = availableTriads.find((t) => t.element === col.element);
+              if (readyTriad) {
+                return (
+                  <button
+                    key={col.element}
+                    type="button"
+                    onClick={() => claimTriad(readyTriad.element)}
+                    disabled={gameState !== 'player_action'}
+                    className={`rounded border px-1 py-0.5 font-bold shadow-2xs transition-all ${
+                      gameState === 'player_action'
+                        ? `${col.activeBg} hover:brightness-95 active:scale-95 cursor-pointer ring-1 ring-amber-400/60 animate-pulse`
+                        : 'bg-stone-200 border-stone-300 text-stone-500 cursor-not-allowed'
+                    }`}
+                    title={`可引动【${readyTriad.name}】（+${readyTriad.bonus}修为 · 回满神识 · 专精+25%）`}
+                  >
+                    {col.label} · 可引动
+                  </button>
+                );
+              }
+              return (
+                <span key={col.element} className={`${col.color} font-bold py-0.5`}>
+                  {col.label}
+                </span>
+              );
+            })}
           </div>
 
           <div

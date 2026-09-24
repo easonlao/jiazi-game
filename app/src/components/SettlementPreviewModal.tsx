@@ -1,5 +1,13 @@
 import { useGameStore } from '../store';
-import { buildProjectedHoldings, TurnManager } from '@core/index';
+import { buildProjectedHoldings, TurnManager, Element } from '@core/index';
+
+const ELEMENT_CN: Record<Element, string> = {
+  [Element.WOOD]: '木',
+  [Element.FIRE]: '火',
+  [Element.EARTH]: '土',
+  [Element.METAL]: '金',
+  [Element.WATER]: '水',
+};
 
 function signed(value: number) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
@@ -102,7 +110,15 @@ export function SettlementPreviewModal() {
               <div className="mt-1 space-y-0.5 border-t border-green-600/15 pt-1">
                 {factHoldItems.map((item, i) => (
                   <div key={i} className="flex justify-between">
-                    <span className="truncate pr-2">{item.cardName}{item.leverage > 1 ? ` · ${item.leverage.toFixed(1)}x` : ''}</span>
+                    <span className="truncate pr-2">
+                      {item.cardName}
+                      {item.leverage > 1 ? ` · ${item.leverage.toFixed(1)}x` : ''}
+                      {item.elementMultiplier && item.elementMultiplier > 1 && (
+                        <span className="ml-1 text-[10px] text-amber-800 font-serif font-bold">
+                          · {item.element ? ELEMENT_CN[item.element] : ''}+{Math.round((item.elementMultiplier - 1) * 100)}%
+                        </span>
+                      )}
+                    </span>
                     <span className="tabular-nums whitespace-nowrap">
                       <span className={item.earning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>
                         {signed(item.earning)}修为
@@ -172,12 +188,22 @@ export function SettlementPreviewModal() {
                   <span className="mx-1 text-wood-light">→</span>
                   当前 {signed(preview.saleBreakdown.currentScore)}
                   {preview.saleBreakdown.leverage > 1 && ` · ${preview.saleBreakdown.leverage.toFixed(1)}x`}
+                  {preview.saleBreakdown.elementMultiplier && preview.saleBreakdown.elementMultiplier > 1 && (
+                    <span className="ml-1 text-[10px] text-amber-800 font-serif font-bold">
+                      · {preview.saleBreakdown.element ? ELEMENT_CN[preview.saleBreakdown.element] : ''}+{Math.round((preview.saleBreakdown.elementMultiplier - 1) * 100)}%
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="flex justify-between">
-                  <span>释灵收益</span>
+                <span>释灵收益</span>
                 <span className={preview.saleBreakdown.scoreChange >= 0 ? 'font-bold text-qi-full' : 'font-bold text-qi-critical'}>
                   {signed(preview.saleBreakdown.scoreChange)}修为
+                  {preview.saleBreakdown.elementMultiplier && preview.saleBreakdown.elementMultiplier > 1 && (
+                    <span className="ml-1 text-[11px] font-normal text-amber-800">
+                      (含道基+{Math.round((preview.saleBreakdown.elementMultiplier - 1) * 100)}%)
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="flex justify-between border-t border-wood-light/35 pt-1.5">
@@ -257,6 +283,11 @@ export function SettlementPreviewModal() {
                         <span className="truncate pr-2">
                           {s.name}{s.isLeverage ? '（燃灵）' : ''}
                           {s.isNewBuy && <span className="ml-1 text-[10px] text-blue-700 font-bold">新</span>}
+                          {s.elementMultiplier && s.elementMultiplier > 1 && (
+                            <span className="ml-1 text-[10px] text-amber-800 font-serif font-bold">
+                              · {s.element ? ELEMENT_CN[s.element] : ''}+{Math.round((s.elementMultiplier - 1) * 100)}%
+                            </span>
+                          )}
                         </span>
                         <span className="tabular-nums whitespace-nowrap">
                           <span className={s.earning >= 0 ? 'text-qi-full' : 'text-qi-critical'}>

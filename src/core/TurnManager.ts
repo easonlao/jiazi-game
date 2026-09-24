@@ -212,6 +212,8 @@ export interface SettlementDetail {
     earning: number;
     qiCost: number;
     leverage: number;
+    element?: Element;
+    elementMultiplier?: number;
   }[];
   baseQiRecover: number;
   waitQiRecover: number;
@@ -329,6 +331,8 @@ export interface SalePreviewBreakdown {
   /** 锁定气返还受神识上限截断后的实际到账量。 */
   lockedQiReturn: number;
   qiChange: number;
+  element?: Element;
+  elementMultiplier?: number;
 }
 
 /**
@@ -1481,6 +1485,7 @@ export class TurnManager {
         isEarth: slot.card.tianGanElement === Element.EARTH,
         concentrationCount: this.getElementConcentration(slot.card),
         concentrationPremiumFactor,
+        element: slot.card.mainElement,
         elementMultiplier: this.getElementMultiplier(slot.card.mainElement),
       })),
       currentLeverage,
@@ -3746,6 +3751,7 @@ export class TurnManager {
       const effectiveLeverage = slot.useLeverage
         ? this.leverageCalculator.getMultiplier(this.seasonCycle.getCurrentRoundInSeason())
         : 1;
+      const elemMult = this.getElementMultiplier(slot.card.mainElement);
       saleBreakdown = {
         buyScore: slot.buyScore,
         currentScore: this.getCardScore(slot.card, currentSeason),
@@ -3753,6 +3759,8 @@ export class TurnManager {
         scoreChange: actionScoreChange,
         lockedQiReturn,
         qiChange: actionQiChange,
+        element: slot.card.mainElement,
+        elementMultiplier: elemMult,
       };
       if (!isLeyline) {
         const virtualIndex = virtualHand.indexOf(slot);
@@ -3816,6 +3824,7 @@ export class TurnManager {
         isEarth: slot.card.tianGanElement === Element.EARTH,
         concentrationCount: virtualConcentration(slot.card),
         concentrationPremiumFactor,
+        element: slot.card.mainElement,
         elementMultiplier: this.getElementMultiplier(slot.card.mainElement),
       })),
       settlementLeverage,

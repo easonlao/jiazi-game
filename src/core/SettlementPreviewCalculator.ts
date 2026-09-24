@@ -1,3 +1,5 @@
+import type { Element } from './JiaziCard.ts';
+
 /**
  * 行动前/实际结算共用的持仓纯计算边界。
  *
@@ -14,6 +16,8 @@ export interface HoldingCalculationInput {
   concentrationCount?: number;
   /** 同元素集中度溢价系数 */
   concentrationPremiumFactor?: number;
+  /** 五行属性 (V11) */
+  element?: Element;
   /** 五行专精倍率 (V11) */
   elementMultiplier?: number;
 }
@@ -23,6 +27,8 @@ export interface HoldingCalculationItem {
   earning: number;
   qiCost: number;
   leverage: number;
+  element?: Element;
+  elementMultiplier?: number;
 }
 
 export interface HoldingCalculationResult {
@@ -52,6 +58,8 @@ export function calculateHoldingSettlement(
       earning: calculators.calculateHoldEarnings(holding.cardScore, leverage, holding.elementMultiplier),
       qiCost: calculators.calculateHoldQiCost(holding.cardScore, leverage, holding.isEarth, holding.concentrationCount, holding.concentrationPremiumFactor),
       leverage,
+      element: holding.element,
+      elementMultiplier: holding.elementMultiplier,
     };
   });
 

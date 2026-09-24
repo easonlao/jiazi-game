@@ -2290,7 +2290,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const flightScore = tm.getCardScore(buyCapture.card, tm.getCurrentSeason());
         const flightNextScore = tm.getCardScore(buyCapture.card, tm.getFollowingSeason());
         const flightLeverage = buyCapture.useLeverage ? tm.getLeverageMultiplier() : 1;
-        const flightHoldEarning = tm.previewHoldEarning(flightScore, flightLeverage);
+        const flightHoldEarning = tm.previewHoldEarning(flightScore, flightLeverage, buyCapture.card.mainElement);
         const flightHoldQiCost = tm.previewHoldQiCost(flightScore, flightLeverage);
         set({
           buySettlementEvent: {
@@ -2351,7 +2351,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 信息边界契约：公共牌面预览只用"当下回合"杠杆倍数（getLeverageMultiplier），
     // 禁用 getSettlementLeverageMultiplier（下回合真实倍数 = 是否换季的代理变量，会泄露换季时机）。
     const leverage = get().useLeverage ? tm.getLeverageMultiplier() : 1;
-    return tm.previewHoldEarning(score, leverage);
+    return tm.previewHoldEarning(score, leverage, card.mainElement);
   },
 
   previewHoldQiCost(cardIndex) {
