@@ -154,6 +154,8 @@ describe('TurnManager 行动前结算预览', () => {
       scoreChange: manager.previewSellScore(soldSlot),
       lockedQiReturn: Math.min(80, 75 + soldSlot.lockedQi) - 75,
       qiChange: Math.min(80, 75 + soldSlot.lockedQi) - 75,
+      element: soldSlot.card.mainElement,
+      elementMultiplier: manager.getElementMultiplier(soldSlot.card.mainElement),
     });
     expect(preview!.holdItems.map((item) => item.cardName)).toContain(remainingSlot.card.name);
 
