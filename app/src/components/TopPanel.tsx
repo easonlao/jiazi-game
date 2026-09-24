@@ -72,6 +72,9 @@ export function TopPanel() {
   const hand = useGameStore((s) => s.hand);
   const leyline = useGameStore((s) => s.leyline);
 
+  const turnManager = useGameStore((s) => s.turnManager);
+  const isV11 = (turnManager?.getRulesVersion() ?? 11) >= 11;
+
   // 丹田与地脉持有的地支集合（用于触发点亮）
   const dantianBranches = new Set(
     hand.filter((s): s is NonNullable<typeof s> => Boolean(s?.card)).map((s) => s.card.diZhi),
@@ -98,7 +101,7 @@ export function TopPanel() {
     <div className="flex flex-col bg-[#faf6ee] border-b border-wood-light">
       {/* 行 1：主要状态、天时、年岁与操作、修为 */}
       <div className="flex items-center justify-between gap-1.5 px-3 pt-1.5 pb-1 max-md:py-1">
-        {/* 左侧：天时 + 年岁轮次 + 机缘 */}
+        {/* 左侧：天时 + 机缘 */}
         <div className="flex items-center gap-1.5 min-w-0">
           <h1 className={`text-lg sm:text-xl font-bold font-serif ${seasonTheme.text} leading-none whitespace-nowrap`}>
             {/* key 变化触发切换动画，提示回合推进 */}
@@ -106,9 +109,6 @@ export function TopPanel() {
               {seasonDisplay(season)} · 天时
             </span>
           </h1>
-          <span className="text-xs font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300 shadow-2xs tabular-nums whitespace-nowrap">
-            第 {year} 年 · {turn}/20 轮
-          </span>
           {activeBoon && activeBoon !== 'none' && SINGLE_YEAR_BOONS[activeBoon as keyof typeof SINGLE_YEAR_BOONS] && (
             <span
               className="text-[11px] font-bold text-teal-800 bg-teal-100/90 px-2 py-0.5 rounded-full border border-teal-300/80 shadow-xs whitespace-nowrap"
@@ -173,12 +173,24 @@ export function TopPanel() {
         </div>
       </div>
 
-      {/* 行 2：季内回合与天劫道基大考进度条（独占一行，绝不重叠折行） */}
+      {/* 行 2：年岁回合与天劫道基大考进度条（独占一行，绝不重叠折行） */}
       <div className="flex items-center justify-between gap-2 px-3 py-0.5 border-t border-wood-light/30 text-xs">
         <div className="flex items-center gap-1.5 font-serif text-ink whitespace-nowrap">
-          <span>第 {currentRound} 回合 / {totalRounds}</span>
-          <span className="text-wood-mid">·</span>
-          <span>季内第 {roundInSeason} 回合</span>
+          {isV11 ? (
+            <>
+              <span className="font-bold text-amber-900">第 {year} 年</span>
+              <span className="text-wood-mid">·</span>
+              <span>第 {turn} 回合 / 20</span>
+              <span className="text-wood-mid">·</span>
+              <span>季内第 {roundInSeason} 回合</span>
+            </>
+          ) : (
+            <>
+              <span>第 {currentRound} 回合 / {totalRounds}</span>
+              <span className="text-wood-mid">·</span>
+              <span>季内第 {roundInSeason} 回合</span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-1.5 flex-1 max-w-[200px] justify-end" title={`天劫门槛目标: ${score.toFixed(0)} / ${quota}`}>
           <span className="text-[11px] text-wood-dark font-serif font-medium whitespace-nowrap">天劫道基:</span>
@@ -284,7 +296,7 @@ export function TopPanel() {
                       ? 'bg-rose-50 border-rose-400 text-rose-800 font-bold animate-pulse'
                       : 'bg-white/80 border-wood-light text-ink'
                   }`}
-                  title={`${sect.name} · ${sect.description}`}
+                  title={`${sect.name} · ${sect.intentDesc}`}
                 >
                   <span>{sect.name}</span>
                   <span className="font-mono font-bold">{cd}轮</span>
