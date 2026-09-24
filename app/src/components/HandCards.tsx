@@ -56,6 +56,8 @@ export function HandCards() {
   const moveToDantian = useGameStore((s) => s.moveToDantian);
   const sellLeyline = useGameStore((s) => s.sellLeyline);
   const qi = useGameStore((s) => s.qi);
+  const availableTriads = useGameStore((s) => s.availableTriads);
+  const readyTriadBranches = new Set(availableTriads.flatMap((t) => t.triad.branches));
 
   useEffect(() => {
     if (gameState === 'init') {
@@ -127,6 +129,8 @@ export function HandCards() {
               turnManager.getConcentrationPremiumFactor(),
             ) : 0;
 
+            const isTriadCard = Boolean(slot && readyTriadBranches.has(slot.card.diZhi));
+
             return (
               <HandCard
                 key={i}
@@ -135,6 +139,8 @@ export function HandCards() {
                 score={score}
                 buyScore={slot.buyScore}
                 selected={selectedHandCard === i}
+                triadHighlight={isTriadCard}
+                triadTag={isTriadCard ? '三合成局' : undefined}
                 onClick={
                   gameState === 'player_action'
                     ? () => {
@@ -220,6 +226,7 @@ export function HandCards() {
             if (!slot) {
               return <EmptyLeylineSlot key={i} index={i} />;
             }
+            const isTriadCard = Boolean(slot && readyTriadBranches.has(slot.card.diZhi));
             return (
               <LeylineCardView
                 key={i}
@@ -228,6 +235,8 @@ export function HandCards() {
                 selected={selectedLeylineCard === i}
                 season={season}
                 turnManager={turnManager}
+                triadHighlight={isTriadCard}
+                triadTag={isTriadCard ? '三合成局' : undefined}
                 onSelect={() => selectLeylineCard(i)}
                 onOpenHistory={() => setHistoryCard(slot.card)}
                 onMoveToDantian={() => moveToDantian(i)}
@@ -290,6 +299,8 @@ function LeylineCardView({
   selected,
   season,
   turnManager,
+  triadHighlight,
+  triadTag,
   onSelect,
 }: {
   slot: HandSlot;
@@ -297,6 +308,8 @@ function LeylineCardView({
   selected: boolean;
   season: string;
   turnManager: any;
+  triadHighlight?: boolean;
+  triadTag?: string;
   onSelect: () => void;
   onOpenHistory?: () => void;
   onMoveToDantian?: () => void;
@@ -314,6 +327,8 @@ function LeylineCardView({
         scoreMode="position"
         buyScore={buyScore}
         selected={selected}
+        triadHighlight={triadHighlight}
+        triadTag={triadTag}
         onClick={onSelect}
         badges={
           <span

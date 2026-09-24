@@ -32,6 +32,10 @@ interface CardVisualProps {
   buyScore?: number;
   selected?: boolean;
   highlight?: boolean;
+  /** 成局或绝杀成局高亮辉光 (V11) */
+  triadHighlight?: boolean;
+  /** 成局状态文案（如 '成局' 或 '买入成局'） */
+  triadTag?: string;
   onClick?: () => void;
   /** 右上角徽章区域，由 PublicCard/HandCard 各自填充 */
   badges?: React.ReactNode;
@@ -49,7 +53,23 @@ interface CardVisualProps {
  * 卡牌共用视觉层：牌名（干支按五行着色）、阴阳徽章、评分与实际波动提示。
  * 公共牌和手牌的评分口径通过 scoreMode 区分，底部持有信息仍由 children 注入。
  */
-export function CardVisual({ card, score, nextScore, scoreMode = 'market', buyScore, selected, highlight, onClick, badges, scoreBadge, volatilityDelta, volatilityTrend, children }: CardVisualProps) {
+export function CardVisual({
+  card,
+  score,
+  nextScore,
+  scoreMode = 'market',
+  buyScore,
+  selected,
+  highlight,
+  triadHighlight,
+  triadTag,
+  onClick,
+  badges,
+  scoreBadge,
+  volatilityDelta,
+  volatilityTrend,
+  children,
+}: CardVisualProps) {
   const yinYangChar = card.yinYang === YinYang.YANG ? '阳' : '阴';
   const baseBorder = elementBorder[card.mainElement];
   const positionView = scoreMode === 'position' && buyScore !== undefined;
@@ -125,9 +145,11 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
         transition-all duration-150 min-w-0
         ${selected
           ? 'border-ink shadow-lg scale-[1.02] -translate-y-0.5 bg-parchment'
-          : highlight
-            ? 'border-qi-full bg-green-50 shadow-sm'
-            : `${baseBorder} hover:shadow-sm`
+          : triadHighlight
+            ? 'border-amber-500 shadow-md ring-2 ring-amber-400/80 bg-amber-50/40'
+            : highlight
+              ? 'border-qi-full bg-green-50 shadow-sm'
+              : `${baseBorder} hover:shadow-sm`
         }
       `}
     >
@@ -153,13 +175,20 @@ export function CardVisual({ card, score, nextScore, scoreMode = 'market', buySc
           让两类卡片分别服务于“要不要纳灵”和“要不要释灵”。 */}
       <div className="card-score-trend flex items-end justify-between gap-1 border-y border-wood-light/35 bg-white/35 px-2 py-1.5 max-md:py-1">
         <div className="min-w-0 flex-1">
-          <span
-            className="card-score-label block text-[11px] max-md:text-[10px] leading-tight text-ink-light"
-            data-volatility-score={volatilityActive ? 'current' : undefined}
-            title={positionView ? '手牌对应显示纳灵时评分与当前评分' : volatilityActive ? '当前评分已包含短期波动；换季后会重新计算' : undefined}
-          >
-            {positionView ? '纳灵评分 → 当前评分' : volatilityActive ? '当前评分' : '当季 → 下季评分'}
-          </span>
+          <div className="flex items-center justify-between gap-1">
+            <span
+              className="card-score-label block text-[11px] max-md:text-[10px] leading-tight text-ink-light truncate"
+              data-volatility-score={volatilityActive ? 'current' : undefined}
+              title={positionView ? '手牌对应显示纳灵时评分与当前评分' : volatilityActive ? '当前评分已包含短期波动；换季后会重新计算' : undefined}
+            >
+              {positionView ? '纳灵评分 → 当前评分' : volatilityActive ? '当前评分' : '当季 → 下季评分'}
+            </span>
+            {triadTag && (
+              <span className="text-[9px] font-serif font-bold text-amber-950 bg-amber-200/90 border border-amber-400/80 px-1 py-0.2 rounded shrink-0 leading-none shadow-2xs">
+                {triadTag}
+              </span>
+            )}
+          </div>
           {positionView ? (
             <div
               className="flex items-baseline gap-1"

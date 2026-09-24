@@ -36,6 +36,10 @@ interface HandCardProps {
   holdQiCost: number;
   /** 五行专精倍率 (V11) */
   elemMultiplier?: number;
+  /** 参与三合成局高亮 */
+  triadHighlight?: boolean;
+  /** 成局标签文案 */
+  triadTag?: string;
   /** 浓度信息（V7 生效，count ≥2 时显示元素徽标；V6 及以下恒 0） */
   concentration?: { count: number; premium: number };
   /** 卖出预览（仅选中时传入，未选中传 null） */
@@ -64,6 +68,8 @@ export function HandCard({
   holdEarning,
   holdQiCost,
   elemMultiplier,
+  triadHighlight,
+  triadTag,
   concentration,
   sellPreview,
   shattered,
@@ -80,6 +86,8 @@ export function HandCard({
         scoreMode="position"
         buyScore={buyScore}
         selected={selected}
+        triadHighlight={triadHighlight}
+        triadTag={triadTag}
         onClick={onClick}
         badges={isLeverage ? (
           <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-qi-critical text-white" title={`燃灵 ${leverage.toFixed(1)}×`}>

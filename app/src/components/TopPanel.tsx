@@ -229,19 +229,19 @@ export function TopPanel() {
                     type="button"
                     onClick={() => claimTriad(readyTriad.element)}
                     disabled={gameState !== 'player_action'}
-                    className={`rounded border px-1 py-0.5 font-bold shadow-2xs transition-all ${
+                    className={`w-full rounded border px-0.5 py-0.5 font-bold shadow-2xs transition-all whitespace-nowrap truncate ${
                       gameState === 'player_action'
-                        ? `${col.activeBg} hover:brightness-95 active:scale-95 cursor-pointer ring-1 ring-amber-400/60 animate-pulse`
+                        ? `${col.activeBg} hover:brightness-95 active:scale-95 cursor-pointer ring-1 ring-amber-400 animate-pulse`
                         : 'bg-stone-200 border-stone-300 text-stone-500 cursor-not-allowed'
                     }`}
-                    title={`可引动【${readyTriad.name}】（+${readyTriad.bonus}修为 · 回满神识 · 专精+25%）`}
+                    title={`点击引动【${readyTriad.name}】（+${readyTriad.bonus}修为 · 回满神识 · 专精+25%）`}
                   >
-                    {col.label} · 可引动
+                    {col.label.slice(0, 3)} · 可引动
                   </button>
                 );
               }
               return (
-                <span key={col.element} className={`${col.color} font-bold py-0.5`}>
+                <span key={col.element} className={`${col.color} font-bold py-0.5 whitespace-nowrap truncate`}>
                   {col.label}
                 </span>
               );

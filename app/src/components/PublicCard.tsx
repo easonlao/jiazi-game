@@ -49,21 +49,13 @@ export function PublicCard({
       volatilityDelta={volatilityDelta}
       volatilityTrend={volatilityTrend}
       selected={selected}
+      triadHighlight={isWinningPiece}
+      triadTag={isWinningPiece ? '买入成局' : undefined}
       onClick={onClick}
       badges={
-        <div className="flex items-center gap-1">
-          {isWinningPiece && (
-            <span
-              title="🌟 绝杀成局：买入即可凑成地支三合大阵！"
-              className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-gradient-to-r from-amber-400 to-amber-500 text-amber-950 shadow-xs ring-1 ring-amber-300 animate-pulse flex items-center gap-0.5 leading-none"
-            >
-              <span>🌟</span>
-              <span>成局</span>
-            </span>
-          )}
-          {onToggleLock ? (
-            <button
-              type="button"
+        onToggleLock ? (
+          <button
+            type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleLock();
@@ -94,8 +86,7 @@ export function PublicCard({
                 {locked && <circle cx="10" cy="12" r="1" fill="currentColor" stroke="none" />}
               </svg>
             </button>
-          ) : undefined}
-        </div>
+          ) : undefined
       }
     >
       {/* 窄卡（grid-cols-3，~128px）适配：三行信息（耗神/炼化/炼耗），字号微调放大。 */}
