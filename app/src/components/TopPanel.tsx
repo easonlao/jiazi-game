@@ -180,9 +180,9 @@ export function TopPanel() {
             <>
               <span className="font-bold text-amber-900">第 {year} 年</span>
               <span className="text-wood-mid">·</span>
-              <span>第 {turn} 回合 / 20</span>
+              <span>{turn}/20 轮</span>
               <span className="text-wood-mid">·</span>
-              <span>季内第 {roundInSeason} 回合</span>
+              <span>季内第 {roundInSeason} 轮</span>
             </>
           ) : (
             <>

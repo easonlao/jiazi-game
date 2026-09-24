@@ -33,9 +33,9 @@ test.describe('V11 Macro Roguelike E2E & Mobile 390px Viewport', () => {
     // 验证顶栏不再出现旧版冗余的独立年岁轮次胶囊
     await expect(page.getByText('第 1 年 · 1/20 轮')).toHaveCount(0);
 
-    // 验证第二行统一整合年岁、回合与季内回合
+    // 验证第二行统一整合年岁、回合与季内回合（精炼不重复）
     await expect(page.getByText('第 1 年', { exact: true })).toBeVisible();
-    await expect(page.getByText('第 1 回合 / 20', { exact: true })).toBeVisible();
-    await expect(page.getByText('季内第 1 回合', { exact: true })).toBeVisible();
+    await expect(page.getByText('1/20 轮', { exact: true })).toBeVisible();
+    await expect(page.getByText('季内第 1 轮', { exact: true })).toBeVisible();
   });
 });
